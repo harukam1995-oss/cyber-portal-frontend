@@ -3833,8 +3833,11 @@
   // GitHub Pagesが付与するCross-Origin-Opener-Policyヘッダーの影響で、
   // ポップアップ方式(signInWithPopup)は別ウィンドウの開閉を検知できずフリーズするため、
   // 同じタブでGoogleのログイン画面へ遷移するリダイレクト方式を使う。
+  console.log("[auth] init: authDomain=", firebaseConfig.authDomain, "current URL=", location.href);
+
   signinBtn.addEventListener("click", async () => {
     statusEl.textContent = "Googleのログイン画面へ移動します…";
+    console.log("[auth] signInWithRedirect: calling...");
     try {
       await signInWithRedirect(auth, new GoogleAuthProvider());
     } catch (err) {
@@ -3846,12 +3849,18 @@
   window.__cyberPortalSignOut = () => signOut(auth);
 
   // リダイレクトでGoogleから戻ってきた直後の結果を受け取る(エラー時のメッセージ表示用)。
-  getRedirectResult(auth).catch((err) => {
-    console.error("[auth] getRedirectResult failed:", err);
-    statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
-  });
+  console.log("[auth] calling getRedirectResult...");
+  getRedirectResult(auth)
+    .then((result) => {
+      console.log("[auth] getRedirectResult resolved. result=", result, "user=", result && result.user);
+    })
+    .catch((err) => {
+      console.error("[auth] getRedirectResult failed:", err.code, err.message, err);
+      statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
+    });
 
   onAuthStateChanged(auth, (user) => {
+    console.log("[auth] onAuthStateChanged fired. user=", user);
     if (user) {
       gate.hidden = true;
       document.dispatchEvent(new CustomEvent("cyberportal:authready", { detail: { uid: user.uid, email: user.email } }));
