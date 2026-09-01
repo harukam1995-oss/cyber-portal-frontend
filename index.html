@@ -3813,11 +3813,13 @@
   // タスク/メモは各ビューを開いたタイミングで initTasks/initNotes が読み込む。
   document.addEventListener("cyberportal:authready", function(){
     loadGmailUnreadCount();
+    loadHarukaMail();
   });
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
   // (モジュールスクリプトの実行順は保証されないため)にも対応する。
   if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
     loadGmailUnreadCount();
+    loadHarukaMail();
   }
 
 })();
