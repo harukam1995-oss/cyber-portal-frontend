@@ -2584,24 +2584,20 @@
   function loadHarukaMail(){
     if (harukaMailLoadPromise) return harukaMailLoadPromise;
     harukaMailLoadPromise = (async function(){
-      var mcp = await getMcp();
-      if (!mcp){ harukaMailError = { code: "not_granted" }; return; }
       try{
-        var res = await mcp.callTool("Gmail", "search_threads", { query: "in:inbox", pageSize: 30, view: "THREAD_VIEW_MINIMAL" });
-        var threads = (res.payload && res.payload.threads) || [];
-        harukaMailItems = threads.map(function(t){
-          var m = t.messages && t.messages[0];
-          if (!m) return null;
+        var res = await apiFetch("/api/google/gmail/messages?maxResults=30");
+        var messages = res.messages || [];
+        harukaMailItems = messages.map(function(m){
           return {
-            threadId: t.id,
-            from: m.sender || "(不明な送信者)",
-            initial: (m.sender || "?").charAt(0).toUpperCase(),
+            threadId: m.threadId,
+            from: m.from || "(不明な送信者)",
+            initial: (m.from || "?").charAt(0).toUpperCase(),
             subject: m.subject || "(件名なし)",
             snippet: m.snippet || "",
             time: formatMailTime(m.date),
-            unread: (m.labelIds || []).indexOf("UNREAD") !== -1
+            unread: !!m.unread
           };
-        }).filter(Boolean);
+        });
         harukaMailError = null;
       } catch(err){
         harukaMailError = err;
@@ -2620,7 +2616,7 @@
     if (mailState.account === "haruka"){
       mailTag.hidden = true;
       if (harukaMailError){
-        setMailStatus(escapeHtml(mcpErrorMessage(harukaMailError, "Gmail")), "err");
+        setMailStatus(escapeHtml(apiErrorMessage(harukaMailError, "Gmail")), "err");
       } else if (!harukaMailItems){
         setMailStatus("接続確認中…", "");
       } else {
@@ -2677,7 +2673,7 @@
 
     if (mailState.account === "haruka"){
       if (harukaMailError){
-        mailList.innerHTML = '<li class="sched-error">' + escapeHtml(mcpErrorMessage(harukaMailError, "Gmail")) + '</li>';
+        mailList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(harukaMailError, "Gmail")) + '</li>';
         return;
       }
       if (!harukaMailItems){
@@ -2738,14 +2734,10 @@
       document.body.style.overflow = "hidden";
       renderMailList(); // refresh unread dot state
       try{
-        var mcp = await getMcp();
-        if (!mcp) throw { code: "not_granted" };
-        var res = await mcp.callTool("Gmail", "get_thread", { threadId: mail.threadId, messageFormat: "PLAIN_TEXT" });
-        var msgs = (res.payload && res.payload.messages) || [];
-        var last = msgs[msgs.length - 1];
-        bodyEl.textContent = (last && last.plaintextBody) || mail.snippet || "(本文がありません)";
+        var res = await apiFetch("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId));
+        bodyEl.textContent = res.body || mail.snippet || "(本文がありません)";
       } catch(err){
-        bodyEl.textContent = mcpErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
+        bodyEl.textContent = apiErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
       }
       return;
     }
