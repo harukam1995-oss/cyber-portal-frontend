@@ -908,6 +908,10 @@
           <span class="inbox-count-num" id="home-inbox-count-num">--</span>
           <span class="inbox-count-label" id="home-inbox-count-label">読み込み中…</span>
         </button>
+        <button type="button" id="home-google-connect-btn" hidden
+          style="margin-top:10px; font-size:12px; padding:8px 16px; border-radius:6px; border:1px solid rgba(180,140,255,0.4); background:rgba(44,227,255,0.12); color:#e8e2ff; cursor:pointer;">
+          Googleサービスと連携する
+        </button>
       </div>
     </div>
   </section>
@@ -2524,6 +2528,28 @@
   var homeInboxCountBtn = document.getElementById("home-inbox-count-btn");
   var homeInboxCountNum = document.getElementById("home-inbox-count-num");
   var homeInboxCountLabel = document.getElementById("home-inbox-count-label");
+  var homeGoogleConnectBtn = document.getElementById("home-google-connect-btn");
+
+  // Gmail/Calendar/DriveへのアクセスはFirebase Authenticationのログインとは別に、
+  // 追加のGoogle同意(googleAuth.js)が必要。未連携時(google_not_connected)は
+  // 連携ボタンを表示し、押すとバックエンドから認可URLを取得して遷移する。
+  async function startGoogleConnect(){
+    homeGoogleConnectBtn.disabled = true;
+    homeGoogleConnectBtn.textContent = "連携ページへ移動中…";
+    try {
+      var res = await apiFetch("/api/google/oauth/start");
+      if (res && res.url){
+        window.location.href = res.url;
+      } else {
+        throw new Error("認可URLを取得できませんでした。");
+      }
+    } catch (err) {
+      console.error("[google] oauth start failed:", err);
+      homeGoogleConnectBtn.disabled = false;
+      homeGoogleConnectBtn.textContent = "連携に失敗しました。もう一度お試しください";
+    }
+  }
+  homeGoogleConnectBtn.addEventListener("click", startGoogleConnect);
 
   var harukaMailItems = null; // null = not loaded yet; [] = loaded, empty inbox
   var harukaMailError = null;
@@ -2750,8 +2776,10 @@
     if (harukaUnreadError){
       homeInboxCountNum.textContent = "!";
       homeInboxCountLabel.textContent = apiErrorMessage(harukaUnreadError, "Gmail");
+      homeGoogleConnectBtn.hidden = harukaUnreadError.code !== "google_not_connected";
       return;
     }
+    homeGoogleConnectBtn.hidden = true;
     if (harukaUnreadCount === null){
       homeInboxCountNum.textContent = "--";
       homeInboxCountLabel.textContent = "読み込み中…";
