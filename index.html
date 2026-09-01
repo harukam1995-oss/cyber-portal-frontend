@@ -3862,9 +3862,14 @@
   onAuthStateChanged(auth, (user) => {
     console.log("[auth] onAuthStateChanged fired. user=", user);
     if (user) {
+      // 注意: #auth-gate は style="display:flex" をインライン指定しているため、
+      // hidden属性だけではUAスタイルシート([hidden]{display:none})が
+      // インラインstyleに負けて非表示にならない。display を直接操作する。
+      gate.style.display = "none";
       gate.hidden = true;
       document.dispatchEvent(new CustomEvent("cyberportal:authready", { detail: { uid: user.uid, email: user.email } }));
     } else {
+      gate.style.display = "flex";
       gate.hidden = false;
       statusEl.textContent = "";
     }
