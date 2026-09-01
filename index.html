@@ -3809,7 +3809,7 @@
   // firebaseConfigのapiKeyは公開情報として扱って問題ない値(アクセス制御はFirestore
   // セキュリティルール側で行う)。
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
     from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
   const firebaseConfig = {
@@ -3830,17 +3830,26 @@
   const signinBtn = document.getElementById("auth-gate-signin-btn");
   const statusEl = document.getElementById("auth-gate-status");
 
+  // GitHub Pagesが付与するCross-Origin-Opener-Policyヘッダーの影響で、
+  // ポップアップ方式(signInWithPopup)は別ウィンドウの開閉を検知できずフリーズするため、
+  // 同じタブでGoogleのログイン画面へ遷移するリダイレクト方式を使う。
   signinBtn.addEventListener("click", async () => {
-    statusEl.textContent = "ログイン中…";
+    statusEl.textContent = "Googleのログイン画面へ移動します…";
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      await signInWithRedirect(auth, new GoogleAuthProvider());
     } catch (err) {
-      console.error("[auth] signInWithPopup failed:", err);
+      console.error("[auth] signInWithRedirect failed:", err);
       statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
     }
   });
 
   window.__cyberPortalSignOut = () => signOut(auth);
+
+  // リダイレクトでGoogleから戻ってきた直後の結果を受け取る(エラー時のメッセージ表示用)。
+  getRedirectResult(auth).catch((err) => {
+    console.error("[auth] getRedirectResult failed:", err);
+    statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
+  });
 
   onAuthStateChanged(auth, (user) => {
     if (user) {
