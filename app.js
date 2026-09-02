@@ -152,7 +152,7 @@
   var API_ERROR_MESSAGES = {
     unauthenticated: "ログインが必要です。画面を再読み込みしてください。",
     invalid_token: "認証の有効期限が切れました。再ログインしてください。",
-    google_not_connected: "{service}との連携が完了していません。設定から連携してください。",
+    google_not_connected: "{service}の Google 連携が必要です(未連携、または有効期限切れ)。連携ボタンから再連携してください。",
     upstream_error: "{service}の取得に失敗しました。しばらくしてから再度お試しください。",
     rate_limited: "リクエストが多すぎます。少し待ってから再度お試しください。"
   };
@@ -545,7 +545,7 @@
     } catch(err){
       if (acct !== schedAccount) return;
       if (err && err.code === "google_not_connected"){
-        schedSourceLabel.textContent = "カレンダー連携: " + label + " 未連携";
+        schedSourceLabel.textContent = "カレンダー連携: " + label + " 要再連携";
         schedList.innerHTML = "";
         schedList.appendChild(buildConnectPrompt(acct, label));
       } else {
@@ -737,13 +737,13 @@
       if (token !== calLoadToken) return;
       calState.loadOk = false;
       if (err && err.code === "google_not_connected"){
-        setCalStatus(escapeHtml(calAccountLabel() + " の Google アカウントが未連携です"), "");
+        setCalStatus(escapeHtml(calAccountLabel() + " の Google 連携が必要です"), "");
         calGridContainer.innerHTML = '';
         calGridContainer.appendChild((function(){
           var wrap = document.createElement("div");
           wrap.style.cssText = "padding:32px 8px; text-align:center;";
           var p = document.createElement("div");
-          p.textContent = calAccountLabel() + " の Google アカウントはまだ連携していません。";
+          p.textContent = calAccountLabel() + " の Google 連携が必要です(未連携、または有効期限切れ)。";
           p.style.marginBottom = "12px";
           var btn = document.createElement("button");
           btn.type = "button"; btn.className = "inbox-reconnect"; btn.style.display = "inline-block";
@@ -1216,14 +1216,14 @@
   }
   homeGoogleConnectBtn.addEventListener("click", function(){ startGoogleConnect("haruka"); });
 
-  // 未連携アカウント向けの「連携する」プロンプト(<li>を返す)
+  // 未連携 / 連携失効アカウント向けの「連携する」プロンプト(<li>を返す)
   function buildConnectPrompt(account, label){
     var li = document.createElement("li");
     li.className = "sched-empty";
     li.style.textAlign = "center";
     li.style.padding = "26px 8px";
     var p = document.createElement("div");
-    p.textContent = label + " の Google アカウントはまだ連携していません。";
+    p.textContent = label + " の Google 連携が必要です(未連携、または有効期限切れ)。";
     p.style.marginBottom = "12px";
     var btn = document.createElement("button");
     btn.type = "button";
@@ -1331,7 +1331,7 @@
     var label = mailAccountLabel();
     if (harukaMailError){
       if (harukaMailError.code === "google_not_connected"){
-        setMailStatus(escapeHtml(label + " の Google アカウントが未連携です"), "");
+        setMailStatus(escapeHtml(label + " の Google 連携が必要です(未連携 / 期限切れ)"), "");
       } else {
         setMailStatus(escapeHtml(apiErrorMessage(harukaMailError, "Gmail")), "err");
       }
@@ -1530,7 +1530,7 @@
     if (err){
       if (err.code === "google_not_connected"){
         numEl.textContent = "–";
-        labelEl.textContent = "未連携";
+        labelEl.textContent = "要再連携";
       } else {
         numEl.textContent = "!";
         labelEl.textContent = apiErrorMessage(err, "Gmail");
