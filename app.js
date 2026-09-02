@@ -468,6 +468,8 @@
     var img = document.getElementById("scene-illustration");
     var scene = document.getElementById("hero-scene");
     if (!img || !scene || !HERO_ILLUSTRATIONS.length) return;
+    // スマホ(<=640px)ではヒーローのシーンをCSSで非表示にしているので、画像も読み込まない。
+    if (window.matchMedia && window.matchMedia("(max-width: 640px)").matches) return;
     var pick = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
     img.addEventListener("load", function(){ scene.classList.add("has-illustration"); });
     img.src = pick;

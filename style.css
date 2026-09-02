@@ -719,3 +719,42 @@
   .ev-btn-primary:disabled{ opacity:.6; cursor:not-allowed; }
   .ev-btn-danger{ border-color: rgba(255,80,80,0.4); color: var(--err); }
   .ev-btn-danger:hover{ border-color:#ff5050; background: rgba(255,60,90,0.08); color: var(--err); }
+
+  /* ================= モバイル(<=640px) =================
+     このポータルは基本デスクトップ前提。スマホでは:
+     - ヒーローのイラスト/スカイラインは非表示(時計・天気・ひとことは残す)
+     - ヘッダーを折り返して余分な要素を隠す
+     - カレンダーは日次のみ(週/月ボタンを隠す。calState.view は既定 day) */
+  @media (max-width: 640px){
+    body{ padding: 10px; }
+    .frame{ gap: 10px; }
+
+    #auth-gate > div{ max-width: 88vw; }
+
+    .topbar{ padding: 10px 12px; gap: 8px 12px; flex-wrap: wrap; }
+    .brand-mark{ width: 30px; height: 30px; }
+    .brand-text .name{ font-size: 14px; letter-spacing: 1px; }
+    .brand-text .tag{ display: none; }
+    .nav{ display: none; }
+    .top-actions{ gap: 10px; }
+    .profile-meta{ display: none; }
+
+    .hero{ min-height: 0; }
+    .hero .scene{ display: none; }
+    .hero-hud{ padding: 16px 14px; border-bottom: none; gap: 14px; }
+    .hud-ring{ width: 180px; height: 180px; }
+    .hud-clock{ font-size: 30px; }
+
+    .grid3{ gap: 10px; }
+    .quick-grid{ gap: 8px; }
+    .card-body{ padding: 4px 12px 14px; }
+
+    .cal-toolbar{ padding: 10px 12px; gap: 8px; }
+    .cal-view-switch{ display: none; }
+    .cal-range-label{ font-size: 12px; letter-spacing: 0; }
+    .acct-tabs .acct-tab{ padding: 5px 10px; font-size: 10px; }
+    .cal-timeline-scroll{ max-height: 60vh; }
+
+    .modal-overlay{ padding: 10px; }
+    .mail-detail, .cal-body-panel, .note-editor{ font-size: 13px; }
+  }
