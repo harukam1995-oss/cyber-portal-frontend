@@ -721,6 +721,9 @@
   .ev-btn-danger:hover{ border-color:#ff5050; background: rgba(255,60,90,0.08); color: var(--err); }
 
   /* ---------- Google 再連携リマインダーバナー ---------- */
+  /* display:flex は hidden 属性(UAの [hidden]{display:none})を打ち消すので、
+     hidden 時は明示的に display:none に戻す。 */
+  .reauth-banner[hidden]{ display:none; }
   .reauth-banner{
     display:flex; align-items:center; gap:12px;
     padding:11px 14px; border-radius:12px;
