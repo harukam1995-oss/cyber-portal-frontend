@@ -340,7 +340,11 @@
       </div>
     </div>
     <div class="cal-toolbar-right">
-      <span class="placeholder-tag" id="mail-tag">仮データ</span>
+      <div class="mail-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="mail-search" placeholder="メールを検索" autocomplete="off" maxlength="200">
+      </div>
+      <span class="placeholder-tag" id="mail-tag" hidden>仮データ</span>
     </div>
   </section>
 
@@ -636,6 +640,27 @@
         </div>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ================= CALENDAR EVENT DETAIL POPOVER =================
+     予定をクリックしたときに、いきなり編集フォームを開くのではなく
+     まず読み取り用の小さなカードを出す。編集/削除はそこから。 -->
+<div class="event-popover" id="event-popover" hidden role="dialog" aria-labelledby="event-popover-title">
+  <div class="event-popover-head">
+    <span class="event-popover-swatch" id="event-popover-swatch"></span>
+    <h4 id="event-popover-title">予定</h4>
+    <button type="button" class="event-popover-close" id="event-popover-close" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="event-popover-time" id="event-popover-time"></div>
+  <div class="event-popover-loc" id="event-popover-loc" hidden></div>
+  <div class="event-popover-desc" id="event-popover-desc" hidden></div>
+  <div class="event-popover-err" id="event-popover-err" hidden></div>
+  <div class="event-popover-actions">
+    <button type="button" class="ev-btn ev-btn-danger" id="event-popover-delete">削除</button>
+    <button type="button" class="ev-btn ev-btn-primary" id="event-popover-edit">編集</button>
   </div>
 </div>
 

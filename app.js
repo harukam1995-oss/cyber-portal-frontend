@@ -175,6 +175,33 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  /* ================= skeleton loading placeholders =================
+     読み込み中に「読み込み中…」テキストの代わりに、実際のレイアウトに近い
+     シマー付きのプレースホルダを出す。CSS 側の .skeleton がアニメーション担当。 */
+  function skelRepeat(row, n){
+    var out = ""; for (var i = 0; i < n; i++) out += row; return out;
+  }
+  function mailSkeletonHtml(n){
+    return skelRepeat(
+      '<li class="mail-skel-item">' +
+      '<div class="mail-skel-avatar skeleton"></div>' +
+      '<div class="mail-skel-lines">' +
+      '<div class="mail-skel-line skeleton" style="width:58%"></div>' +
+      '<div class="mail-skel-line skeleton" style="width:88%"></div>' +
+      '<div class="mail-skel-line skeleton" style="width:44%"></div>' +
+      '</div></li>', n || 6);
+  }
+  function schedSkeletonHtml(n){
+    return skelRepeat(
+      '<li class="sched-skel-row">' +
+      '<span class="sched-skel-time skeleton"></span>' +
+      '<span class="sched-skel-title skeleton"></span></li>', n || 4);
+  }
+  function calSkeletonHtml(){
+    return '<div class="cal-skel">' +
+      skelRepeat('<div class="cal-skel-row skeleton"></div>', 6) + '</div>';
+  }
+
   /* ================= live clock (always JST) ================= */
   var timeFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour: "2-digit", minute: "2-digit", hour12: false });
   var secFmt  = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, second: "2-digit" });
@@ -533,7 +560,7 @@
     var acct = schedAccount;
     var label = acct === "syslea" ? "SYSLEA" : "はるか";
     if (schedRefreshBtn){ schedRefreshBtn.classList.remove("spinning"); }
-    schedList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
+    schedList.innerHTML = schedSkeletonHtml(4);
     try{
       var res = await apiFetch(acctPath("/api/google/calendar/today", acct));
       if (acct !== schedAccount) return;
@@ -722,6 +749,7 @@
     var range = getFetchRange();
     var bounds = jstRangeForKeys(range.start, range.endExclusive);
     setCalStatus("読み込み中…", "");
+    if (!calState.loadOk) calGridContainer.innerHTML = calSkeletonHtml();
     var acct = calState.account;
     try{
       var res = await apiFetch(acctPath("/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end), acct));
@@ -893,7 +921,7 @@
     calGridContainer.querySelectorAll("[data-event-id]").forEach(function(el){
       el.addEventListener("click", function(e){
         e.stopPropagation();
-        openEditFormById(el.getAttribute("data-event-id"));
+        openEventPopover(el.getAttribute("data-event-id"), el);
       });
     });
 
@@ -951,14 +979,120 @@
     calGridContainer.querySelectorAll("[data-event-id]").forEach(function(el){
       el.addEventListener("click", function(e){
         e.stopPropagation();
-        openEditFormById(el.getAttribute("data-event-id"));
+        openEventPopover(el.getAttribute("data-event-id"), el);
       });
     });
   }
 
-  function openEditFormById(id){
+  /* ================= 予定の詳細ポップオーバー =================
+     予定クリックで、いきなり編集フォームではなく読み取り用の小カードを
+     クリック位置の近くに出す。編集/削除はそこから。 */
+  var evPop = document.getElementById("event-popover");
+  var evPopTitle = document.getElementById("event-popover-title");
+  var evPopSwatch = document.getElementById("event-popover-swatch");
+  var evPopTime = document.getElementById("event-popover-time");
+  var evPopLoc = document.getElementById("event-popover-loc");
+  var evPopDesc = document.getElementById("event-popover-desc");
+  var evPopErr = document.getElementById("event-popover-err");
+  var evPopEdit = document.getElementById("event-popover-edit");
+  var evPopDelete = document.getElementById("event-popover-delete");
+  var evPopEvent = null;
+
+  function fmtEventRange(ev){
+    if (ev.start && ev.start.date){
+      var endEx = ev.end && ev.end.date ? ev.end.date : addDaysKey(ev.start.date, 1);
+      var lastDay = addDaysKey(endEx, -1);
+      if (lastDay <= ev.start.date) return formatDateLabelLong(ev.start.date) + " ・ 終日";
+      return formatDateLabelLong(ev.start.date) + " 〜 " + formatDateLabelLong(lastDay) + " ・ 終日";
+    }
+    var sKey = jstDateKey(new Date(ev.start.dateTime));
+    var eKey = ev.end && ev.end.dateTime ? jstDateKey(new Date(ev.end.dateTime)) : sKey;
+    var sT = jstTimeHHMM(ev.start.dateTime);
+    var eT = ev.end && ev.end.dateTime ? jstTimeHHMM(ev.end.dateTime) : sT;
+    if (sKey === eKey) return formatDateLabelLong(sKey) + "  " + sT + " 〜 " + eT;
+    return formatDateLabelLong(sKey) + " " + sT + " 〜 " + formatDateLabelLong(eKey) + " " + eT;
+  }
+
+  function positionPopover(anchorEl){
+    evPop.style.left = "-9999px"; evPop.style.top = "0px";
+    evPop.hidden = false;
+    var pr = evPop.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight, m = 8;
+    var left, top;
+    if (anchorEl && anchorEl.getBoundingClientRect){
+      var r = anchorEl.getBoundingClientRect();
+      left = r.right + m;
+      if (left + pr.width > vw - m) left = r.left - pr.width - m; // 右に入らなければ左へ
+      if (left < m) left = Math.max(m, (vw - pr.width) / 2);
+      top = r.top;
+    } else {
+      left = (vw - pr.width) / 2; top = (vh - pr.height) / 2;
+    }
+    if (top + pr.height > vh - m) top = vh - pr.height - m;
+    if (top < m) top = m;
+    evPop.style.left = Math.round(left) + "px";
+    evPop.style.top = Math.round(top) + "px";
+  }
+
+  function openEventPopover(id, anchorEl){
     var ev = calState.events.find(function(x){ return x.id === id; });
-    if (ev) openEditForm(ev);
+    if (!ev || !evPop) return;
+    evPopEvent = ev;
+    if (evPopErr) evPopErr.hidden = true;
+    if (evPopDelete) evPopDelete.disabled = false;
+    var col = colorForEvent(ev);
+    evPopSwatch.style.background = col;
+    evPopTitle.textContent = ev.summary || "(タイトルなし)";
+    evPopTime.textContent = fmtEventRange(ev);
+    if (ev.location){ evPopLoc.hidden = false; evPopLoc.textContent = "📍 " + ev.location; }
+    else evPopLoc.hidden = true;
+    var descPlain = ev.description ? htmlDescriptionToPlainText(ev.description) : "";
+    if (descPlain){
+      evPopDesc.hidden = false;
+      evPopDesc.textContent = descPlain.length > 240 ? descPlain.slice(0, 240) + "…" : descPlain;
+    } else evPopDesc.hidden = true;
+    positionPopover(anchorEl);
+    document.addEventListener("mousedown", onPopOutside, true);
+    document.addEventListener("keydown", onPopEsc, true);
+  }
+  function closeEventPopover(){
+    if (!evPop) return;
+    evPop.hidden = true;
+    evPopEvent = null;
+    document.removeEventListener("mousedown", onPopOutside, true);
+    document.removeEventListener("keydown", onPopEsc, true);
+  }
+  function onPopOutside(e){
+    if (!evPop || evPop.contains(e.target)) return;
+    // 削除確認モーダルへのクリックでポップオーバーを閉じない
+    var cm = document.getElementById("confirm-modal");
+    if (cm && !cm.hidden && cm.contains(e.target)) return;
+    closeEventPopover();
+  }
+  function onPopEsc(e){ if (e.key === "Escape") closeEventPopover(); }
+
+  if (evPop){
+    document.getElementById("event-popover-close").addEventListener("click", closeEventPopover);
+    evPopEdit.addEventListener("click", function(){
+      var ev = evPopEvent; closeEventPopover();
+      if (ev) openEditForm(ev);
+    });
+    evPopDelete.addEventListener("click", async function(){
+      var ev = evPopEvent;
+      if (!ev) return;
+      if (!(await askConfirm('「' + (ev.summary || "この予定") + '」を削除しますか?'))) return;
+      evPopDelete.disabled = true;
+      if (evPopErr) evPopErr.hidden = true;
+      try{
+        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(ev.id), calState.account), { method: "DELETE" });
+        closeEventPopover();
+        loadAndRenderCalendar();
+        initCalendarWatch();
+      } catch(err){
+        if (evPopErr){ evPopErr.hidden = false; evPopErr.textContent = apiErrorMessage(err, "Google Calendar"); }
+        evPopDelete.disabled = false;
+      }
+    });
   }
 
   /* ================= event create/edit/delete modal ================= */
@@ -1162,7 +1296,7 @@
      一覧の日時・件名はスレッド内の最も古いメッセージ基準(Gmail連携ツールの仕様上の制約)。
      返信で伸びたスレッドは表示上わずかに古い時刻になることがあるが、詳細を開くと
      get_thread でスレッド全体を取得するのでそちらは正確。 */
-  var mailState = { account: "haruka", filter: "all", pageIndex: 0 };
+  var mailState = { account: "haruka", filter: "all", pageIndex: 0, query: "" };
   var MAIL_PAGE_SIZE = 20;
   var mailList = document.getElementById("mail-list");
   var mailPager = document.getElementById("mail-pager");
@@ -1340,6 +1474,7 @@
     var tok = mailPageTokens[mailState.pageIndex];
     if (tok) params += "&pageToken=" + encodeURIComponent(tok);
     if (mailState.filter === "unread") params += "&unreadOnly=1";
+    if (mailState.query) params += "&q=" + encodeURIComponent(mailState.query);
     apiFetch(acctPath("/api/google/gmail/messages" + params, mailState.account)).then(function(res){
       var messages = res.messages || [];
       harukaMailItems = messages.map(function(m){
@@ -1458,7 +1593,9 @@
     mailPager.hidden = false;
     mailPrevBtn.disabled = !hasPrev || harukaMailLoading;
     mailNextBtn.disabled = !hasNext || harukaMailLoading;
-    mailPagerInfo.textContent = (mailState.filter === "unread" ? "未読 " : "") + (mailState.pageIndex + 1) + " ページ目";
+    mailPagerInfo.textContent =
+      (mailState.query ? "検索: " : mailState.filter === "unread" ? "未読 " : "") +
+      (mailState.pageIndex + 1) + " ページ目";
   }
 
   function renderMailList(){
@@ -1475,12 +1612,15 @@
       return;
     }
     if (!harukaMailItems || harukaMailLoading){
-      mailList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
+      mailList.innerHTML = mailSkeletonHtml(6);
       updateMailPager();
       return;
     }
     if (!harukaMailItems.length){
-      mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
+      var emptyMsg = mailState.query
+        ? "「" + mailState.query + "」に一致するメールはありません"
+        : (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません");
+      mailList.innerHTML = '<li class="sched-empty">' + escapeHtml(emptyMsg) + '</li>';
       updateMailPager();
       return;
     }
@@ -1554,9 +1694,13 @@
   document.getElementById("mail-modal-close").addEventListener("click", closeMailModal);
   mailModal.addEventListener("click", function(e){ if (e.target === mailModal) closeMailModal(); });
 
+  var mailSearchInput = document.getElementById("mail-search");
+
   wireAcctTabs("mail-acct-tabs", function(){ return mailState.account; }, function(acct){
     mailState.account = acct;
     mailState.filter = "all";
+    mailState.query = "";
+    if (mailSearchInput) mailSearchInput.value = "";
     document.querySelectorAll("#mail-filter-tabs .acct-tab").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-filter") === "all");
     });
@@ -1575,6 +1719,28 @@
       reloadMailFromFirstPage();
     });
   });
+
+  // メール検索。入力が落ち着いてから(デバウンス)1ページ目を取り直す。Enter で即時。
+  if (mailSearchInput){
+    var mailSearchTimer = null;
+    var runMailSearch = function(){
+      var q = mailSearchInput.value.trim();
+      if (q === mailState.query) return;
+      mailState.query = q;
+      reloadMailFromFirstPage();
+    };
+    mailSearchInput.addEventListener("input", function(){
+      clearTimeout(mailSearchTimer);
+      mailSearchTimer = setTimeout(runMailSearch, 350);
+    });
+    mailSearchInput.addEventListener("keydown", function(e){
+      if (e.key === "Enter"){ e.preventDefault(); clearTimeout(mailSearchTimer); runMailSearch(); }
+    });
+    // ネイティブのクリア(×)やEscでの空化にも対応
+    mailSearchInput.addEventListener("search", function(){
+      clearTimeout(mailSearchTimer); runMailSearch();
+    });
+  }
 
   mailPrevBtn.addEventListener("click", function(){
     if (mailState.pageIndex > 0 && !harukaMailLoading){
