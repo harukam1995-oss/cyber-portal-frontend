@@ -491,8 +491,6 @@
   var schedUpdated = document.getElementById("sched-updated");
   var dotColors = ["#2ce3ff", "#ff2f92", "#8b5cf6", "#3cf2b4", "#ffcf6b"];
   var schedAccount = "haruka";
-  var schedUnwatch = null;
-  var schedWatchInput = null; // current watchTool input, kept for the manual refresh button
   var schedRefreshBtn = document.getElementById("sched-refresh");
 
   function renderEvents(events){
@@ -525,62 +523,36 @@
       });
   }
 
+  // ホームの TODAY'S SCHEDULE。バックエンド(/api/google/calendar/today)から取得する。
+  // 旧MCPのwatchTool方式は廃止し、読み込み時と更新ボタン押下時に単発フェッチする。
   async function initCalendarWatch(){
-    if (schedUnwatch){
-      try{ schedUnwatch(); } catch(e){}
-      schedUnwatch = null;
-    }
-    if (!window.claude || typeof window.claude.use !== "function"){
-      schedSourceLabel.textContent = "カレンダー連携: 利用不可";
-      schedList.innerHTML = '<li class="sched-error">この環境ではGoogle Calendar連携を利用できません</li>';
-      return;
-    }
-    var mcp = await getMcp();
-    if (!mcp){
-      schedSourceLabel.textContent = "カレンダー連携: 未許可 / 利用不可";
-      schedList.innerHTML = '<li class="sched-error">Google Calendarへのアクセスが許可されていません</li>';
-      return;
-    }
-
     var acct = schedAccount;
-    var todayKey = jstDateKey(new Date());
-    var bounds = jstRangeForKeys(todayKey, addDaysKey(todayKey, 1));
+    if (schedRefreshBtn){ schedRefreshBtn.classList.remove("spinning"); }
+    if (acct !== "haruka"){
+      schedSourceLabel.textContent = "カレンダー連携: SYSLEAは未対応";
+      schedList.innerHTML = '<li class="sched-empty">SYSLEA アカウントのカレンダーは接続できません</li>';
+      if (schedRefreshBtn) schedRefreshBtn.disabled = false;
+      return;
+    }
     schedList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
-
-    // No refetchInterval: the first watchTool call fetches on load, and after
-    // that the data only refreshes when the viewer presses the refresh button
-    // (which calls mcp.invalidate on this same identity) — no background polling.
-    schedWatchInput = { startTime: bounds.start, endTime: bounds.end, timeZone: JP_TZ, calendarId: ACCOUNTS[acct].calendarId, orderBy: "startTime", pageSize: 20 };
-
     try{
-      schedUnwatch = mcp.watchTool(
-        "Google Calendar",
-        "list_events",
-        schedWatchInput,
-        function(evt){
-          if (acct !== schedAccount) return; // stale watch from a since-switched tab
-          if (schedRefreshBtn){ schedRefreshBtn.classList.remove("spinning"); schedRefreshBtn.disabled = false; }
-          if (evt && evt.type === "error"){
-            schedSourceLabel.textContent = "カレンダー取得エラー";
-            schedList.innerHTML = '<li class="sched-error">' + escapeHtml(mcpErrorMessage(evt.error, "Google Calendar")) + '</li>';
-            return;
-          }
-          var payload = evt && evt.result && evt.result.payload;
-          var events = (payload && payload.events) || [];
-          renderEvents(events);
-          schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (' + ACCOUNTS[acct].label + ')';
-          if (evt && evt.result && evt.result.cache && evt.result.cache.storedAt){
-            var storedAt = new Date(evt.result.cache.storedAt);
-            schedUpdated.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(storedAt) + " 時点";
-          }
-        }
-      );
-    } catch(e){
-      schedSourceLabel.textContent = "カレンダー連携エラー";
-      schedList.innerHTML = '<li class="sched-error">予定を取得できませんでした</li>';
+      var res = await apiFetch("/api/google/calendar/today");
+      if (acct !== schedAccount) return;
+      renderEvents(res.events || []);
+      schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (はるか)';
+      schedUpdated.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(new Date()) + " 時点";
+    } catch(err){
+      if (acct !== schedAccount) return;
+      schedSourceLabel.textContent = "カレンダー取得エラー";
+      schedList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
+    } finally {
+      if (acct === schedAccount && schedRefreshBtn){
+        schedRefreshBtn.classList.remove("spinning");
+        schedRefreshBtn.disabled = false;
+      }
     }
   }
-  initCalendarWatch();
+  // 初回ロードは末尾の authready ハンドラ(またはログイン済みフォールバック)から呼ぶ。
 
   wireAcctTabs("sched-acct-tabs", function(){ return schedAccount; }, function(acct){
     schedAccount = acct;
@@ -588,24 +560,11 @@
   });
 
   if (schedRefreshBtn){
-    schedRefreshBtn.addEventListener("click", async function(){
+    schedRefreshBtn.addEventListener("click", function(){
       if (schedRefreshBtn.disabled) return;
-      var mcp = await getMcp();
-      if (!mcp || !schedWatchInput) return;
       schedRefreshBtn.classList.add("spinning");
       schedRefreshBtn.disabled = true;
-      try{
-        await mcp.invalidate("Google Calendar", "list_events", schedWatchInput);
-      } catch(e){
-        // invalidate failing just means the existing watch keeps its last-good data
-      } finally{
-        // The watch handler also clears spinning/disabled once the refreshed
-        // data arrives; this is a fallback in case that event never fires.
-        setTimeout(function(){
-          schedRefreshBtn.classList.remove("spinning");
-          schedRefreshBtn.disabled = false;
-        }, 4000);
-      }
+      initCalendarWatch();
     });
   }
 
@@ -749,30 +708,24 @@
   async function loadAndRenderCalendar(){
     updateViewButtons();
     var token = ++calLoadToken;
-    var mcp = await getMcp();
-    if (token !== calLoadToken) return;
-    if (!mcp){
-      setCalStatus(escapeHtml(mcpErrorMessage({ code: "not_granted" }, "Google Calendar")), "err");
-      calGridContainer.innerHTML = '<div class="sched-error" style="padding:24px 4px;">この環境ではGoogle Calendar連携を利用できません</div>';
+    if (calState.account !== "haruka"){
+      setCalStatus("SYSLEA アカウントのカレンダーは接続できません", "err");
+      calGridContainer.innerHTML = '<div class="sched-error" style="padding:24px 4px;">SYSLEA アカウントのカレンダーは接続できません(Googleコネクタは1アカウントのみ対応)</div>';
       return;
     }
     var range = getFetchRange();
     var bounds = jstRangeForKeys(range.start, range.endExclusive);
     setCalStatus("読み込み中…", "");
-    var calendarId = ACCOUNTS[calState.account].calendarId;
     try{
-      var res = await mcp.callTool("Google Calendar", "list_events", {
-        calendarId: calendarId, startTime: bounds.start, endTime: bounds.end, timeZone: JP_TZ, orderBy: "startTime", pageSize: 250
-      });
+      var res = await apiFetch("/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end));
       if (token !== calLoadToken) return;
-      var events = (res.payload && res.payload.events) || [];
-      calState.events = events;
-      calState.loadedCalendarId = calendarId;
+      calState.events = res.events || [];
+      calState.loadedCalendarId = "primary";
       renderCalendarView();
-      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (' + escapeHtml(ACCOUNTS[calState.account].label) + ')', "");
+      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (はるか)', "");
     } catch(err){
       if (token !== calLoadToken) return;
-      var msg = mcpErrorMessage(err, "Google Calendar");
+      var msg = apiErrorMessage(err, "Google Calendar");
       setCalStatus(escapeHtml(msg), "err");
       calGridContainer.innerHTML = '<div class="sched-error" style="padding:24px 4px;">' + escapeHtml(msg) + '</div>';
     }
@@ -1112,8 +1065,6 @@
     }
 
     evSave.disabled = true; evSave.textContent = "保存中…";
-    var mcp = await getMcp();
-    if (!mcp){ showFormError(mcpErrorMessage({ code: "not_granted" }, "Google Calendar")); resetSaveBtn(); return; }
 
     // If the memo textarea still matches what we showed at open time (converted from the
     // original, possibly-HTML description), send the original back untouched so we don't
@@ -1136,18 +1087,19 @@
 
     try{
       if (editingEvent){
-        input.eventId = editingEvent.id;
-        input.calendarId = editingEventCalendarId;
-        await mcp.callTool("Google Calendar", "update_event", input);
+        await apiFetch("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), {
+          method: "PATCH", body: JSON.stringify(input)
+        });
       } else {
-        input.calendarId = ACCOUNTS[calState.account].calendarId;
-        await mcp.callTool("Google Calendar", "create_event", input);
+        await apiFetch("/api/google/calendar/events", {
+          method: "POST", body: JSON.stringify(input)
+        });
       }
-      await mcp.invalidate("Google Calendar", "list_events").catch(function(){});
       closeEventModal();
       loadAndRenderCalendar();
+      initCalendarWatch();
     } catch(err){
-      showFormError(mcpErrorMessage(err, "Google Calendar"));
+      showFormError(apiErrorMessage(err, "Google Calendar"));
     } finally {
       resetSaveBtn();
     }
@@ -1157,17 +1109,15 @@
     if (!editingEvent) return;
     if (!(await askConfirm('「' + (editingEvent.summary || "この予定") + '」を削除しますか?'))) return;
     evDelete.disabled = true;
-    var mcp = await getMcp();
-    if (!mcp){ showFormError(mcpErrorMessage({ code: "not_granted" }, "Google Calendar")); evDelete.disabled = false; return; }
     try{
-      await mcp.callTool("Google Calendar", "delete_event", { eventId: editingEvent.id, calendarId: editingEventCalendarId });
-      await mcp.invalidate("Google Calendar", "list_events").catch(function(){});
+      await apiFetch("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), { method: "DELETE" });
       editingEvent = null;
       editingEventCalendarId = null;
       closeEventModal();
       loadAndRenderCalendar();
+      initCalendarWatch();
     } catch(err){
-      showFormError(mcpErrorMessage(err, "Google Calendar"));
+      showFormError(apiErrorMessage(err, "Google Calendar"));
     } finally {
       evDelete.disabled = false;
     }
@@ -2592,12 +2542,14 @@
   document.addEventListener("cyberportal:authready", function(){
     loadGmailUnreadCount();
     loadHarukaMail();
+    initCalendarWatch();
   });
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
   // (モジュールスクリプトの実行順は保証されないため)にも対応する。
   if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
     loadGmailUnreadCount();
     loadHarukaMail();
+    initCalendarWatch();
   }
 
 })();
