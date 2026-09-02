@@ -143,6 +143,12 @@
     return res.json();
   }
 
+  // Google連携APIのパスに ?account=haruka|syslea を付ける
+  function acctPath(path, account){
+    var sep = path.indexOf("?") === -1 ? "?" : "&";
+    return path + sep + "account=" + encodeURIComponent(account || "haruka");
+  }
+
   var API_ERROR_MESSAGES = {
     unauthenticated: "ログインが必要です。画面を再読み込みしてください。",
     invalid_token: "認証の有効期限が切れました。再ログインしてください。",
@@ -527,24 +533,25 @@
   // 旧MCPのwatchTool方式は廃止し、読み込み時と更新ボタン押下時に単発フェッチする。
   async function initCalendarWatch(){
     var acct = schedAccount;
+    var label = acct === "syslea" ? "SYSLEA" : "はるか";
     if (schedRefreshBtn){ schedRefreshBtn.classList.remove("spinning"); }
-    if (acct !== "haruka"){
-      schedSourceLabel.textContent = "カレンダー連携: SYSLEAは未対応";
-      schedList.innerHTML = '<li class="sched-empty">SYSLEA アカウントのカレンダーは接続できません</li>';
-      if (schedRefreshBtn) schedRefreshBtn.disabled = false;
-      return;
-    }
     schedList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
     try{
-      var res = await apiFetch("/api/google/calendar/today");
+      var res = await apiFetch(acctPath("/api/google/calendar/today", acct));
       if (acct !== schedAccount) return;
       renderEvents(res.events || []);
-      schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (はるか)';
+      schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (' + label + ')';
       schedUpdated.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(new Date()) + " 時点";
     } catch(err){
       if (acct !== schedAccount) return;
-      schedSourceLabel.textContent = "カレンダー取得エラー";
-      schedList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
+      if (err && err.code === "google_not_connected"){
+        schedSourceLabel.textContent = "カレンダー連携: " + label + " 未連携";
+        schedList.innerHTML = "";
+        schedList.appendChild(buildConnectPrompt(acct, label));
+      } else {
+        schedSourceLabel.textContent = "カレンダー取得エラー";
+        schedList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
+      }
     } finally {
       if (acct === schedAccount && schedRefreshBtn){
         schedRefreshBtn.classList.remove("spinning");
@@ -593,8 +600,7 @@
     }
     if (name === "mail" && !mailInitialized){
       mailInitialized = true;
-      if (mailState.account === "haruka") loadHarukaMail();
-      else renderMailList();
+      loadHarukaMail();
     }
     if (name === "tasks" && !tasksInitialized){
       tasksInitialized = true;
@@ -705,26 +711,42 @@
     calStatusBar.innerHTML = html;
   }
 
+  function calAccountLabel(){ return calState.account === "syslea" ? "SYSLEA" : "はるか"; }
+
   async function loadAndRenderCalendar(){
     updateViewButtons();
     var token = ++calLoadToken;
-    if (calState.account !== "haruka"){
-      setCalStatus("SYSLEA アカウントのカレンダーは接続できません", "err");
-      calGridContainer.innerHTML = '<div class="sched-error" style="padding:24px 4px;">SYSLEA アカウントのカレンダーは接続できません(Googleコネクタは1アカウントのみ対応)</div>';
-      return;
-    }
     var range = getFetchRange();
     var bounds = jstRangeForKeys(range.start, range.endExclusive);
     setCalStatus("読み込み中…", "");
+    var acct = calState.account;
     try{
-      var res = await apiFetch("/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end));
+      var res = await apiFetch(acctPath("/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end), acct));
       if (token !== calLoadToken) return;
       calState.events = res.events || [];
       calState.loadedCalendarId = "primary";
       renderCalendarView();
-      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (はるか)', "");
+      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (' + escapeHtml(calAccountLabel()) + ')', "");
     } catch(err){
       if (token !== calLoadToken) return;
+      if (err && err.code === "google_not_connected"){
+        setCalStatus(escapeHtml(calAccountLabel() + " の Google アカウントが未連携です"), "");
+        calGridContainer.innerHTML = '';
+        calGridContainer.appendChild((function(){
+          var wrap = document.createElement("div");
+          wrap.style.cssText = "padding:32px 8px; text-align:center;";
+          var p = document.createElement("div");
+          p.textContent = calAccountLabel() + " の Google アカウントはまだ連携していません。";
+          p.style.marginBottom = "12px";
+          var btn = document.createElement("button");
+          btn.type = "button"; btn.className = "inbox-reconnect"; btn.style.display = "inline-block";
+          btn.textContent = calAccountLabel() + " を Google 連携";
+          btn.addEventListener("click", function(){ startGoogleConnect(acct); });
+          wrap.appendChild(p); wrap.appendChild(btn);
+          return wrap;
+        })());
+        return;
+      }
       var msg = apiErrorMessage(err, "Google Calendar");
       setCalStatus(escapeHtml(msg), "err");
       calGridContainer.innerHTML = '<div class="sched-error" style="padding:24px 4px;">' + escapeHtml(msg) + '</div>';
@@ -1087,11 +1109,11 @@
 
     try{
       if (editingEvent){
-        await apiFetch("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), {
+        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calState.account), {
           method: "PATCH", body: JSON.stringify(input)
         });
       } else {
-        await apiFetch("/api/google/calendar/events", {
+        await apiFetch(acctPath("/api/google/calendar/events", calState.account), {
           method: "POST", body: JSON.stringify(input)
         });
       }
@@ -1110,7 +1132,7 @@
     if (!(await askConfirm('「' + (editingEvent.summary || "この予定") + '」を削除しますか?'))) return;
     evDelete.disabled = true;
     try{
-      await apiFetch("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), { method: "DELETE" });
+      await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calState.account), { method: "DELETE" });
       editingEvent = null;
       editingEventCalendarId = null;
       closeEventModal();
@@ -1135,19 +1157,6 @@
      一覧の日時・件名はスレッド内の最も古いメッセージ基準(Gmail連携ツールの仕様上の制約)。
      返信で伸びたスレッドは表示上わずかに古い時刻になることがあるが、詳細を開くと
      get_thread でスレッド全体を取得するのでそちらは正確。 */
-  var MAIL_DATA = {
-    syslea: [
-      { from: "田中 (SYSLEA)", initial: "田", subject: "明日の定例MTGの資料共有", snippet: "明日10時からの定例ミーティングで使う資料を共有します。", time: "10:05", unread: true,
-        body: "満光さん\n\nお疲れ様です、田中です。\n明日10時からの定例ミーティングで使用する資料を共有します。事前にご確認をお願いします。\n\n※これはダミーデータです。実際のメールではありません。" },
-      { from: "情報システム部", initial: "情", subject: "【重要】パスワード定期更新のお願い", snippet: "セキュリティポリシーに基づき、パスワードの更新期限が近づいています。", time: "8:50", unread: true,
-        body: "満光様\n\n社内システムのパスワード更新期限が来週に迫っています。\n期限までに更新をお願いいたします。\n\n※これはダミーデータです。実際のメールではありません。" },
-      { from: "佐藤マネージャー", initial: "佐", subject: "先日のご提案、ありがとうございました", snippet: "先日の資料、とても分かりやすかったです。来週の…", time: "昨日", unread: false,
-        body: "満光さん\n\n先日の提案資料、とても分かりやすくまとまっていました。ありがとうございます。\n来週の打ち合わせで詳細を詰めましょう。\n\n※これはダミーデータです。実際のメールではありません。" },
-      { from: "人事部", initial: "人", subject: "年末調整書類の提出について", snippet: "年末調整に必要な書類の提出期限をお知らせします。", time: "3日前", unread: false,
-        body: "満光様\n\n年末調整に必要な書類の提出期限は月末までとなっております。\nご協力をお願いいたします。\n\n※これはダミーデータです。実際のメールではありません。" }
-    ]
-  };
-
   var mailState = { account: "haruka", filter: "all", pageIndex: 0 };
   var MAIL_PAGE_SIZE = 20;
   var mailList = document.getElementById("mail-list");
@@ -1171,12 +1180,16 @@
   // トークン失効やスコープ変更に備えて「再連携」ボタンを常時出しておく。
   // 押すとバックエンドから認可URLを取得して遷移する。
   var googleConnecting = false;
-  async function startGoogleConnect(){
+  // account = "haruka" | "syslea"。指定した枠のGoogle同意フローへ遷移する。
+  async function startGoogleConnect(account){
+    var acct = account === "syslea" ? "syslea" : "haruka";
     googleConnecting = true;
-    homeGoogleConnectBtn.disabled = true;
-    homeGoogleConnectBtn.textContent = "連携ページへ移動中…";
+    if (acct === "haruka"){
+      homeGoogleConnectBtn.disabled = true;
+      homeGoogleConnectBtn.textContent = "連携ページへ移動中…";
+    }
     try {
-      var res = await apiFetch("/api/google/oauth/start");
+      var res = await apiFetch(acctPath("/api/google/oauth/start", acct));
       if (res && res.url){
         window.location.href = res.url;
       } else {
@@ -1185,11 +1198,32 @@
     } catch (err) {
       console.error("[google] oauth start failed:", err);
       googleConnecting = false;
-      homeGoogleConnectBtn.disabled = false;
-      homeGoogleConnectBtn.textContent = "連携に失敗。もう一度";
+      if (acct === "haruka"){
+        homeGoogleConnectBtn.disabled = false;
+        homeGoogleConnectBtn.textContent = "連携に失敗。もう一度";
+      }
     }
   }
-  homeGoogleConnectBtn.addEventListener("click", startGoogleConnect);
+  homeGoogleConnectBtn.addEventListener("click", function(){ startGoogleConnect("haruka"); });
+
+  // 未連携アカウント向けの「連携する」プロンプト(<li>を返す)
+  function buildConnectPrompt(account, label){
+    var li = document.createElement("li");
+    li.className = "sched-empty";
+    li.style.textAlign = "center";
+    li.style.padding = "26px 8px";
+    var p = document.createElement("div");
+    p.textContent = label + " の Google アカウントはまだ連携していません。";
+    p.style.marginBottom = "12px";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "inbox-reconnect";
+    btn.style.display = "inline-block";
+    btn.textContent = label + " を Google 連携";
+    btn.addEventListener("click", function(){ startGoogleConnect(account); });
+    li.appendChild(p); li.appendChild(btn);
+    return li;
+  }
 
   var harukaMailItems = null; // null = 未取得; [] = 取得済み(空)
   var harukaMailError = null;
@@ -1203,7 +1237,7 @@
   var harukaUnreadError = null;
   async function loadGmailUnreadCount(){
     try{
-      var res = await apiFetch("/api/google/gmail/unread-count");
+      var res = await apiFetch(acctPath("/api/google/gmail/unread-count", "haruka"));
       harukaUnreadCount = res.unreadCount;
       harukaUnreadError = null;
     } catch(err){
@@ -1231,7 +1265,7 @@
     var tok = mailPageTokens[mailState.pageIndex];
     if (tok) params += "&pageToken=" + encodeURIComponent(tok);
     if (mailState.filter === "unread") params += "&unreadOnly=1";
-    apiFetch("/api/google/gmail/messages" + params).then(function(res){
+    apiFetch(acctPath("/api/google/gmail/messages" + params, mailState.account)).then(function(res){
       var messages = res.messages || [];
       harukaMailItems = messages.map(function(m){
         return {
@@ -1277,20 +1311,22 @@
     mailStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
   }
 
+  function mailAccountLabel(){
+    return mailState.account === "syslea" ? "SYSLEA" : "はるか個人";
+  }
   function updateMailHeaderUI(){
-    if (mailState.account === "haruka"){
-      mailTag.hidden = true;
-      if (harukaMailError){
-        setMailStatus(escapeHtml(apiErrorMessage(harukaMailError, "Gmail")), "err");
-      } else if (!harukaMailItems){
-        setMailStatus("接続確認中…", "");
+    mailTag.hidden = true;
+    var label = mailAccountLabel();
+    if (harukaMailError){
+      if (harukaMailError.code === "google_not_connected"){
+        setMailStatus(escapeHtml(label + " の Google アカウントが未連携です"), "");
       } else {
-        setMailStatus('<span class="live">●</span> Gmail 連携中(はるか個人)', "");
+        setMailStatus(escapeHtml(apiErrorMessage(harukaMailError, "Gmail")), "err");
       }
+    } else if (!harukaMailItems){
+      setMailStatus("接続確認中…", "");
     } else {
-      mailTag.hidden = false;
-      mailTag.textContent = "仮データ";
-      setMailStatus("Gmailコネクタは1アカウントのみ接続可能なため、SYSLEA側はダミーデータを表示しています", "");
+      setMailStatus('<span class="live">●</span> Gmail 連携中(' + escapeHtml(label) + ')', "");
     }
   }
 
@@ -1334,7 +1370,7 @@
   }
 
   function updateMailPager(){
-    if (mailState.account !== "haruka" || harukaMailError || !harukaMailItems){
+    if (harukaMailError || !harukaMailItems){
       mailPager.hidden = true;
       return;
     }
@@ -1354,40 +1390,29 @@
     updateMailHeaderUI();
     mailList.innerHTML = "";
 
-    if (mailState.account === "haruka"){
-      if (harukaMailError){
+    if (harukaMailError){
+      if (harukaMailError.code === "google_not_connected"){
+        mailList.appendChild(buildConnectPrompt(mailState.account, mailAccountLabel()));
+      } else {
         mailList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(harukaMailError, "Gmail")) + '</li>';
-        updateMailPager();
-        return;
       }
-      if (!harukaMailItems || harukaMailLoading){
-        mailList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
-        updateMailPager();
-        return;
-      }
-      if (!harukaMailItems.length){
-        mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
-        updateMailPager();
-        return;
-      }
-      harukaMailItems.forEach(function(mail){
-        mailList.appendChild(buildMailListItem(mail, function(){ openMailDetail(mail); }));
-      });
       updateMailPager();
       return;
     }
-
-    mailPager.hidden = true;
-    var items = (MAIL_DATA[mailState.account] || []).filter(function(m){
-      return mailState.filter === "unread" ? m.unread : true;
-    });
-    if (!items.length){
-      mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
+    if (!harukaMailItems || harukaMailLoading){
+      mailList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
+      updateMailPager();
       return;
     }
-    items.forEach(function(mail){
+    if (!harukaMailItems.length){
+      mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
+      updateMailPager();
+      return;
+    }
+    harukaMailItems.forEach(function(mail){
       mailList.appendChild(buildMailListItem(mail, function(){ openMailDetail(mail); }));
     });
+    updateMailPager();
   }
 
   function buildMailFromRow(mail, addrText){
@@ -1424,7 +1449,7 @@
       document.body.style.overflow = "hidden";
       renderMailList(); // refresh unread dot state
       try{
-        var res = await apiFetch("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId));
+        var res = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId), mailState.account));
         bodyEl.textContent = res.body || mail.snippet || "(本文がありません)";
       } catch(err){
         bodyEl.textContent = apiErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
@@ -1446,7 +1471,7 @@
     mailModal.hidden = true;
     document.body.style.overflow = "";
     // 未読タブでメールを開くと既読になるので、現在ページを取り直して一覧から消す。
-    if (mailState.account === "haruka" && mailState.filter === "unread" && !harukaMailLoading){
+    if (mailState.filter === "unread" && !harukaMailLoading && !harukaMailError){
       fetchMailPage();
     }
   }
@@ -1456,8 +1481,11 @@
 
   wireAcctTabs("mail-acct-tabs", function(){ return mailState.account; }, function(acct){
     mailState.account = acct;
-    if (acct === "haruka") loadHarukaMail();
-    else renderMailList();
+    mailState.filter = "all";
+    document.querySelectorAll("#mail-filter-tabs .acct-tab").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-filter") === "all");
+    });
+    reloadMailFromFirstPage();
   });
 
   // すべて / 未読 タブ。はるか側はサーバーで絞り込むため1ページ目から取り直す。
@@ -1469,8 +1497,7 @@
         b.classList.toggle("active", b === btn);
       });
       mailState.filter = f;
-      if (mailState.account === "haruka") reloadMailFromFirstPage();
-      else renderMailList();
+      reloadMailFromFirstPage();
     });
   });
 
