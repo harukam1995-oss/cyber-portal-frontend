@@ -3481,13 +3481,32 @@
     try { localStorage.setItem(NOTIF_LAST_UNREAD_KEY, String(cur)); } catch(e){}
   }
 
+  function positionNotifPanel(){
+    if (!notifPanel || !notifBtn) return;
+    var mobile = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+    if (mobile){
+      // モバイルは CSS(position:fixed の固定オフセット)に任せる
+      notifPanel.style.top = ""; notifPanel.style.right = ""; notifPanel.style.left = "";
+      return;
+    }
+    notifPanel.style.left = "";
+    var r = notifBtn.getBoundingClientRect();
+    var pw = notifPanel.offsetWidth || 300;
+    var right = Math.max(8, window.innerWidth - r.right);
+    if (right + pw > window.innerWidth - 8) right = window.innerWidth - pw - 8;
+    notifPanel.style.top = Math.round(r.bottom + 10) + "px";
+    notifPanel.style.right = Math.round(right) + "px";
+  }
+
   function openNotifPanel(){
     if (!notifPanel) return;
     refreshNotifCenter();
     notifPanel.hidden = false;
+    positionNotifPanel();
     if (notifBtn) notifBtn.setAttribute("aria-expanded", "true");
     document.addEventListener("mousedown", onNotifOutside, true);
     document.addEventListener("keydown", onNotifEsc, true);
+    window.addEventListener("resize", positionNotifPanel);
   }
   function closeNotifPanel(){
     if (!notifPanel) return;
@@ -3495,6 +3514,7 @@
     if (notifBtn) notifBtn.setAttribute("aria-expanded", "false");
     document.removeEventListener("mousedown", onNotifOutside, true);
     document.removeEventListener("keydown", onNotifEsc, true);
+    window.removeEventListener("resize", positionNotifPanel);
   }
   function onNotifOutside(e){
     if (notifPanel && !notifPanel.contains(e.target) && notifBtn && !notifBtn.contains(e.target)){

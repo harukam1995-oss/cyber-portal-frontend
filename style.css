@@ -136,9 +136,12 @@
   .dot-badge[hidden]{ display:none; }
 
   /* ---------- 通知センター(ベル) ---------- */
+  /* 各 .panel は backdrop-filter で独自のスタッキングコンテキストを作るため、
+     ヘッダー内に absolute で置くと後続の .hero パネルに隠れる。position:fixed +
+     高い z-index で全パネルより前面に出し、位置は JS がベルの座標から算出する。 */
   .notif-wrap{ position:relative; display:flex; }
   .notif-panel{
-    position:absolute; top:calc(100% + 10px); right:0; z-index:75;
+    position:fixed; top:64px; right:28px; z-index:85;
     width:300px; max-width:calc(100vw - 24px);
     background: var(--panel-solid); border:1px solid var(--panel-border);
     border-radius:12px; box-shadow: 0 18px 50px rgba(0,0,0,0.55);
