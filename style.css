@@ -840,6 +840,82 @@
   .event-popover-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
   .event-popover-actions .ev-btn{ padding:5px 14px; font-size:11.5px; }
 
+  /* ---------- アイデア帳(Obsidian vault ビューア) ---------- */
+  .ideas-crumbs{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .ideas-crumb{
+    background:none; border:none; padding:2px 4px; cursor:pointer;
+    font-family: var(--font-body); font-size:12px; color: var(--cyan);
+    border-radius:4px;
+  }
+  .ideas-crumb:hover:not(:disabled){ background: rgba(44,227,255,0.1); }
+  .ideas-crumb:disabled{ color: var(--text); cursor:default; }
+  .ideas-crumb-sep{ color: var(--text-faint); }
+
+  .ideas-list{ list-style:none; margin:0; padding:6px 0; }
+  .ideas-item{
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; cursor:pointer; border-radius:8px;
+    border:1px solid transparent;
+  }
+  .ideas-item:hover, .ideas-item:focus{ background: rgba(255,255,255,0.03); border-color: var(--hairline); outline:none; }
+  .ideas-item:focus-visible{ border-color: var(--cyan); }
+  .ideas-icon{ flex:none; font-size:15px; line-height:1; }
+  .ideas-name{ font-size:13.5px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ideas-item.ideas-folder .ideas-name{ color: var(--text-dim); }
+
+  .ideas-note{ padding:6px 4px 24px; }
+  .ideas-note-back{
+    background:none; border:1px solid var(--panel-border); border-radius:7px;
+    color: var(--text-dim); font-family: var(--font-body); font-size:12px;
+    padding:5px 12px; cursor:pointer; margin-bottom:16px;
+  }
+  .ideas-note-back:hover{ border-color: var(--cyan); color: var(--text); }
+  .ideas-note-title{
+    font-family: var(--font-display); font-size:20px; letter-spacing:.5px;
+    color: var(--text); margin:0 0 16px;
+    border-bottom:1px solid var(--hairline); padding-bottom:12px;
+  }
+
+  /* ---- 簡易 Markdown 出力 ---- */
+  .md-body{ font-size:14px; line-height:1.7; color: var(--text-dim); max-width:760px; }
+  .md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6{
+    color: var(--text); font-family: var(--font-body); font-weight:700;
+    line-height:1.35; margin:1.4em 0 .55em;
+  }
+  .md-body h1{ font-size:1.6em; } .md-body h2{ font-size:1.35em; }
+  .md-body h3{ font-size:1.15em; } .md-body h4{ font-size:1em; }
+  .md-body h5, .md-body h6{ font-size:.9em; color: var(--text-dim); }
+  .md-body p{ margin:.7em 0; }
+  .md-body ul, .md-body ol{ margin:.6em 0; padding-left:1.5em; }
+  .md-body li{ margin:.25em 0; }
+  .md-body li.md-task{ list-style:none; margin-left:-1.3em; }
+  .md-body li.md-task input{ margin-right:7px; }
+  .md-body a{ color: var(--cyan); text-decoration:none; border-bottom:1px solid rgba(44,227,255,0.3); }
+  .md-body a:hover{ border-bottom-color: var(--cyan); }
+  .md-body code{
+    font-family: var(--font-mono); font-size:.88em;
+    background: rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; color: var(--text);
+  }
+  .md-body pre.md-pre{
+    background: var(--bg-deep); border:1px solid var(--hairline); border-radius:8px;
+    padding:12px 14px; overflow-x:auto; margin:.9em 0;
+  }
+  .md-body pre.md-pre code{ background:none; padding:0; font-size:12.5px; line-height:1.6; color: var(--text-dim); }
+  .md-body blockquote{
+    margin:.9em 0; padding:.3em 0 .3em 14px;
+    border-left:3px solid var(--magenta-dim); color: var(--text-faint);
+  }
+  .md-body blockquote p{ margin:.35em 0; }
+  .md-body hr{ border:none; border-top:1px solid var(--hairline); margin:1.5em 0; }
+  .md-body .wl{ color: var(--cyan); background: rgba(44,227,255,0.08); padding:0 4px; border-radius:3px; }
+  .md-body del{ color: var(--text-faint); }
+  .md-frontmatter{
+    font-family: var(--font-mono); font-size:11.5px; line-height:1.6;
+    white-space:pre-wrap; color: var(--text-faint);
+    background: rgba(255,255,255,0.02); border:1px solid var(--hairline);
+    border-radius:8px; padding:10px 12px; margin-bottom:16px;
+  }
+
   /* ================= モバイル(<=640px) =================
      このポータルは基本デスクトップ前提。スマホでは:
      - ヒーローのイラスト/スカイラインは非表示(時計・天気・ひとことは残す)

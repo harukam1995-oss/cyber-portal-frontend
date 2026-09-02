@@ -606,11 +606,13 @@
   var viewMail = document.getElementById("view-mail");
   var viewTasks = document.getElementById("view-tasks");
   var viewNotes = document.getElementById("view-notes");
+  var viewIdeas = document.getElementById("view-ideas");
   var navHome = document.getElementById("nav-home");
   var calInitialized = false;
   var mailInitialized = false;
   var tasksInitialized = false;
   var notesInitialized = false;
+  var ideasInitialized = false;
 
   function showView(name){
     viewHome.hidden = name !== "home";
@@ -618,6 +620,7 @@
     viewMail.hidden = name !== "mail";
     viewTasks.hidden = name !== "tasks";
     viewNotes.hidden = name !== "notes";
+    viewIdeas.hidden = name !== "ideas";
     navHome.classList.toggle("active", name === "home");
     if (name === "calendar"){
       if (!calInitialized){
@@ -640,6 +643,11 @@
       notesInitialized = true;
       initNotes();
     }
+    if (name === "ideas" && !ideasInitialized){
+      ideasInitialized = true;
+      ideasStack = [{ id: null, name: "Obsidian" }];
+      ideasOpenFolder(null, "Obsidian", true);
+    }
     window.scrollTo(0, 0);
   }
 
@@ -647,11 +655,13 @@
   document.getElementById("quick-mail").addEventListener("click", function(){ showView("mail"); });
   document.getElementById("quick-tasks").addEventListener("click", function(){ showView("tasks"); });
   document.getElementById("quick-notes").addEventListener("click", function(){ showView("notes"); });
+  document.getElementById("quick-ideas").addEventListener("click", function(){ showView("ideas"); });
   navHome.addEventListener("click", function(e){ e.preventDefault(); showView("home"); });
   document.getElementById("cal-back").addEventListener("click", function(){ showView("home"); });
   document.getElementById("mail-back").addEventListener("click", function(){ showView("home"); });
   document.getElementById("tasks-back").addEventListener("click", function(){ showView("home"); });
   document.getElementById("notes-back").addEventListener("click", function(){ showView("home"); });
+  document.getElementById("ideas-back").addEventListener("click", function(){ showView("home"); });
   document.querySelectorAll(".nav a[aria-disabled]").forEach(function(a){
     a.addEventListener("click", function(e){ e.preventDefault(); });
   });
@@ -3010,6 +3020,260 @@
         if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
       }
     });
+  }
+
+  /* ================= アイデア帳(Obsidian vault ビューア) =================
+     マイドライブの「Obsidian」フォルダを Google Drive API(読み取り専用)で辿り、
+     .md ファイルを簡易 Markdown レンダラで表示する。
+     機密ノート(frontmatter 機密:true)はバックエンドが本文を返さないので
+     「機密ノートのため表示しません」とだけ出す。 */
+  var ideasBody = document.getElementById("ideas-body");
+  var ideasCrumbs = document.getElementById("ideas-crumbs");
+  var ideasStatusBar = document.getElementById("ideas-status-bar");
+  var ideasStack = [{ id: null, name: "Obsidian" }]; // [{id,name}]; id=null は vault ルート
+  var ideasLoadToken = 0;
+
+  function setIdeasStatus(html, cls){
+    ideasStatusBar.innerHTML = html;
+    ideasStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
+  }
+
+  function renderIdeasCrumbs(){
+    ideasCrumbs.innerHTML = "";
+    ideasStack.forEach(function(node, idx){
+      if (idx > 0){
+        var sep = document.createElement("span");
+        sep.className = "ideas-crumb-sep";
+        sep.textContent = "/";
+        ideasCrumbs.appendChild(sep);
+      }
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "ideas-crumb";
+      b.textContent = node.name;
+      b.disabled = idx === ideasStack.length - 1;
+      b.addEventListener("click", function(){
+        ideasStack = ideasStack.slice(0, idx + 1);
+        ideasOpenFolder(node.id, node.name, true);
+      });
+      ideasCrumbs.appendChild(b);
+    });
+  }
+
+  function ideasErrorInto(container, err){
+    if (err && err.code === "google_not_connected"){
+      container.innerHTML = "";
+      container.appendChild(buildConnectPrompt("haruka", "はるか"));
+      return;
+    }
+    var msg = (err && err.code === "vault_not_found")
+      ? "マイドライブに『Obsidian』フォルダが見つかりませんでした。"
+      : apiErrorMessage(err, "Google Drive");
+    container.innerHTML = '<div class="sched-error" style="padding:20px 4px;">' + escapeHtml(msg) + "</div>";
+  }
+
+  async function ideasOpenFolder(folderId, folderName, fromCrumbOrRoot){
+    if (!fromCrumbOrRoot){
+      ideasStack.push({ id: folderId, name: folderName });
+    }
+    renderIdeasCrumbs();
+    var token = ++ideasLoadToken;
+    ideasBody.innerHTML = mailSkeletonHtml(5);
+    setIdeasStatus("読み込み中…", "");
+    try {
+      var qs = folderId ? "?folder=" + encodeURIComponent(folderId) : "";
+      var res = await apiFetch("/api/drive/notes" + qs);
+      if (token !== ideasLoadToken) return;
+      renderIdeasList(res.items || []);
+      setIdeasStatus('<span class="live">●</span> Obsidian vault (Google Drive・読み取り専用)', "");
+    } catch(err){
+      if (token !== ideasLoadToken) return;
+      setIdeasStatus(escapeHtml(apiErrorMessage(err, "Google Drive")), "err");
+      ideasErrorInto(ideasBody, err);
+    }
+  }
+
+  function renderIdeasList(items){
+    if (!items.length){
+      ideasBody.innerHTML = '<div class="sched-empty">このフォルダに .md ファイル・サブフォルダはありません</div>';
+      return;
+    }
+    var ul = document.createElement("ul");
+    ul.className = "ideas-list";
+    items.forEach(function(it){
+      var li = document.createElement("li");
+      li.className = "ideas-item ideas-" + it.type;
+      li.setAttribute("tabindex", "0");
+      var icon = document.createElement("span");
+      icon.className = "ideas-icon";
+      icon.textContent = it.type === "folder" ? "📁" : "📄";
+      var name = document.createElement("span");
+      name.className = "ideas-name";
+      name.textContent = it.type === "file" ? it.name.replace(/\.md$/i, "") : it.name;
+      li.appendChild(icon); li.appendChild(name);
+      var open = function(){
+        if (it.type === "folder") ideasOpenFolder(it.id, it.name);
+        else ideasOpenNote(it.id, it.name);
+      };
+      li.addEventListener("click", open);
+      li.addEventListener("keydown", function(e){
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); }
+      });
+      ul.appendChild(li);
+    });
+    ideasBody.innerHTML = "";
+    ideasBody.appendChild(ul);
+  }
+
+  async function ideasOpenNote(id, filename){
+    var token = ++ideasLoadToken;
+    ideasBody.innerHTML = '<div class="sched-empty">読み込み中…</div>';
+    setIdeasStatus(escapeHtml(filename.replace(/\.md$/i, "")), "");
+    try {
+      var res = await apiFetch("/api/drive/notes/" + encodeURIComponent(id));
+      if (token !== ideasLoadToken) return;
+      var wrap = document.createElement("div");
+      wrap.className = "ideas-note";
+      var back = document.createElement("button");
+      back.type = "button";
+      back.className = "ideas-note-back";
+      back.textContent = "← 一覧に戻る";
+      back.addEventListener("click", function(){
+        var cur = ideasStack[ideasStack.length - 1];
+        ideasOpenFolder(cur.id, cur.name, true);
+      });
+      wrap.appendChild(back);
+      var h = document.createElement("h1");
+      h.className = "ideas-note-title";
+      h.textContent = (res.name || filename).replace(/\.md$/i, "");
+      wrap.appendChild(h);
+      var art = document.createElement("div");
+      art.className = "md-body";
+      if (res.confidential){
+        art.innerHTML = '<div class="md-frontmatter">🔒 機密ノートのため表示しません。</div>';
+      } else {
+        art.innerHTML = renderMarkdown(res.content || "");
+      }
+      wrap.appendChild(art);
+      ideasBody.innerHTML = "";
+      ideasBody.appendChild(wrap);
+      setIdeasStatus('<span class="live">●</span> ' + escapeHtml((res.name || filename).replace(/\.md$/i, "")), "");
+    } catch(err){
+      if (token !== ideasLoadToken) return;
+      setIdeasStatus(escapeHtml(apiErrorMessage(err, "Google Drive")), "err");
+      ideasErrorInto(ideasBody, err);
+    }
+  }
+
+  document.getElementById("ideas-refresh").addEventListener("click", function(){
+    var cur = ideasStack[ideasStack.length - 1] || { id: null, name: "Obsidian" };
+    ideasOpenFolder(cur.id, cur.name, true);
+  });
+
+  /* 簡易 Markdown レンダラ。Obsidian ノート閲覧に必要な範囲だけ対応:
+     見出し / 箇条書き・番号リスト / 引用 / 水平線 / フェンスコード /
+     太字・斜体・打消し・インラインコード / 通常リンク / ウィキリンク(表示のみ) /
+     チェックボックス / frontmatter(そのまま淡色表示)。テーブルは非対応。 */
+  function renderMarkdown(src){
+    src = String(src == null ? "" : src).replace(/\r\n?/g, "\n");
+    var lines = src.split("\n");
+    var out = [];
+    var i = 0;
+    var inList = null; // 'ul' | 'ol' | null
+
+    function closeList(){ if (inList){ out.push("</" + inList + ">"); inList = null; } }
+
+    function inlineMd(s){
+      s = escapeHtml(s);
+      var codes = [];
+      s = s.replace(/`([^`]+)`/g, function(_, c){ codes.push(c); return "" + (codes.length - 1) + ""; });
+      s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, function(_, alt){ return "🖼 " + (alt || "画像"); });
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      s = s.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function(_, page, alias){
+        return '<span class="wl">' + (alias || page) + "</span>";
+      });
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+      s = s.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, "$1<em>$2</em>");
+      s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      s = s.replace(/(\d+)/g, function(_, n){ return "<code>" + codes[+n] + "</code>"; });
+      return s;
+    }
+
+    // frontmatter
+    if (lines[0] === "---"){
+      var j = 1;
+      var fm = [];
+      while (j < lines.length && lines[j] !== "---"){ fm.push(lines[j]); j++; }
+      if (j < lines.length){
+        out.push('<div class="md-frontmatter">' + escapeHtml(fm.join("\n")) + "</div>");
+        i = j + 1;
+      }
+    }
+
+    for (; i < lines.length; i++){
+      var line = lines[i];
+
+      var fence = line.match(/^```/);
+      if (fence){
+        closeList();
+        var code = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])){ code.push(lines[i]); i++; }
+        out.push('<pre class="md-pre"><code>' + escapeHtml(code.join("\n")) + "</code></pre>");
+        continue;
+      }
+
+      if (/^\s*$/.test(line)){ closeList(); continue; }
+
+      if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line)){ closeList(); out.push("<hr>"); continue; }
+
+      var h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h){ closeList(); out.push("<h" + h[1].length + ">" + inlineMd(h[2]) + "</h" + h[1].length + ">"); continue; }
+
+      if (/^\s*>\s?/.test(line)){
+        closeList();
+        var bq = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])){ bq.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+        i--;
+        out.push("<blockquote>" + renderMarkdown(bq.join("\n")) + "</blockquote>");
+        continue;
+      }
+
+      var li = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+      if (li){
+        var ordered = /\d/.test(li[2]);
+        var type = ordered ? "ol" : "ul";
+        if (inList && inList !== type) closeList();
+        if (!inList){ out.push("<" + type + ">"); inList = type; }
+        var body = li[3];
+        var task = body.match(/^\[([ xX])\]\s+(.*)$/);
+        if (task){
+          out.push('<li class="md-task"><input type="checkbox" disabled' +
+            (/[xX]/.test(task[1]) ? " checked" : "") + "> " + inlineMd(task[2]) + "</li>");
+        } else {
+          out.push("<li>" + inlineMd(body) + "</li>");
+        }
+        continue;
+      }
+
+      closeList();
+      var para = [line];
+      while (i + 1 < lines.length && !/^\s*$/.test(lines[i + 1]) &&
+        !/^```/.test(lines[i + 1]) &&
+        !/^(#{1,6})\s/.test(lines[i + 1]) &&
+        !/^\s*>\s?/.test(lines[i + 1]) &&
+        !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[i + 1]) &&
+        !/^\s*([-*_])\s*(\1\s*){2,}$/.test(lines[i + 1])){
+        i++;
+        para.push(lines[i]);
+      }
+      out.push("<p>" + para.map(inlineMd).join("<br>") + "</p>");
+    }
+    closeList();
+    return out.join("\n");
   }
 
   // ログイン完了(auth-gate側の type="module" スクリプトが発火)後に、
