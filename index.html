@@ -92,9 +92,8 @@
 
       <div class="hud-quote" id="hud-quote">「未来は、準備された者の味方。」</div>
 
-      <!-- 天気ウィジェットは今回の移行スコープから除外(AccuWeather無料枠廃止のため)。
-           マークアップは残しつつ hidden にしている。再開する場合はここを外す。 -->
-      <div class="hud-weather" hidden>
+      <!-- 天気ウィジェット。Open-Meteo(APIキー不要)をバックエンド /api/weather 経由で取得。 -->
+      <div class="hud-weather">
         <div class="place">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a79fc9" stroke-width="2"><path d="M17.5 19H9a5 5 0 1 1 1.7-9.7A6 6 0 0 1 22 11.5a3.5 3.5 0 0 1-3.5 3.5"/></svg>
           <span id="weather-summary">読み込み中…</span>
@@ -103,7 +102,7 @@
           <div class="temp" id="weather-range">--° / --°</div>
         </div>
       </div>
-      <div class="weather-note" id="weather-note" hidden>接続確認中…</div>
+      <div class="weather-note" id="weather-note">接続確認中…</div>
     </div>
 
     <div class="scene" aria-hidden="true" id="hero-scene">

@@ -249,49 +249,32 @@
   tick();
   setInterval(tick, 1000);
 
-  /* ================= weather (AccuWeather) =================
-     柏市固定。locationKey は "Kashiwa, Chiba, Japan" で widgets-search-claude を検索して
-     得たもの("柏, 千葉県" / 1509903) をそのまま使う — 毎回検索し直す必要はない。
-     気象警報(注意報等)が出ている場合はそれも一言添える。 */
-  var WEATHER_LOCATION_KEY = "1509903"; // 柏, 千葉県
+  /* ================= weather (Open-Meteo 経由・バックエンド) =================
+     APIキー不要の無料天気API。既定は柏市。バックエンド /api/weather が
+     現在の気温・今日の最高/最低・降水確率などを返す。 */
   var elWeatherSummary = document.getElementById("weather-summary");
   var elWeatherRange = document.getElementById("weather-range");
   var elWeatherNote = document.getElementById("weather-note");
 
   async function loadWeather(){
-    var mcp = await getMcp();
-    if (!mcp){ elWeatherNote.textContent = "天気を取得できませんでした(接続なし)"; return; }
     try{
-      var current = await mcp.callTool("AccuWeather®", "widgets-current-claude", {
-        queryParams: { locationKey: WEATHER_LOCATION_KEY, unit: "metric", lang: "ja" }
-      });
-      var daily = await mcp.callTool("AccuWeather®", "widgets-daily-claude", {
-        queryParams: { locationKey: WEATHER_LOCATION_KEY, unit: "metric", lang: "ja" }
-      });
-      var cc = current.payload && current.payload.currentConditions;
-      var loc = current.payload && current.payload.location;
-      var today = daily.payload && daily.payload.dailyForecast && daily.payload.dailyForecast[0];
-      var alerts = (current.payload && current.payload.alerts) || [];
-
-      var placeName = (loc && loc.info && loc.info.name) || "柏, 千葉県";
-      var temp = cc ? cc.temperature : "--°";
-      var phrase = cc ? cc.phrase : "";
-      elWeatherSummary.textContent = placeName + " " + temp + "・" + phrase;
-
-      if (today){
-        elWeatherRange.textContent = today.day.displayTemperature + " / " + today.night.displayTemperature;
-      }
-
-      if (alerts.length){
-        elWeatherNote.textContent = "⚠ " + alerts.map(function(a){ return a.name; }).join("、") + "が発表されています";
-      } else {
-        elWeatherNote.textContent = "AccuWeather® 連携中";
-      }
+      var w = await apiFetch("/api/weather");
+      var c = w.current || {};
+      var t = w.today || {};
+      elWeatherSummary.textContent = (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || "");
+      elWeatherRange.textContent = (t.max != null ? t.max + "° / " + t.min + "°" : "--° / --°");
+      var notes = [];
+      if (c.feelsLike != null) notes.push("体感 " + c.feelsLike + "°");
+      if (c.humidity != null) notes.push("湿度 " + c.humidity + "%");
+      if (t.pop != null) notes.push("降水 " + t.pop + "%");
+      elWeatherNote.textContent = notes.join(" ・ ") || "Open-Meteo";
     } catch(err){
-      elWeatherNote.textContent = mcpErrorMessage(err, "AccuWeather®") || "天気を取得できませんでした";
+      elWeatherSummary.textContent = "柏市 --";
+      elWeatherNote.textContent = apiErrorMessage(err, "天気") || "天気を取得できませんでした";
     }
   }
-  // loadWeather(); // 天気機能は今回の移行スコープから除外(AccuWeather無料枠廃止のため)
+  // 30分ごとに更新
+  setInterval(loadWeather, 30 * 60 * 1000);
 
   /* ================= generative skyline (original artwork, canvas) ================= */
   var canvas = document.getElementById("skyline");
@@ -2606,6 +2589,7 @@
     loadHarukaMail();
     initCalendarWatch();
     warmCalendarView();
+    loadWeather();
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
