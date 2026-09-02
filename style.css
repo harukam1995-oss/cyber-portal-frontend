@@ -294,10 +294,18 @@
   .inbox-count-btn:hover .inbox-count-num{ filter: brightness(1.15); }
   .inbox-count-btn:focus-visible{ outline: 1px solid var(--cyan); outline-offset:2px; border-radius:6px; }
   .inbox-count-num{
-    font-family: var(--font-display); font-size: 38px; font-weight:700; line-height:1;
-    background: linear-gradient(90deg, var(--magenta), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-family: var(--font-display); font-size: 20px; font-weight:600; line-height:1;
+    color: var(--text);
   }
   .inbox-count-label{ font-size: 13px; color: var(--text-dim); }
+  .inbox-reconnect{
+    display:block; margin-top: 8px; font-size: 11px; padding: 5px 12px; border-radius: 6px;
+    border: 1px solid var(--hairline); background: rgba(255,255,255,0.02);
+    color: var(--text-dim); cursor: pointer; letter-spacing: .5px; font-family: var(--font-body);
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .inbox-reconnect[hidden]{ display:none; }
+  .inbox-reconnect:hover{ border-color: var(--cyan); color: var(--text); }
   .placeholder-tag{ font-size:9.5px; letter-spacing:1px; color: var(--text-faint); border:1px solid var(--hairline); border-radius:4px; padding:1px 5px; margin-left:6px; vertical-align: 1px; }
 
   /* ---------- mail page ---------- */

@@ -1217,9 +1217,12 @@
   var homeGoogleConnectBtn = document.getElementById("home-google-connect-btn");
 
   // Gmail/Calendar/DriveへのアクセスはFirebase Authenticationのログインとは別に、
-  // 追加のGoogle同意(googleAuth.js)が必要。未連携時(google_not_connected)は
-  // 連携ボタンを表示し、押すとバックエンドから認可URLを取得して遷移する。
+  // 追加のGoogle同意(googleAuth.js)が必要。未連携時はもちろん、連携済みでも
+  // トークン失効やスコープ変更に備えて「再連携」ボタンを常時出しておく。
+  // 押すとバックエンドから認可URLを取得して遷移する。
+  var googleConnecting = false;
   async function startGoogleConnect(){
+    googleConnecting = true;
     homeGoogleConnectBtn.disabled = true;
     homeGoogleConnectBtn.textContent = "連携ページへ移動中…";
     try {
@@ -1231,8 +1234,9 @@
       }
     } catch (err) {
       console.error("[google] oauth start failed:", err);
+      googleConnecting = false;
       homeGoogleConnectBtn.disabled = false;
-      homeGoogleConnectBtn.textContent = "連携に失敗しました。もう一度お試しください";
+      homeGoogleConnectBtn.textContent = "連携に失敗。もう一度";
     }
   }
   homeGoogleConnectBtn.addEventListener("click", startGoogleConnect);
@@ -1535,13 +1539,17 @@
 
   function renderHomeInbox(){
     homeInboxTag.hidden = true;
+    // 連携ボタンは常時表示。未連携なら「連携する」、連携済みなら「再連携」。
+    homeGoogleConnectBtn.hidden = false;
+    if (!googleConnecting){
+      var notConnected = harukaUnreadError && harukaUnreadError.code === "google_not_connected";
+      homeGoogleConnectBtn.textContent = notConnected ? "Googleサービスと連携する" : "Google再連携";
+    }
     if (harukaUnreadError){
       homeInboxCountNum.textContent = "!";
       homeInboxCountLabel.textContent = apiErrorMessage(harukaUnreadError, "Gmail");
-      homeGoogleConnectBtn.hidden = harukaUnreadError.code !== "google_not_connected";
       return;
     }
-    homeGoogleConnectBtn.hidden = true;
     if (harukaUnreadCount === null){
       homeInboxCountNum.textContent = "--";
       homeInboxCountLabel.textContent = "読み込み中…";
