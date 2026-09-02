@@ -594,9 +594,14 @@
     viewTasks.hidden = name !== "tasks";
     viewNotes.hidden = name !== "notes";
     navHome.classList.toggle("active", name === "home");
-    if (name === "calendar" && !calInitialized){
-      calInitialized = true;
-      loadAndRenderCalendar();
+    if (name === "calendar"){
+      if (!calInitialized){
+        calInitialized = true;
+        loadAndRenderCalendar();
+      } else if (calState.loadOk){
+        // ログイン時に非表示のまま先読み済み。表示された今、レイアウトを描き直す(再取得なし)。
+        renderCalendarView();
+      }
     }
     if (name === "mail" && !mailInitialized){
       mailInitialized = true;
@@ -725,10 +730,12 @@
       if (token !== calLoadToken) return;
       calState.events = res.events || [];
       calState.loadedCalendarId = "primary";
+      calState.loadOk = true;
       renderCalendarView();
       setCalStatus('<span class="live">●</span> Google Calendar 連携中 (' + escapeHtml(calAccountLabel()) + ')', "");
     } catch(err){
       if (token !== calLoadToken) return;
+      calState.loadOk = false;
       if (err && err.code === "google_not_connected"){
         setCalStatus(escapeHtml(calAccountLabel() + " の Google アカウントが未連携です"), "");
         calGridContainer.innerHTML = '';
@@ -1173,6 +1180,9 @@
   var homeInboxCountBtn = document.getElementById("home-inbox-count-btn");
   var homeInboxCountNum = document.getElementById("home-inbox-count-num");
   var homeInboxCountLabel = document.getElementById("home-inbox-count-label");
+  var homeInboxCountBtnSyslea = document.getElementById("home-inbox-count-btn-syslea");
+  var homeInboxCountNumSyslea = document.getElementById("home-inbox-count-num-syslea");
+  var homeInboxCountLabelSyslea = document.getElementById("home-inbox-count-label-syslea");
   var homeGoogleConnectBtn = document.getElementById("home-google-connect-btn");
 
   // Gmail/Calendar/DriveへのアクセスはFirebase Authenticationのログインとは別に、
@@ -1235,15 +1245,17 @@
   // 次の増分まで保留)とは切り離し、バックエンドの軽量な未読件数APIだけを呼ぶ。
   var harukaUnreadCount = null; // null = 未取得
   var harukaUnreadError = null;
+  var sysleaUnreadCount = null;
+  var sysleaUnreadError = null;
   async function loadGmailUnreadCount(){
-    try{
-      var res = await apiFetch(acctPath("/api/google/gmail/unread-count", "haruka"));
-      harukaUnreadCount = res.unreadCount;
-      harukaUnreadError = null;
-    } catch(err){
-      harukaUnreadError = err;
-    }
-    renderHomeInbox();
+    // はるか・SYSLEA の未読件数を並行取得する。
+    apiFetch(acctPath("/api/google/gmail/unread-count", "haruka")).then(function(res){
+      harukaUnreadCount = res.unreadCount; harukaUnreadError = null;
+    }).catch(function(err){ harukaUnreadError = err; }).then(renderHomeInbox);
+
+    apiFetch(acctPath("/api/google/gmail/unread-count", "syslea")).then(function(res){
+      sysleaUnreadCount = res.unreadCount; sysleaUnreadError = null;
+    }).catch(function(err){ sysleaUnreadError = err; }).then(renderHomeInbox);
   }
 
   function formatMailTime(iso){
@@ -1514,6 +1526,26 @@
     }
   });
 
+  function renderInboxRow(numEl, labelEl, count, err){
+    if (err){
+      if (err.code === "google_not_connected"){
+        numEl.textContent = "–";
+        labelEl.textContent = "未連携";
+      } else {
+        numEl.textContent = "!";
+        labelEl.textContent = apiErrorMessage(err, "Gmail");
+      }
+      return;
+    }
+    if (count === null){
+      numEl.textContent = "--";
+      labelEl.textContent = "読み込み中…";
+      return;
+    }
+    numEl.textContent = String(count);
+    labelEl.textContent = count ? "件の新着メール" : "新着メールなし";
+  }
+
   function renderHomeInbox(){
     homeInboxTag.hidden = true;
     // 連携ボタンは常時表示。未連携なら「連携する」、連携済みなら「再連携」。
@@ -1522,21 +1554,17 @@
       var notConnected = harukaUnreadError && harukaUnreadError.code === "google_not_connected";
       homeGoogleConnectBtn.textContent = notConnected ? "Googleサービスと連携する" : "Google再連携";
     }
-    if (harukaUnreadError){
-      homeInboxCountNum.textContent = "!";
-      homeInboxCountLabel.textContent = apiErrorMessage(harukaUnreadError, "Gmail");
-      return;
-    }
-    if (harukaUnreadCount === null){
-      homeInboxCountNum.textContent = "--";
-      homeInboxCountLabel.textContent = "読み込み中…";
-      return;
-    }
-    homeInboxCountNum.textContent = String(harukaUnreadCount);
-    homeInboxCountLabel.textContent = harukaUnreadCount ? "件の新着メール" : "新着メールはありません";
+    renderInboxRow(homeInboxCountNum, homeInboxCountLabel, harukaUnreadCount, harukaUnreadError);
+    renderInboxRow(homeInboxCountNumSyslea, homeInboxCountLabelSyslea, sysleaUnreadCount, sysleaUnreadError);
   }
 
-  homeInboxCountBtn.addEventListener("click", function(){ showView("mail"); });
+  function openMailForAccount(acct){
+    var tab = document.querySelector('#mail-acct-tabs .acct-tab[data-account="' + acct + '"]');
+    if (tab && acct !== mailState.account) tab.click();
+    showView("mail");
+  }
+  homeInboxCountBtn.addEventListener("click", function(){ openMailForAccount("haruka"); });
+  homeInboxCountBtnSyslea.addEventListener("click", function(){ openMailForAccount("syslea"); });
   document.getElementById("home-inbox-more").addEventListener("click", function(){ showView("mail"); });
 
   /* ================= shared: in-page confirm modal =================
@@ -2566,17 +2594,24 @@
   // ログイン完了(auth-gate側の type="module" スクリプトが発火)後に、
   // Home画面で必要な最小限のデータ(メール未読件数)を読み込む。
   // タスク/メモは各ビューを開いたタイミングで initTasks/initNotes が読み込む。
-  document.addEventListener("cyberportal:authready", function(){
+  // メール一覧・カレンダー画面もログイン直後に裏で先読みしておき、ボタンを押した時に
+  // すぐ表示できるようにする(showView 側は先読み済みなら再取得しない)。
+  function warmCalendarView(){
+    if (calInitialized) return;
+    calInitialized = true;
+    loadAndRenderCalendar();
+  }
+  function warmOnAuthReady(){
     loadGmailUnreadCount();
     loadHarukaMail();
     initCalendarWatch();
-  });
+    warmCalendarView();
+  }
+  document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
   // (モジュールスクリプトの実行順は保証されないため)にも対応する。
   if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
-    loadGmailUnreadCount();
-    loadHarukaMail();
-    initCalendarWatch();
+    warmOnAuthReady();
   }
 
 })();

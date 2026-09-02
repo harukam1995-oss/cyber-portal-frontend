@@ -289,8 +289,9 @@
   /* inbox — simple unread-count tile, click through to the full メール page */
   .inbox-count-btn{
     all: unset; box-sizing: border-box; cursor:pointer; display:flex; align-items:baseline; gap:10px;
-    padding: 14px 4px; width:100%;
+    padding: 9px 4px; width:100%;
   }
+  .inbox-count-btn + .inbox-count-btn{ border-top: 1px solid var(--hairline); }
   .inbox-count-btn:hover .inbox-count-num{ filter: brightness(1.15); }
   .inbox-count-btn:focus-visible{ outline: 1px solid var(--cyan); outline-offset:2px; border-radius:6px; }
   .inbox-count-num{
@@ -298,6 +299,7 @@
     color: var(--text);
   }
   .inbox-count-label{ font-size: 13px; color: var(--text-dim); }
+  .inbox-count-acct{ margin-left:auto; font-size: 10px; letter-spacing:1px; color: var(--text-faint); border:1px solid var(--hairline); border-radius:4px; padding:1px 6px; }
   .inbox-reconnect{
     display:block; margin-top: 8px; font-size: 11px; padding: 5px 12px; border-radius: 6px;
     border: 1px solid var(--hairline); background: rgba(255,255,255,0.02);
