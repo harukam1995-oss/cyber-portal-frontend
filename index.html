@@ -28,6 +28,17 @@
 <!-- ================= HOME VIEW ================= -->
 <div class="frame" id="view-home">
 
+  <!-- Google 再連携リマインダー。テストユーザー運用の OAuth トークンは連携から7日で
+       失効するため、期限が近づいた枠があれば app.js が文言を入れて表示する。 -->
+  <div class="reauth-banner" id="reauth-banner" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span class="reauth-banner-text" id="reauth-banner-text"></span>
+    <button type="button" class="reauth-banner-btn" id="reauth-banner-btn">再連携</button>
+    <button type="button" class="reauth-banner-close" id="reauth-banner-close" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
   <!-- ================= HEADER ================= -->
   <header class="panel topbar">
     <div class="corner tl"></div><div class="corner br"></div>

@@ -1220,6 +1220,71 @@
     return li;
   }
 
+  /* ================= Google 再連携リマインダー =================
+     テストユーザー運用の Google OAuth トークンは連携から7日で失効する。失効してから
+     気づくと丸1日メール/カレンダーが死ぬので、バックエンドの /api/google/status が返す
+     各枠の { connected, expiresAt } を見て、失効まで2日を切った枠があれば上部にバナーを出す。
+     × で閉じたら、その expiresAt の間は再表示しない(再連携すると expiresAt が変わって再度出る)。 */
+  var reauthBanner = document.getElementById("reauth-banner");
+  var reauthBannerText = document.getElementById("reauth-banner-text");
+  var reauthBannerBtn = document.getElementById("reauth-banner-btn");
+  var reauthBannerClose = document.getElementById("reauth-banner-close");
+  var REAUTH_WARN_MS = 2 * 24 * 60 * 60 * 1000;
+  var ACCOUNT_LABELS = { haruka: "はるか", syslea: "SYSLEA" };
+  var reauthBannerAccount = null;
+  var reauthBannerExpiresAt = null;
+
+  function reauthDismissKey(account){ return "reauthDismiss_" + account; }
+  function isReauthDismissed(account, expiresAt){
+    try { return localStorage.getItem(reauthDismissKey(account)) === String(expiresAt); }
+    catch(e){ return false; }
+  }
+  function markReauthDismissed(account, expiresAt){
+    try { localStorage.setItem(reauthDismissKey(account), String(expiresAt)); } catch(e){}
+  }
+
+  if (reauthBannerBtn){
+    reauthBannerBtn.addEventListener("click", function(){
+      if (reauthBannerAccount) startGoogleConnect(reauthBannerAccount);
+    });
+  }
+  if (reauthBannerClose){
+    reauthBannerClose.addEventListener("click", function(){
+      reauthBanner.hidden = true;
+      if (reauthBannerAccount && reauthBannerExpiresAt){
+        markReauthDismissed(reauthBannerAccount, reauthBannerExpiresAt);
+      }
+    });
+  }
+
+  async function checkReauthReminder(){
+    if (!reauthBanner) return;
+    var data;
+    try { data = await apiFetch("/api/google/status"); }
+    catch(e){ return; } // 状態が取れなくてもバナー無しで続行(既存の再連携導線に任せる)
+    var accounts = (data && data.accounts) || {};
+    var now = Date.now();
+    var soonest = null;
+    Object.keys(accounts).forEach(function(acct){
+      var s = accounts[acct] || {};
+      if (!s.connected || !s.expiresAt) return;
+      var left = s.expiresAt - now;
+      if (left <= 0 || left > REAUTH_WARN_MS) return;     // 既に失効 / まだ余裕がある
+      if (isReauthDismissed(acct, s.expiresAt)) return;   // ×で閉じ済み
+      if (!soonest || s.expiresAt < soonest.expiresAt){
+        soonest = { account: acct, expiresAt: s.expiresAt, left: left };
+      }
+    });
+    if (!soonest){ reauthBanner.hidden = true; return; }
+    var days = Math.max(1, Math.ceil(soonest.left / (24 * 60 * 60 * 1000)));
+    var label = ACCOUNT_LABELS[soonest.account] || soonest.account;
+    reauthBannerAccount = soonest.account;
+    reauthBannerExpiresAt = soonest.expiresAt;
+    reauthBannerText.textContent =
+      label + " の Google 連携はあと約" + days + "日で期限切れです。今のうちに再連携してください。";
+    reauthBanner.hidden = false;
+  }
+
   var harukaMailItems = null; // null = 未取得; [] = 取得済み(空)
   var harukaMailError = null;
   var harukaMailLoading = false;
@@ -2592,6 +2657,7 @@
     initCalendarWatch();
     warmCalendarView();
     loadWeather();
+    checkReauthReminder();
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース

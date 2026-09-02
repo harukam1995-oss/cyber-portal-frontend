@@ -720,6 +720,32 @@
   .ev-btn-danger{ border-color: rgba(255,80,80,0.4); color: var(--err); }
   .ev-btn-danger:hover{ border-color:#ff5050; background: rgba(255,60,90,0.08); color: var(--err); }
 
+  /* ---------- Google 再連携リマインダーバナー ---------- */
+  .reauth-banner{
+    display:flex; align-items:center; gap:12px;
+    padding:11px 14px; border-radius:12px;
+    border:1px solid rgba(255,207,107,0.42);
+    background:linear-gradient(180deg, rgba(255,207,107,0.14), rgba(255,207,107,0.05));
+    color:#ffe0a6; font-size:13px; letter-spacing:.2px;
+  }
+  .reauth-banner > svg{ width:18px; height:18px; flex:0 0 auto; stroke: var(--warn); }
+  .reauth-banner-text{ flex:1 1 auto; }
+  .reauth-banner-btn{
+    flex:0 0 auto; cursor:pointer;
+    padding:6px 14px; border-radius:8px;
+    border:1px solid rgba(255,207,107,0.55);
+    background:rgba(255,207,107,0.16); color:#ffe9c4;
+    font-family:inherit; font-size:12px; font-weight:600; letter-spacing:.5px;
+  }
+  .reauth-banner-btn:hover{ background:rgba(255,207,107,0.28); }
+  .reauth-banner-close{
+    flex:0 0 auto; cursor:pointer; display:flex;
+    width:26px; height:26px; padding:0; align-items:center; justify-content:center;
+    border:none; border-radius:6px; background:transparent; color:#ffe0a6;
+  }
+  .reauth-banner-close svg{ width:14px; height:14px; stroke:currentColor; }
+  .reauth-banner-close:hover{ background:rgba(255,207,107,0.16); }
+
   /* ================= モバイル(<=640px) =================
      このポータルは基本デスクトップ前提。スマホでは:
      - ヒーローのイラスト/スカイラインは非表示(時計・天気・ひとことは残す)
@@ -730,6 +756,9 @@
     .frame{ gap: 10px; }
 
     #auth-gate > div{ max-width: 88vw; }
+
+    .reauth-banner{ flex-wrap: wrap; font-size: 12px; padding: 10px 12px; gap: 8px 10px; }
+    .reauth-banner-text{ flex-basis: 100%; }
 
     .topbar{ padding: 10px 12px; gap: 8px 12px; flex-wrap: wrap; }
     .brand-mark{ width: 30px; height: 30px; }
