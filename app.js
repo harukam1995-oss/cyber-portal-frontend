@@ -258,7 +258,15 @@
 
   async function loadWeather(){
     try{
-      var w = await apiFetch("/api/weather");
+      // 設定画面で地点を変更していれば lat/lon を渡す(未設定なら既定=柏市)。
+      var qs = "";
+      var wp = settingsState && settingsState.weather;
+      if (wp && wp.lat != null && wp.lon != null){
+        qs = "?lat=" + encodeURIComponent(wp.lat) +
+             "&lon=" + encodeURIComponent(wp.lon) +
+             "&place=" + encodeURIComponent(wp.place || "");
+      }
+      var w = await apiFetch("/api/weather" + qs);
       var c = w.current || {};
       var t = w.today || {};
       elWeatherSummary.textContent = (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || "");
@@ -468,6 +476,11 @@
     var img = document.getElementById("scene-illustration");
     var scene = document.getElementById("hero-scene");
     if (!img || !scene || !HERO_ILLUSTRATIONS.length) return;
+    // 設定でヒーローのイラストをOFFにしている場合(localStorageに前回値をキャッシュ)、
+    // シーンを隠して画像も読み込まない。認証後に applySettings が最新値で上書きする。
+    try {
+      if (localStorage.getItem("pref_heroIllustration") === "false"){ scene.style.display = "none"; return; }
+    } catch(e){}
     // スマホ(<=640px)ではヒーローのシーンをCSSで非表示にしているので、画像も読み込まない。
     if (window.matchMedia && window.matchMedia("(max-width: 640px)").matches) return;
     var pick = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
@@ -2641,6 +2654,198 @@
     }
   });
 
+  /* ================= 設定(歯車ボタン) =================
+     users/{uid}/private/settings をバックエンド /api/settings 経由で読み書きする。
+     - Google 連携: はるか/SYSLEA の再連携ボタン + 残り日数
+     - 天気: 地点名(サーバー側で Open-Meteo ジオコーディングして緯度経度に変換)
+     - 表示: ヒーローのイラスト ON/OFF・カレンダー初期ビュー・初期アカウント
+     - アカウント表示: ヘッダーの表示名・アバター文字
+     初回のみ表示系(初期ビュー/初期アカウント)を反映し、以降は保存時に
+     アカウント表示・イラストだけ即時反映する(初期ビュー等は次回ロードで有効)。 */
+  var SETTINGS_CACHE_KEY = "cyberPortalSettings";
+  var CAL_VIEWS_ALLOWED = ["day", "week", "month"];
+  var settingsState = null;
+  var settingsFirstApply = true;
+
+  function readCachedSettings(){
+    try { return JSON.parse(localStorage.getItem(SETTINGS_CACHE_KEY) || "null"); } catch(e){ return null; }
+  }
+  function cacheSettings(s){
+    try { localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(s)); } catch(e){}
+  }
+
+  function setHeroVisible(on){
+    var scene = document.getElementById("hero-scene");
+    try { localStorage.setItem("pref_heroIllustration", String(on)); } catch(e){}
+    if (!scene) return;
+    scene.style.display = on ? "" : "none";
+    if (on){
+      var img = document.getElementById("scene-illustration");
+      var narrow = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+      if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length && !narrow){
+        img.addEventListener("load", function(){ scene.classList.add("has-illustration"); });
+        img.src = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
+      }
+    }
+  }
+
+  function setDefaultAccount(acct){
+    acct = acct === "syslea" ? "syslea" : "haruka";
+    schedAccount = acct;
+    calState.account = acct;
+    mailState.account = acct;
+    ["sched-acct-tabs", "cal-acct-tabs", "mail-acct-tabs"].forEach(function(id){
+      document.querySelectorAll("#" + id + " .acct-tab").forEach(function(b){
+        b.classList.toggle("active", b.getAttribute("data-account") === acct);
+      });
+    });
+  }
+
+  function applySettings(s){
+    if (!s) return;
+    settingsState = s;
+    var acc = s.account || {};
+    var disp = s.display || {};
+    document.querySelectorAll(".profile-meta .uname").forEach(function(el){
+      el.textContent = acc.displayName || "HARUKA";
+    });
+    document.querySelectorAll(".avatar").forEach(function(el){
+      el.textContent = acc.avatarText || "遥";
+    });
+    setHeroVisible(disp.heroIllustration !== false);
+    if (settingsFirstApply){
+      settingsFirstApply = false;
+      setDefaultAccount(disp.defaultAccount);
+      if (CAL_VIEWS_ALLOWED.indexOf(disp.calendarView) !== -1) calState.view = disp.calendarView;
+    }
+  }
+
+  async function loadSettings(){
+    try {
+      var res = await apiFetch("/api/settings");
+      if (res && res.settings){
+        applySettings(res.settings);
+        cacheSettings(res.settings);
+        loadWeather(); // 地点が変わっている可能性があるので取り直す
+      }
+    } catch(e){ /* キャッシュ値のまま継続 */ }
+  }
+
+  // 起動直後(認証前)にキャッシュを即適用しておく。認証後 loadSettings が最新値で上書き。
+  applySettings(readCachedSettings());
+
+  /* ---- 設定モーダル ---- */
+  var settingsBtn = document.getElementById("settings-btn");
+  var settingsModal = document.getElementById("settings-modal");
+  var settingsForm = document.getElementById("settings-form");
+  var settingsErr = document.getElementById("settings-form-error");
+  var elSetPlace = document.getElementById("settings-weather-place");
+  var elSetPlaceCurrent = document.getElementById("settings-weather-current");
+  var elSetHero = document.getElementById("settings-hero");
+  var elSetCalView = document.getElementById("settings-cal-view");
+  var elSetDefAcct = document.getElementById("settings-default-account");
+  var elSetName = document.getElementById("settings-display-name");
+  var elSetAvatar = document.getElementById("settings-avatar-text");
+
+  function fillSettingsForm(){
+    var s = settingsState || {};
+    var w = s.weather || {}, d = s.display || {}, a = s.account || {};
+    if (elSetPlace) elSetPlace.value = "";
+    if (elSetPlaceCurrent) elSetPlaceCurrent.textContent = "現在: " + (w.place || "柏市");
+    if (elSetHero) elSetHero.checked = d.heroIllustration !== false;
+    if (elSetCalView) elSetCalView.value = CAL_VIEWS_ALLOWED.indexOf(d.calendarView) !== -1 ? d.calendarView : "day";
+    if (elSetDefAcct) elSetDefAcct.value = d.defaultAccount === "syslea" ? "syslea" : "haruka";
+    if (elSetName) elSetName.value = a.displayName || "";
+    if (elSetAvatar) elSetAvatar.value = a.avatarText || "";
+  }
+
+  async function fillSettingsConnState(){
+    var map = { haruka: "settings-conn-state-haruka", syslea: "settings-conn-state-syslea" };
+    Object.keys(map).forEach(function(k){
+      var el = document.getElementById(map[k]);
+      if (el) el.textContent = "確認中…";
+    });
+    try {
+      var data = await apiFetch("/api/google/status");
+      var accts = (data && data.accounts) || {};
+      Object.keys(map).forEach(function(k){
+        var el = document.getElementById(map[k]);
+        if (!el) return;
+        var st = accts[k] || {};
+        if (!st.connected){ el.textContent = "未連携 / 期限切れ"; el.className = "settings-conn-state is-stale"; return; }
+        var days = st.expiresAt ? Math.max(0, Math.ceil((st.expiresAt - Date.now()) / 86400000)) : null;
+        el.textContent = days != null ? ("連携中 ・ あと約" + days + "日") : "連携中";
+        el.className = "settings-conn-state" + (days != null && days <= 2 ? " is-stale" : "");
+      });
+    } catch(e){
+      Object.keys(map).forEach(function(k){
+        var el = document.getElementById(map[k]);
+        if (el) el.textContent = "状態を取得できませんでした";
+      });
+    }
+  }
+
+  function openSettings(){
+    if (!settingsModal) return;
+    if (settingsErr){ settingsErr.hidden = true; settingsErr.textContent = ""; }
+    fillSettingsForm();
+    settingsModal.hidden = false;
+    if (!settingsState){ loadSettings().then(fillSettingsForm); }
+    fillSettingsConnState();
+  }
+  function closeSettings(){ if (settingsModal) settingsModal.hidden = true; }
+
+  if (settingsBtn) settingsBtn.addEventListener("click", openSettings);
+  var settingsClose = document.getElementById("settings-modal-close");
+  var settingsCancel = document.getElementById("settings-cancel");
+  if (settingsClose) settingsClose.addEventListener("click", closeSettings);
+  if (settingsCancel) settingsCancel.addEventListener("click", closeSettings);
+  if (settingsModal){
+    settingsModal.addEventListener("click", function(e){ if (e.target === settingsModal) closeSettings(); });
+  }
+  document.querySelectorAll("#settings-modal .settings-conn-row button[data-account]").forEach(function(btn){
+    btn.addEventListener("click", function(){ startGoogleConnect(btn.getAttribute("data-account")); });
+  });
+
+  if (settingsForm){
+    settingsForm.addEventListener("submit", async function(e){
+      e.preventDefault();
+      var saveBtn = document.getElementById("settings-save");
+      if (settingsErr){ settingsErr.hidden = true; settingsErr.textContent = ""; }
+      var patch = {
+        display: {
+          heroIllustration: !!(elSetHero && elSetHero.checked),
+          calendarView: elSetCalView ? elSetCalView.value : "day",
+          defaultAccount: elSetDefAcct ? elSetDefAcct.value : "haruka"
+        },
+        account: {
+          displayName: elSetName ? elSetName.value.trim() : "",
+          avatarText: elSetAvatar ? elSetAvatar.value.trim() : ""
+        }
+      };
+      var placeInput = elSetPlace ? elSetPlace.value.trim() : "";
+      if (placeInput) patch.weather = { place: placeInput };
+
+      if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+      try {
+        var res = await apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(patch) });
+        if (res && res.settings){
+          applySettings(res.settings);
+          cacheSettings(res.settings);
+          loadWeather();
+        }
+        closeSettings();
+      } catch(err){
+        if (settingsErr){
+          settingsErr.textContent = apiErrorMessage(err, "設定");
+          settingsErr.hidden = false;
+        }
+      } finally {
+        if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    });
+  }
+
   // ログイン完了(auth-gate側の type="module" スクリプトが発火)後に、
   // Home画面で必要な最小限のデータ(メール未読件数)を読み込む。
   // タスク/メモは各ビューを開いたタイミングで initTasks/initNotes が読み込む。
@@ -2652,6 +2857,7 @@
     loadAndRenderCalendar();
   }
   function warmOnAuthReady(){
+    loadSettings();
     loadGmailUnreadCount();
     loadHarukaMail();
     initCalendarWatch();
