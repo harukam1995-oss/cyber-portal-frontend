@@ -3325,6 +3325,12 @@
      PWA: サービスワーカー登録 + インストールボタン(beforeinstallprompt)。 */
   var notifBtn = document.getElementById("notif-btn");
   var notifPanel = document.getElementById("notif-panel");
+  // ヘッダーの .panel は backdrop-filter でスタッキングコンテキストを作り、
+  // その中の position:fixed はビューポート基準にならず後続パネルに隠れる。
+  // パネルを body 直下へ移して回避する(位置は JS がベルの座標から算出)。
+  if (notifPanel && notifPanel.parentElement !== document.body){
+    document.body.appendChild(notifPanel);
+  }
   var notifList = document.getElementById("notif-list");
   var notifDot = document.getElementById("notif-dot");
   var notifPermBtn = document.getElementById("notif-perm-btn");
