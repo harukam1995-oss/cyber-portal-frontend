@@ -887,6 +887,55 @@
   .event-popover-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
   .event-popover-actions .ev-btn{ padding:5px 14px; font-size:11.5px; }
 
+  /* ---------- プライベート画面 (v1a) ---------- */
+  .pv-grid{
+    display:grid;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 340px);
+    gap: clamp(12px, 1.6vw, 18px);
+    align-items:start;
+  }
+  .pv-col{ display:flex; flex-direction:column; gap: clamp(12px, 1.6vw, 18px); min-width:0; }
+  .pv-bottom{
+    grid-column: 1 / -1;
+    display:grid; grid-template-columns: 1fr 1fr;
+    gap: clamp(12px, 1.6vw, 18px);
+  }
+  .pv-card .card-body{ padding-top: 4px; }
+  .pv-soon .card-head h2{ color: var(--text-dim); }
+  .pv-soon-msg{ font-size:12px; color: var(--text-faint); margin:0; line-height:1.6; }
+
+  .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
+  .pv-today-date .yr{ color: var(--text-faint); font-size:12px; }
+  .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; text-shadow: 0 0 16px var(--magenta-dim); }
+  .pv-today-clock .sec{ font-size:0.5em; color: var(--cyan); margin-left:4px; }
+  .pv-today-tz{ font-size:11px; letter-spacing:2px; color: var(--text-faint); }
+
+  .pv-weather-main{ font-size:16px; color: var(--text); }
+  .pv-weather-range{ font-size:13px; color: var(--text-dim); margin-top:4px; }
+  .pv-weather-note{ font-size:10.5px; color: var(--text-faint); letter-spacing:.4px; margin-top:6px; }
+
+  .pv-up-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .pv-up-item{ display:flex; align-items:center; gap:10px; font-size:13px; }
+  .pv-up-dot{ width:7px; height:7px; border-radius:50%; background: var(--magenta); box-shadow: 0 0 6px var(--magenta); flex:none; }
+  .pv-up-date{ font-family: var(--font-mono); font-size:11.5px; color: var(--text-faint); min-width:66px; flex:none; }
+  .pv-up-title{ color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .pv-hero{ position:relative; overflow:hidden; min-height:440px; }
+  .pv-hero-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.92; }
+  .pv-hero .scanlines, .pv-hero .vignette{ position:absolute; inset:0; pointer-events:none; }
+  .pv-hero-vtext{
+    position:absolute; top:26px; left:26px;
+    writing-mode: vertical-rl; text-orientation: mixed;
+    font-family: var(--font-display); letter-spacing:6px; font-size:14px;
+    color: rgba(255,255,255,0.55); text-shadow: 0 0 12px rgba(255,47,146,0.45);
+  }
+
+  @media (max-width: 1080px){
+    .pv-grid{ grid-template-columns: 1fr; }
+    .pv-bottom{ grid-template-columns: 1fr; }
+    .pv-hero{ min-height:260px; }
+  }
+
   /* ---------- アイデア帳(Obsidian vault ビューア) ---------- */
   .ideas-crumbs{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; }
   .ideas-crumb{
@@ -1024,6 +1073,8 @@
     .mail-search-wrap input{ width: 100%; }
 
     .notif-panel{ position: fixed; top: 60px; right: 10px; left: 10px; width: auto; }
+
+    .pv-hero{ display: none; }
 
     .event-popover{ width: calc(100vw - 24px); }
 

@@ -219,6 +219,12 @@
   var elProgressPct = document.getElementById("progress-pct");
   var elProgressFill = document.getElementById("progress-fill");
   var elQuote = document.getElementById("hud-quote");
+  // プライベート画面の TODAY カード(存在すれば tick で同時更新)
+  var pvTime = document.getElementById("pv-time");
+  var pvSec  = document.getElementById("pv-sec");
+  var pvMd   = document.getElementById("pv-md");
+  var pvYr   = document.getElementById("pv-yr");
+  var pvDow  = document.getElementById("pv-dow");
 
   var RING_LEN = 603; // 2*pi*96
 
@@ -255,11 +261,18 @@
 
   function tick(){
     var now = new Date();
-    elTime.textContent = timeFmt.format(now);
-    elSec.textContent = secFmt.format(now);
-    elMd.textContent = dateFmt.format(now);
-    elYr.textContent = yearFmt.format(now);
-    elDow.textContent = dowFmt.format(now).toUpperCase();
+    var tStr = timeFmt.format(now), sStr = secFmt.format(now);
+    var mdStr = dateFmt.format(now), yrStr = yearFmt.format(now);
+    var dowStr = dowFmt.format(now).toUpperCase();
+    elTime.textContent = tStr;
+    elSec.textContent = sStr;
+    elMd.textContent = mdStr;
+    elYr.textContent = yrStr;
+    elDow.textContent = dowStr;
+    if (pvTime){
+      pvTime.textContent = tStr; pvSec.textContent = sStr;
+      pvMd.textContent = mdStr; pvYr.textContent = yrStr; pvDow.textContent = dowStr;
+    }
 
     var p = jstParts(now);
     var secondsToday = p.h * 3600 + p.m * 60 + p.s;
@@ -279,9 +292,18 @@
   /* ================= weather (Open-Meteo 経由・バックエンド) =================
      APIキー不要の無料天気API。既定は柏市。バックエンド /api/weather が
      現在の気温・今日の最高/最低・降水確率などを返す。 */
-  var elWeatherSummary = document.getElementById("weather-summary");
-  var elWeatherRange = document.getElementById("weather-range");
-  var elWeatherNote = document.getElementById("weather-note");
+  // 天気の表示先。HOMEのヒーロー内 と プライベート画面のカード の両方を更新する。
+  function paintWeather(summary, range, note){
+    ["weather-summary", "pv-weather-summary"].forEach(function(id){
+      var el = document.getElementById(id); if (el) el.textContent = summary;
+    });
+    ["weather-range", "pv-weather-range"].forEach(function(id){
+      var el = document.getElementById(id); if (el && range != null) el.textContent = range;
+    });
+    ["weather-note", "pv-weather-note"].forEach(function(id){
+      var el = document.getElementById(id); if (el) el.textContent = note;
+    });
+  }
 
   async function loadWeather(){
     try{
@@ -296,16 +318,17 @@
       var w = await apiFetch("/api/weather" + qs);
       var c = w.current || {};
       var t = w.today || {};
-      elWeatherSummary.textContent = (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || "");
-      elWeatherRange.textContent = (t.max != null ? t.max + "° / " + t.min + "°" : "--° / --°");
       var notes = [];
       if (c.feelsLike != null) notes.push("体感 " + c.feelsLike + "°");
       if (c.humidity != null) notes.push("湿度 " + c.humidity + "%");
       if (t.pop != null) notes.push("降水 " + t.pop + "%");
-      elWeatherNote.textContent = notes.join(" ・ ") || "Open-Meteo";
+      paintWeather(
+        (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || ""),
+        (t.max != null ? t.max + "° / " + t.min + "°" : "--° / --°"),
+        notes.join(" ・ ") || "Open-Meteo"
+      );
     } catch(err){
-      elWeatherSummary.textContent = "柏市 --";
-      elWeatherNote.textContent = apiErrorMessage(err, "天気") || "天気を取得できませんでした";
+      paintWeather("柏市 --", null, apiErrorMessage(err, "天気") || "天気を取得できませんでした");
     }
   }
   // 30分ごとに更新
@@ -603,28 +626,58 @@
     });
   }
 
-  /* ================= view routing (HOME ⇄ CALENDAR ⇄ MAIL) ================= */
+  /* ================= view routing =================
+     ダッシュボード3種(HOME / プライベート / ビジネス)＋サブ画面(カレンダー等)。
+     共有ヘッダー(#app-topbar)と再連携バナーは、表示中のダッシュボードframeの先頭へ
+     移動させる(3回複製すると #notif-btn 等のIDが重複するため、実体は1つ)。 */
   var viewHome = document.getElementById("view-home");
+  var viewPrivate = document.getElementById("view-private");
+  var viewBusiness = document.getElementById("view-business");
   var viewCalendar = document.getElementById("view-calendar");
   var viewMail = document.getElementById("view-mail");
   var viewTasks = document.getElementById("view-tasks");
   var viewNotes = document.getElementById("view-notes");
   var viewIdeas = document.getElementById("view-ideas");
+  var appTopbar = document.getElementById("app-topbar");
   var navHome = document.getElementById("nav-home");
+  var navPrivate = document.getElementById("nav-private");
+  var navBusiness = document.getElementById("nav-business");
+  var currentDashboard = "home"; // サブ画面の「← 戻る」で戻る先
   var calInitialized = false;
   var mailInitialized = false;
   var tasksInitialized = false;
   var notesInitialized = false;
   var ideasInitialized = false;
+  var privateInitialized = false;
 
   function showView(name){
+    var isDash = name === "home" || name === "private" || name === "business";
     viewHome.hidden = name !== "home";
+    if (viewPrivate) viewPrivate.hidden = name !== "private";
+    if (viewBusiness) viewBusiness.hidden = name !== "business";
     viewCalendar.hidden = name !== "calendar";
     viewMail.hidden = name !== "mail";
     viewTasks.hidden = name !== "tasks";
     viewNotes.hidden = name !== "notes";
     viewIdeas.hidden = name !== "ideas";
-    navHome.classList.toggle("active", name === "home");
+
+    if (isDash){
+      currentDashboard = name;
+      var frame = name === "private" ? viewPrivate : name === "business" ? viewBusiness : viewHome;
+      if (appTopbar && frame){
+        frame.insertBefore(appTopbar, frame.firstChild);
+        var banner = document.getElementById("reauth-banner");
+        if (banner) appTopbar.after(banner);
+      }
+      navHome.classList.toggle("active", name === "home");
+      if (navPrivate) navPrivate.classList.toggle("active", name === "private");
+      if (navBusiness) navBusiness.classList.toggle("active", name === "business");
+    }
+
+    if (name === "private" && !privateInitialized){
+      privateInitialized = true;
+      initPrivate();
+    }
     if (name === "calendar"){
       if (!calInitialized){
         calInitialized = true;
@@ -660,14 +713,69 @@
   document.getElementById("quick-notes").addEventListener("click", function(){ showView("notes"); });
   document.getElementById("quick-ideas").addEventListener("click", function(){ showView("ideas"); });
   navHome.addEventListener("click", function(e){ e.preventDefault(); showView("home"); });
-  document.getElementById("cal-back").addEventListener("click", function(){ showView("home"); });
-  document.getElementById("mail-back").addEventListener("click", function(){ showView("home"); });
-  document.getElementById("tasks-back").addEventListener("click", function(){ showView("home"); });
-  document.getElementById("notes-back").addEventListener("click", function(){ showView("home"); });
-  document.getElementById("ideas-back").addEventListener("click", function(){ showView("home"); });
-  document.querySelectorAll(".nav a[aria-disabled]").forEach(function(a){
-    a.addEventListener("click", function(e){ e.preventDefault(); });
+  if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
+  if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
+  // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back"].forEach(function(id){
+    var b = document.getElementById(id);
+    if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
+  // プライベートのクイックアクセス: はるかを選択済みにしてサブ画面を開く
+  [["pv-quick-tasks", "tasks"], ["pv-quick-calendar", "calendar"], ["pv-quick-notes", "notes"],
+   ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"]].forEach(function(pair){
+    var b = document.getElementById(pair[0]);
+    if (b) b.addEventListener("click", function(){
+      if (typeof setDefaultAccount === "function") setDefaultAccount("haruka");
+      showView(pair[1]);
+    });
+  });
+
+  /* ================= プライベート画面 (v1a) =================
+     TODAY / WEATHER は共通ロジック(tick / loadWeather)が pv 要素も更新する。
+     ここでは UPCOMING EVENTS(はるかカレンダー) と 装飾ヒーローだけを担当。
+     今月の収支・習慣トラッカー・TODAY'S PLAN は次の段階で実装(HTMLは「準備中」枠)。 */
+  function initPrivate(){
+    var img = document.getElementById("pv-hero-img");
+    if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length){
+      img.src = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
+    }
+    loadWeather();          // 即時反映(通常は30分間隔)
+    loadPrivateUpcoming();
+  }
+
+  async function loadPrivateUpcoming(){
+    var el = document.getElementById("pv-upcoming");
+    if (!el) return;
+    el.innerHTML = schedSkeletonHtml(4);
+    try{
+      var now = new Date();
+      var startKey = jstDateKey(now);
+      var bounds = jstRangeForKeys(startKey, addDaysKey(startKey, 45));
+      var res = await apiFetch(acctPath(
+        "/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) +
+        "&end=" + encodeURIComponent(bounds.end), "haruka"));
+      var events = (res.events || []).filter(function(ev){
+        var iso = ev.start && (ev.start.dateTime || (ev.start.date ? ev.start.date + "T23:59:59+09:00" : null));
+        return iso && new Date(iso).getTime() >= now.getTime() - 3600000;
+      }).slice(0, 5);
+      if (!events.length){ el.innerHTML = '<li class="sched-empty">直近の予定はありません</li>'; return; }
+      el.innerHTML = "";
+      events.forEach(function(ev){
+        var d = ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + "T00:00:00+09:00");
+        var dateStr = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month: "2-digit", day: "2-digit" }).format(d);
+        var dow = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, weekday: "short" }).format(d).toUpperCase();
+        var li = document.createElement("li");
+        li.className = "pv-up-item";
+        var dot = document.createElement("span"); dot.className = "pv-up-dot";
+        var dt = document.createElement("span"); dt.className = "pv-up-date"; dt.textContent = dateStr + " " + dow;
+        var ti = document.createElement("span"); ti.className = "pv-up-title"; ti.textContent = ev.summary || "(タイトルなし)";
+        li.appendChild(dot); li.appendChild(dt); li.appendChild(ti);
+        el.appendChild(li);
+      });
+    } catch(err){
+      el.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
+    }
+  }
 
   /* ================= calendar page: state ================= */
   var HOUR_PX = 48;
