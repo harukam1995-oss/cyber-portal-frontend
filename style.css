@@ -322,6 +322,10 @@
   .mail-item.unread .mail-subject{ color: var(--text); }
   .mail-snippet{ font-size:12px; color: var(--text-faint); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mail-unread-dot{ width:8px; height:8px; border-radius:50%; background: var(--cyan); box-shadow:0 0 5px var(--cyan); flex:none; margin-top:6px; }
+  .mail-pager{ display:flex; align-items:center; justify-content:center; gap:16px; padding:12px 20px 16px; border-top:1px solid var(--hairline); }
+  .mail-pager[hidden]{ display:none; }
+  .mail-pager-info{ font-size:11px; color: var(--text-faint); letter-spacing:.5px; font-family: var(--font-mono); }
+  .cal-nav-btn:disabled{ opacity:.35; cursor:default; }
 
   /* ---------- tasks & notes (self-persisted via the artifact capability) ---------- */
   .task-toolbar-add{ display:flex; gap:8px; align-items:center; }

@@ -316,6 +316,10 @@
         <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
       </div>
+      <div class="acct-tabs" role="tablist" id="mail-filter-tabs">
+        <button class="acct-tab active" type="button" data-filter="all">すべて</button>
+        <button class="acct-tab" type="button" data-filter="unread">未読</button>
+      </div>
     </div>
     <div class="cal-toolbar-right">
       <span class="placeholder-tag" id="mail-tag">仮データ</span>
@@ -326,6 +330,11 @@
 
   <section class="panel cal-body-panel">
     <ul class="mail-list" id="mail-list"></ul>
+    <div class="mail-pager" id="mail-pager" hidden>
+      <button class="cal-nav-btn" id="mail-prev" type="button">← 前へ</button>
+      <span class="mail-pager-info" id="mail-pager-info"></span>
+      <button class="cal-nav-btn" id="mail-next" type="button">次へ →</button>
+    </div>
   </section>
 </div>
 

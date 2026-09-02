@@ -634,7 +634,8 @@
     }
     if (name === "mail" && !mailInitialized){
       mailInitialized = true;
-      renderMailList();
+      if (mailState.account === "haruka") loadHarukaMail();
+      else renderMailList();
     }
     if (name === "tasks" && !tasksInitialized){
       tasksInitialized = true;
@@ -1197,8 +1198,13 @@
     ]
   };
 
-  var mailState = { account: "haruka" };
+  var mailState = { account: "haruka", filter: "all", pageIndex: 0 };
+  var MAIL_PAGE_SIZE = 20;
   var mailList = document.getElementById("mail-list");
+  var mailPager = document.getElementById("mail-pager");
+  var mailPagerInfo = document.getElementById("mail-pager-info");
+  var mailPrevBtn = document.getElementById("mail-prev");
+  var mailNextBtn = document.getElementById("mail-next");
   var mailModal = document.getElementById("mail-modal");
   var mailModalTitle = document.getElementById("mail-modal-title");
   var mailDetailBody = document.getElementById("mail-detail-body");
@@ -1231,9 +1237,11 @@
   }
   homeGoogleConnectBtn.addEventListener("click", startGoogleConnect);
 
-  var harukaMailItems = null; // null = not loaded yet; [] = loaded, empty inbox
+  var harukaMailItems = null; // null = 未取得; [] = 取得済み(空)
   var harukaMailError = null;
-  var harukaMailLoadPromise = null;
+  var harukaMailLoading = false;
+  var mailPageTokens = [null]; // mailPageTokens[i] = ページ i を取得する pageToken(先頭ページは null)
+  var harukaMailNextToken = null;
 
   // Home画面の「未読件数」表示は、メールページの一覧取得(loadHarukaMail、まだMCP依存で
   // 次の増分まで保留)とは切り離し、バックエンドの軽量な未読件数APIだけを呼ぶ。
@@ -1261,30 +1269,53 @@
     return p.m + "/" + p.d;
   }
 
-  function loadHarukaMail(){
-    if (harukaMailLoadPromise) return harukaMailLoadPromise;
-    harukaMailLoadPromise = (async function(){
-      try{
-        var res = await apiFetch("/api/google/gmail/messages?maxResults=30");
-        var messages = res.messages || [];
-        harukaMailItems = messages.map(function(m){
-          return {
-            threadId: m.threadId,
-            from: m.from || "(不明な送信者)",
-            initial: (m.from || "?").charAt(0).toUpperCase(),
-            subject: m.subject || "(件名なし)",
-            snippet: m.snippet || "",
-            time: formatMailTime(m.date),
-            unread: !!m.unread
-          };
-        });
-        harukaMailError = null;
-      } catch(err){
-        harukaMailError = err;
+  function fetchMailPage(){
+    harukaMailLoading = true;
+    harukaMailError = null;
+    renderMailList();
+    var params = "?maxResults=" + MAIL_PAGE_SIZE;
+    var tok = mailPageTokens[mailState.pageIndex];
+    if (tok) params += "&pageToken=" + encodeURIComponent(tok);
+    if (mailState.filter === "unread") params += "&unreadOnly=1";
+    apiFetch("/api/google/gmail/messages" + params).then(function(res){
+      var messages = res.messages || [];
+      harukaMailItems = messages.map(function(m){
+        return {
+          threadId: m.threadId,
+          from: m.from || "(不明な送信者)",
+          initial: (m.from || "?").charAt(0).toUpperCase(),
+          subject: m.subject || "(件名なし)",
+          snippet: m.snippet || "",
+          time: formatMailTime(m.date),
+          unread: !!m.unread
+        };
+      });
+      harukaMailNextToken = res.nextPageToken || null;
+      // 次ページのトークンは未登録のときだけ覚える(戻ってきた時の重複pushを防ぐ)
+      if (harukaMailNextToken && mailPageTokens.length === mailState.pageIndex + 1){
+        mailPageTokens.push(harukaMailNextToken);
       }
+      harukaMailError = null;
+    }).catch(function(err){
+      harukaMailError = err;
+    }).then(function(){
+      harukaMailLoading = false;
       renderMailList();
-    })();
-    return harukaMailLoadPromise;
+    });
+  }
+
+  // フィルタ変更時などに、ページ状態を初期化して1ページ目から読み直す。
+  function reloadMailFromFirstPage(){
+    mailState.pageIndex = 0;
+    mailPageTokens = [null];
+    harukaMailNextToken = null;
+    fetchMailPage();
+  }
+
+  function loadHarukaMail(){
+    if (harukaMailLoading) return;
+    if (harukaMailItems !== null && !harukaMailError){ renderMailList(); return; }
+    reloadMailFromFirstPage();
   }
 
   function setMailStatus(html, cls){
@@ -1334,7 +1365,8 @@
     subject.textContent = mail.subject;
     var snippet = document.createElement("div");
     snippet.className = "mail-snippet";
-    snippet.textContent = mail.snippet;
+    var snip = mail.snippet || "";
+    snippet.textContent = snip.length > 30 ? snip.slice(0, 30) + "…" : snip;
 
     main.appendChild(topRow); main.appendChild(subject); main.appendChild(snippet);
     li.appendChild(avatar); li.appendChild(main);
@@ -1347,6 +1379,23 @@
     return li;
   }
 
+  function updateMailPager(){
+    if (mailState.account !== "haruka" || harukaMailError || !harukaMailItems){
+      mailPager.hidden = true;
+      return;
+    }
+    var hasPrev = mailState.pageIndex > 0;
+    var hasNext = !!harukaMailNextToken;
+    if (!hasPrev && !hasNext){
+      mailPager.hidden = true;
+      return;
+    }
+    mailPager.hidden = false;
+    mailPrevBtn.disabled = !hasPrev || harukaMailLoading;
+    mailNextBtn.disabled = !hasNext || harukaMailLoading;
+    mailPagerInfo.textContent = (mailState.filter === "unread" ? "未読 " : "") + (mailState.pageIndex + 1) + " ページ目";
+  }
+
   function renderMailList(){
     updateMailHeaderUI();
     mailList.innerHTML = "";
@@ -1354,25 +1403,32 @@
     if (mailState.account === "haruka"){
       if (harukaMailError){
         mailList.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(harukaMailError, "Gmail")) + '</li>';
+        updateMailPager();
         return;
       }
-      if (!harukaMailItems){
+      if (!harukaMailItems || harukaMailLoading){
         mailList.innerHTML = '<li class="sched-empty">読み込み中…</li>';
+        updateMailPager();
         return;
       }
       if (!harukaMailItems.length){
-        mailList.innerHTML = '<li class="sched-empty">メールはありません</li>';
+        mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
+        updateMailPager();
         return;
       }
       harukaMailItems.forEach(function(mail){
         mailList.appendChild(buildMailListItem(mail, function(){ openMailDetail(mail); }));
       });
+      updateMailPager();
       return;
     }
 
-    var items = MAIL_DATA[mailState.account] || [];
+    mailPager.hidden = true;
+    var items = (MAIL_DATA[mailState.account] || []).filter(function(m){
+      return mailState.filter === "unread" ? m.unread : true;
+    });
     if (!items.length){
-      mailList.innerHTML = '<li class="sched-empty">メールはありません</li>';
+      mailList.innerHTML = '<li class="sched-empty">' + (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません") + '</li>';
       return;
     }
     items.forEach(function(mail){
@@ -1432,15 +1488,49 @@
     document.body.style.overflow = "hidden";
     renderMailList(); // refresh unread dot state
   }
-  function closeMailModal(){ mailModal.hidden = true; document.body.style.overflow = ""; }
+  function closeMailModal(){
+    mailModal.hidden = true;
+    document.body.style.overflow = "";
+    // 未読タブでメールを開くと既読になるので、現在ページを取り直して一覧から消す。
+    if (mailState.account === "haruka" && mailState.filter === "unread" && !harukaMailLoading){
+      fetchMailPage();
+    }
+  }
 
   document.getElementById("mail-modal-close").addEventListener("click", closeMailModal);
   mailModal.addEventListener("click", function(e){ if (e.target === mailModal) closeMailModal(); });
 
   wireAcctTabs("mail-acct-tabs", function(){ return mailState.account; }, function(acct){
     mailState.account = acct;
-    if (acct === "haruka" && !harukaMailItems && !harukaMailError) loadHarukaMail();
-    renderMailList();
+    if (acct === "haruka") loadHarukaMail();
+    else renderMailList();
+  });
+
+  // すべて / 未読 タブ。はるか側はサーバーで絞り込むため1ページ目から取り直す。
+  document.querySelectorAll("#mail-filter-tabs .acct-tab").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var f = btn.getAttribute("data-filter");
+      if (f === mailState.filter) return;
+      document.querySelectorAll("#mail-filter-tabs .acct-tab").forEach(function(b){
+        b.classList.toggle("active", b === btn);
+      });
+      mailState.filter = f;
+      if (mailState.account === "haruka") reloadMailFromFirstPage();
+      else renderMailList();
+    });
+  });
+
+  mailPrevBtn.addEventListener("click", function(){
+    if (mailState.pageIndex > 0 && !harukaMailLoading){
+      mailState.pageIndex--;
+      fetchMailPage();
+    }
+  });
+  mailNextBtn.addEventListener("click", function(){
+    if (harukaMailNextToken && !harukaMailLoading){
+      mailState.pageIndex++;
+      fetchMailPage();
+    }
   });
 
   function renderHomeInbox(){
