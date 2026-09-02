@@ -1,0 +1,32 @@
+# Render 無料プランのバックエンドがスリープしないよう /healthz を定期 ping する。
+# アクティブ時間帯: 00:00-15:59 UTC ( = 09:00-00:59 JST )。それ以外はスリープ許容
+# (無料プランの 750 インスタンス時間/月に収めるため)。
+# 公開リポジトリなので Actions の実行時間は無制限。/healthz は認証不要で秘密情報も不要。
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 0-15 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /healthz
+        run: |
+          URL="https://cyber-portal-backend.onrender.com/healthz"
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$URL" || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "backend did not return 200 after 3 attempts"
+          exit 1
