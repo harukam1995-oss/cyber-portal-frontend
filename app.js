@@ -523,8 +523,11 @@
   var dotColors = ["#2ce3ff", "#ff2f92", "#8b5cf6", "#3cf2b4", "#ffcf6b"];
   var schedAccount = "haruka";
   var schedRefreshBtn = document.getElementById("sched-refresh");
+  var schedEventsToday = []; // 通知センターが「本日の残り予定」を出すのに参照
 
   function renderEvents(events){
+    schedEventsToday = events || [];
+    if (typeof refreshNotifCenter === "function") refreshNotifCenter();
     schedList.innerHTML = "";
     if (!events || events.length === 0){
       schedList.innerHTML = '<li class="sched-empty">本日の予定はありません</li>';
@@ -1832,6 +1835,8 @@
     }
     renderInboxRow(homeInboxCountNum, homeInboxCountLabel, harukaUnreadCount, harukaUnreadError);
     renderInboxRow(homeInboxCountNumSyslea, homeInboxCountLabelSyslea, sysleaUnreadCount, sysleaUnreadError);
+    if (typeof refreshNotifCenter === "function") refreshNotifCenter();
+    if (typeof maybeNotifyNewMail === "function") maybeNotifyNewMail();
   }
 
   function openMailForAccount(acct){
@@ -3313,6 +3318,226 @@
     return out.join("\n");
   }
 
+  /* ================= 通知センター(ベル)+ PWA =================
+     ベルを押すと、未読メール・本日の残り予定・再連携リマインダーをまとめたパネルを出す。
+     「デスクトップ通知」を有効にすると、ポータルを開いている間に未読が増えたとき
+     ブラウザ通知を出す(バックエンドのプッシュ基盤は無し)。
+     PWA: サービスワーカー登録 + インストールボタン(beforeinstallprompt)。 */
+  var notifBtn = document.getElementById("notif-btn");
+  var notifPanel = document.getElementById("notif-panel");
+  var notifList = document.getElementById("notif-list");
+  var notifDot = document.getElementById("notif-dot");
+  var notifPermBtn = document.getElementById("notif-perm-btn");
+  var notifInstallBtn = document.getElementById("notif-install-btn");
+  var NOTIF_ENABLED_KEY = "notifEnabled";
+  var NOTIF_LAST_UNREAD_KEY = "notifLastUnread";
+  var deferredInstallPrompt = null;
+
+  function notifSupported(){ return typeof window.Notification === "function"; }
+  function notifEnabled(){
+    try { return localStorage.getItem(NOTIF_ENABLED_KEY) === "1"; } catch(e){ return false; }
+  }
+
+  function totalUnread(){
+    var h = typeof harukaUnreadCount === "number" ? harukaUnreadCount : 0;
+    var s = typeof sysleaUnreadCount === "number" ? sysleaUnreadCount : 0;
+    return h + s;
+  }
+
+  // 本日これから始まる予定(終日は当日ぶんを対象)。schedEventsToday を使う。
+  function upcomingTodayEvents(){
+    var now = Date.now();
+    return (schedEventsToday || []).filter(function(ev){
+      if (ev.start && ev.start.date) return true;            // 終日
+      var dt = ev.start && ev.start.dateTime;
+      return dt && new Date(dt).getTime() >= now - 60000;    // 直近(1分前まで許容)
+    }).sort(function(a,b){
+      var ta = (a.start && (a.start.dateTime || a.start.date)) || "";
+      var tb = (b.start && (b.start.dateTime || b.start.date)) || "";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+  }
+
+  function buildNotifItem(icon, title, sub, cls, onClick){
+    var li = document.createElement("li");
+    li.className = "notif-item" + (cls ? " " + cls : "") + (onClick ? "" : " notif-static");
+    var i = document.createElement("span"); i.className = "notif-ico"; i.textContent = icon;
+    var body = document.createElement("div"); body.className = "notif-body";
+    var t = document.createElement("div"); t.className = "notif-title"; t.textContent = title;
+    body.appendChild(t);
+    if (sub){ var s = document.createElement("div"); s.className = "notif-sub"; s.textContent = sub; body.appendChild(s); }
+    li.appendChild(i); li.appendChild(body);
+    if (onClick){
+      li.addEventListener("click", function(){ closeNotifPanel(); onClick(); });
+    }
+    return li;
+  }
+
+  function refreshNotifCenter(){
+    if (!notifList) return;
+    var items = [];
+    var unread = totalUnread();
+    var reauthActive = !!reauthBannerAccount;
+
+    if (unread > 0){
+      var parts = [];
+      if (typeof harukaUnreadCount === "number" && harukaUnreadCount > 0) parts.push("はるか " + harukaUnreadCount);
+      if (typeof sysleaUnreadCount === "number" && sysleaUnreadCount > 0) parts.push("SYSLEA " + sysleaUnreadCount);
+      items.push(buildNotifItem("✉", "未読メール " + unread + " 件", parts.join(" ・ "), null, function(){ showView("mail"); }));
+    }
+
+    var ev = upcomingTodayEvents();
+    ev.slice(0, 3).forEach(function(e){
+      var when = e.start && e.start.date ? "終日" : fmtEventTime(e.start);
+      items.push(buildNotifItem("🗓", e.summary || "(タイトルなし)", "本日 " + when, null, function(){ showView("calendar"); }));
+    });
+
+    if (reauthActive){
+      var label = (typeof ACCOUNT_LABELS === "object" && ACCOUNT_LABELS[reauthBannerAccount]) || reauthBannerAccount;
+      items.push(buildNotifItem("⚠", label + " の Google 連携がまもなく期限切れ", "タップで再連携", "notif-warn", function(){
+        startGoogleConnect(reauthBannerAccount);
+      }));
+    }
+
+    notifList.innerHTML = "";
+    if (!items.length){
+      var empty = document.createElement("li");
+      empty.className = "notif-empty";
+      empty.textContent = "新しい通知はありません";
+      notifList.appendChild(empty);
+    } else {
+      items.forEach(function(li){ notifList.appendChild(li); });
+    }
+
+    if (notifDot) notifDot.hidden = !(unread > 0 || reauthActive);
+    updateNotifPermBtn();
+  }
+
+  function updateNotifPermBtn(){
+    if (!notifPermBtn) return;
+    if (!notifSupported()){ notifPermBtn.hidden = true; return; }
+    notifPermBtn.hidden = false;
+    var perm = Notification.permission;
+    if (perm === "denied"){
+      notifPermBtn.textContent = "通知はブラウザ設定でブロック中";
+      notifPermBtn.disabled = true;
+      notifPermBtn.classList.remove("is-on");
+      return;
+    }
+    notifPermBtn.disabled = false;
+    if (perm === "granted" && notifEnabled()){
+      notifPermBtn.textContent = "デスクトップ通知: ON";
+      notifPermBtn.classList.add("is-on");
+    } else {
+      notifPermBtn.textContent = "デスクトップ通知を有効にする";
+      notifPermBtn.classList.remove("is-on");
+    }
+  }
+
+  if (notifPermBtn){
+    notifPermBtn.addEventListener("click", async function(){
+      if (!notifSupported()) return;
+      if (Notification.permission === "granted"){
+        // トグル(権限はブラウザ側でしか取り消せないので localStorage のみ)
+        var on = !notifEnabled();
+        try { localStorage.setItem(NOTIF_ENABLED_KEY, on ? "1" : "0"); } catch(e){}
+        if (on){
+          try { localStorage.setItem(NOTIF_LAST_UNREAD_KEY, String(totalUnread())); } catch(e){}
+        }
+        updateNotifPermBtn();
+        return;
+      }
+      var res = await Notification.requestPermission();
+      if (res === "granted"){
+        try {
+          localStorage.setItem(NOTIF_ENABLED_KEY, "1");
+          localStorage.setItem(NOTIF_LAST_UNREAD_KEY, String(totalUnread()));
+        } catch(e){}
+      }
+      updateNotifPermBtn();
+    });
+  }
+
+  // 未読が前回より増えていたら通知(ポータルを開いている間だけ)。
+  function maybeNotifyNewMail(){
+    if (!notifSupported() || Notification.permission !== "granted" || !notifEnabled()) return;
+    var cur = totalUnread();
+    var prev;
+    try { prev = parseInt(localStorage.getItem(NOTIF_LAST_UNREAD_KEY) || "0", 10); } catch(e){ prev = 0; }
+    if (isNaN(prev)) prev = 0;
+    if (cur > prev){
+      var delta = cur - prev;
+      var show = function(reg){
+        var opts = { body: "未読メールが " + delta + " 件増えました(合計 " + cur + " 件)", icon: "icon-192.png", tag: "cyber-portal-mail", renotify: true };
+        if (reg && reg.showNotification) reg.showNotification("新着メール", opts);
+        else new Notification("新着メール", opts);
+      };
+      if (navigator.serviceWorker && navigator.serviceWorker.ready){
+        navigator.serviceWorker.ready.then(show).catch(function(){ show(null); });
+      } else {
+        show(null);
+      }
+    }
+    try { localStorage.setItem(NOTIF_LAST_UNREAD_KEY, String(cur)); } catch(e){}
+  }
+
+  function openNotifPanel(){
+    if (!notifPanel) return;
+    refreshNotifCenter();
+    notifPanel.hidden = false;
+    if (notifBtn) notifBtn.setAttribute("aria-expanded", "true");
+    document.addEventListener("mousedown", onNotifOutside, true);
+    document.addEventListener("keydown", onNotifEsc, true);
+  }
+  function closeNotifPanel(){
+    if (!notifPanel) return;
+    notifPanel.hidden = true;
+    if (notifBtn) notifBtn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("mousedown", onNotifOutside, true);
+    document.removeEventListener("keydown", onNotifEsc, true);
+  }
+  function onNotifOutside(e){
+    if (notifPanel && !notifPanel.contains(e.target) && notifBtn && !notifBtn.contains(e.target)){
+      closeNotifPanel();
+    }
+  }
+  function onNotifEsc(e){ if (e.key === "Escape") closeNotifPanel(); }
+
+  if (notifBtn){
+    notifBtn.addEventListener("click", function(){
+      if (notifPanel.hidden) openNotifPanel(); else closeNotifPanel();
+    });
+  }
+
+  // PWA: インストールプロンプト
+  window.addEventListener("beforeinstallprompt", function(e){
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (notifInstallBtn) notifInstallBtn.hidden = false;
+  });
+  window.addEventListener("appinstalled", function(){
+    deferredInstallPrompt = null;
+    if (notifInstallBtn) notifInstallBtn.hidden = true;
+  });
+  if (notifInstallBtn){
+    notifInstallBtn.addEventListener("click", async function(){
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      try { await deferredInstallPrompt.userChoice; } catch(e){}
+      deferredInstallPrompt = null;
+      notifInstallBtn.hidden = true;
+    });
+  }
+
+  // PWA: サービスワーカー登録
+  if ("serviceWorker" in navigator){
+    var reg = function(){ navigator.serviceWorker.register("sw.js").catch(function(err){ console.warn("[sw] register failed", err); }); };
+    if (document.readyState === "complete") reg();
+    else window.addEventListener("load", reg);
+  }
+
+  updateNotifPermBtn();
+
   // ログイン完了(auth-gate側の type="module" スクリプトが発火)後に、
   // Home画面で必要な最小限のデータ(メール未読件数)を読み込む。
   // タスク/メモは各ビューを開いたタイミングで initTasks/initNotes が読み込む。
@@ -3331,8 +3556,11 @@
     warmCalendarView();
     loadWeather();
     checkReauthReminder();
+    refreshNotifCenter();
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
+  // 未読件数を定期的に取り直す(通知センター/デスクトップ通知のため)。
+  setInterval(function(){ if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser) loadGmailUnreadCount(); }, 3 * 60 * 1000);
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
   // (モジュールスクリプトの実行順は保証されないため)にも対応する。
   if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
