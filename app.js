@@ -1438,7 +1438,13 @@
         soonest = { account: acct, expiresAt: s.expiresAt, left: left };
       }
     });
-    if (!soonest){ reauthBanner.hidden = true; return; }
+    if (!soonest){
+      reauthBanner.hidden = true;
+      reauthBannerAccount = null;
+      reauthBannerExpiresAt = null;
+      if (typeof refreshNotifCenter === "function") refreshNotifCenter();
+      return;
+    }
     var days = Math.max(1, Math.ceil(soonest.left / (24 * 60 * 60 * 1000)));
     var label = ACCOUNT_LABELS[soonest.account] || soonest.account;
     reauthBannerAccount = soonest.account;
@@ -1446,6 +1452,7 @@
     reauthBannerText.textContent =
       label + " の Google 連携はあと約" + days + "日で期限切れです。今のうちに再連携してください。";
     reauthBanner.hidden = false;
+    if (typeof refreshNotifCenter === "function") refreshNotifCenter();
   }
 
   var harukaMailItems = null; // null = 未取得; [] = 取得済み(空)
@@ -2222,17 +2229,6 @@
     document.querySelectorAll("#" + containerId + " .acct-tab").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-account") === value);
     });
-  }
-
-  async function loadJsonFile(path){
-    try{
-      var res = await fetch(path, { cache: "no-store" });
-      if (!res.ok) return [];
-      var data = await res.json();
-      return Array.isArray(data) ? data : [];
-    } catch(e){
-      return [];
-    }
   }
 
   var TASK_TAG_LABEL = { haruka: "はるか", syslea: "SYSLEA" };
@@ -3115,8 +3111,10 @@
   }
 
   async function ideasOpenFolder(folderId, folderName, fromCrumbOrRoot){
+    var pushed = false;
     if (!fromCrumbOrRoot){
       ideasStack.push({ id: folderId, name: folderName });
+      pushed = true;
     }
     renderIdeasCrumbs();
     var token = ++ideasLoadToken;
@@ -3129,6 +3127,11 @@
       renderIdeasList(res.items || []);
       setIdeasStatus('<span class="live">●</span> Obsidian vault (Google Drive・読み取り専用)', "");
     } catch(err){
+      // 遷移に失敗したら push した分を戻す(パンくずが実体とズレないように)
+      if (pushed && ideasStack.length && ideasStack[ideasStack.length - 1].id === folderId){
+        ideasStack.pop();
+        renderIdeasCrumbs();
+      }
       if (token !== ideasLoadToken) return;
       setIdeasStatus(escapeHtml(apiErrorMessage(err, "Google Drive")), "err");
       ideasErrorInto(ideasBody, err);

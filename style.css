@@ -684,7 +684,8 @@
   }
   .modal-overlay[hidden]{ display:none; }
   /* 確認ダイアログは他のモーダル(特に event-modal:DOM順で後)より必ず前面に出す */
-  #confirm-modal{ z-index: 70; }
+  /* 確認ダイアログは全モーダル・ポップオーバー(予定ポップオーバー80/通知パネル85)より前面 */
+  #confirm-modal{ z-index: 95; }
   .modal-panel{
     width:min(600px, 100%); max-height: min(84vh, 680px);
     display:flex; flex-direction:column;
