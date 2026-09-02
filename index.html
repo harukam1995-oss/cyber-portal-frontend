@@ -516,6 +516,21 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
+    <div class="mail-actions" id="mail-actions" hidden>
+      <button type="button" class="mail-act-btn" data-mail-action="archive">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+        <span>アーカイブ</span>
+      </button>
+      <button type="button" class="mail-act-btn" data-mail-action="unread">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg>
+        <span>未読にする</span>
+      </button>
+      <button type="button" class="mail-act-btn mail-act-danger" data-mail-action="trash">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>
+        <span>ゴミ箱</span>
+      </button>
+      <span class="mail-act-msg" id="mail-act-msg"></span>
+    </div>
     <div class="mail-detail" id="mail-detail-body"></div>
   </div>
 </div>

@@ -1316,6 +1316,9 @@
   var mailModal = document.getElementById("mail-modal");
   var mailModalTitle = document.getElementById("mail-modal-title");
   var mailDetailBody = document.getElementById("mail-detail-body");
+  var mailActionsEl = document.getElementById("mail-actions");
+  var mailActMsg = document.getElementById("mail-act-msg");
+  var currentMailThread = null;
   var mailTag = document.getElementById("mail-tag");
   var mailStatusBar = document.getElementById("mail-status-bar");
   var homeInboxTag = document.getElementById("home-inbox-tag");
@@ -1663,6 +1666,12 @@
     mail.unread = false;
     mailModalTitle.textContent = mail.subject;
     mailDetailBody.innerHTML = "";
+    if (mailActMsg){ mailActMsg.textContent = ""; }
+    currentMailThread = mail.threadId || null;
+    if (mailActionsEl){
+      mailActionsEl.hidden = !mail.threadId;   // 仮データ(threadId無し)には操作を出さない
+      mailActionsEl.querySelectorAll(".mail-act-btn").forEach(function(b){ b.disabled = false; });
+    }
 
     if (mail.threadId){
       mailDetailBody.appendChild(buildMailFromRow(mail, mail.time));
@@ -1703,6 +1712,34 @@
 
   document.getElementById("mail-modal-close").addEventListener("click", closeMailModal);
   mailModal.addEventListener("click", function(e){ if (e.target === mailModal) closeMailModal(); });
+
+  // スレッド操作(アーカイブ / 未読にする / ゴミ箱)。gmail.modify スコープで実行。
+  async function runMailAction(action){
+    if (!currentMailThread) return;
+    var btns = mailActionsEl ? mailActionsEl.querySelectorAll(".mail-act-btn") : [];
+    btns.forEach(function(b){ b.disabled = true; });
+    if (mailActMsg) mailActMsg.textContent = "実行中…";
+    try{
+      await apiFetch(
+        acctPath("/api/google/gmail/threads/" + encodeURIComponent(currentMailThread) + "/action", mailState.account),
+        { method: "POST", body: JSON.stringify({ action: action }) }
+      );
+      // 一覧から取り除く / 未読を反映するため現在ページを取り直してからモーダルを閉じる。
+      mailModal.hidden = true;
+      document.body.style.overflow = "";
+      currentMailThread = null;
+      fetchMailPage();
+      loadGmailUnreadCount();
+    } catch(err){
+      btns.forEach(function(b){ b.disabled = false; });
+      if (mailActMsg) mailActMsg.textContent = apiErrorMessage(err, "Gmail") || "操作に失敗しました";
+    }
+  }
+  if (mailActionsEl){
+    mailActionsEl.querySelectorAll(".mail-act-btn").forEach(function(btn){
+      btn.addEventListener("click", function(){ runMailAction(btn.getAttribute("data-mail-action")); });
+    });
+  }
 
   var mailSearchInput = document.getElementById("mail-search");
 

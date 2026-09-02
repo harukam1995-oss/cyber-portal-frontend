@@ -916,6 +916,24 @@
     border-radius:8px; padding:10px 12px; margin-bottom:16px;
   }
 
+  /* ---------- メール操作ボタン(詳細モーダル) ---------- */
+  .mail-actions{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:10px 20px; border-bottom:1px solid var(--hairline);
+  }
+  .mail-actions[hidden]{ display:none; }
+  .mail-act-btn{
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    padding:6px 12px; border-radius:7px;
+    border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
+    color: var(--text-dim); font-family: var(--font-body); font-size:11.5px; letter-spacing:.3px;
+  }
+  .mail-act-btn svg{ width:14px; height:14px; stroke: currentColor; }
+  .mail-act-btn:hover:not(:disabled){ border-color: var(--cyan); color: var(--text); }
+  .mail-act-btn:disabled{ opacity:.5; cursor:default; }
+  .mail-act-btn.mail-act-danger:hover:not(:disabled){ border-color:#ff5050; color: var(--err); }
+  .mail-act-msg{ font-size:11px; color: var(--text-faint); }
+
   /* ================= モバイル(<=640px) =================
      このポータルは基本デスクトップ前提。スマホでは:
      - ヒーローのイラスト/スカイラインは非表示(時計・天気・ひとことは残す)
