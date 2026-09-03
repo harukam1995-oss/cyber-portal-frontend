@@ -1202,6 +1202,12 @@
       var down = mkHabitIconBtn("↓", "下へ", "", function(){
         if (idx < habitEditRows.length - 1){ var t = habitEditRows[idx + 1]; habitEditRows[idx + 1] = r; habitEditRows[idx] = t; renderHabitEditRows(); }
       });
+      // 習慣が1つだけなら並べ替えボタン自体を出さない。複数あるときは端を disabled に。
+      var single = habitEditRows.length <= 1;
+      up.hidden = down.hidden = single;
+      up.disabled = idx === 0;
+      down.disabled = idx === habitEditRows.length - 1;
+
       var del = mkHabitIconBtn("×", "削除", "habit-edit-del", async function(){
         if (r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
         habitEditRows.splice(idx, 1); renderHabitEditRows();

@@ -1010,9 +1010,13 @@
   .habit-edit-empty{ font-size:12px; color: var(--text-faint); }
   .habit-edit-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
   /* .event-form の input/select は width:100% なので、行内では明示的に上書きする */
-  .habit-edit-row .habit-edit-name{ flex:1 1 120px; min-width:110px; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
-  .habit-edit-row .habit-edit-type{ flex:none; width:74px !important; padding:7px 6px !important; font-size:12px !important; }
-  .habit-edit-row .habit-edit-target{ flex:none; width:52px !important; padding:7px 6px !important; font-size:13px !important; }
+  .habit-edit-row .habit-edit-name{ flex:1 1 110px; min-width:100px; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
+  .habit-edit-row .habit-edit-type{ flex:none; width:96px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  .habit-edit-row .habit-edit-target{ flex:none; width:48px !important; padding:7px 6px !important; font-size:13px !important; text-align:center; }
+  /* 数値入力のネイティブ上下スピナーは消す(並べ替えの ↑↓ と紛らわしいため) */
+  .habit-edit-target{ -moz-appearance:textfield; appearance:textfield; }
+  .habit-edit-target::-webkit-outer-spin-button,
+  .habit-edit-target::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
   .habit-edit-btn{
     flex:none; width:28px; height:30px; border-radius:6px; cursor:pointer;
     border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
@@ -1020,6 +1024,9 @@
   }
   .habit-edit-btn:hover{ border-color: var(--cyan); color: var(--text); }
   .habit-edit-btn.habit-edit-del:hover{ border-color: var(--err); color: var(--err); }
+  .habit-edit-btn:disabled{ opacity:.3; cursor:default; }
+  .habit-edit-btn:disabled:hover{ border-color: var(--panel-border); color: var(--text-dim); }
+  .habit-edit-btn[hidden]{ display:none; }
   .habit-add-row{ margin-top:10px; width:100%; }
 
   .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
