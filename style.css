@@ -1003,7 +1003,11 @@
     width:52px; height:26px; text-align:center; border-radius:5px;
     border:1px solid var(--panel-border); background: rgba(255,255,255,0.03);
     color: var(--text); font-family: var(--font-mono); font-size:13px;
+    -moz-appearance:textfield; appearance:textfield;
   }
+  /* ネイティブの上下スピナーは消す(− / + ボタンだけにする) */
+  .habit-count-pop input::-webkit-outer-spin-button,
+  .habit-count-pop input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 
   /* 管理モーダルの行 */
   .habit-rows{ display:flex; flex-direction:column; gap:8px; }
