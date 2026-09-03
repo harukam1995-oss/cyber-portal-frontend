@@ -955,12 +955,19 @@
     });
   }
 
-  /* ================= プライベート: 習慣トラッカー (v1c) =================
+  /* ================= プライベート: 習慣トラッカー (v1c / v1c+) =================
      Firestore に習慣定義(habits)と日次ログ(habit_log)を持つ。週は日曜始まり。
      binary(やった/やってない) は 0↔1 トグル、count(回数系) はセルのステッパーで入力。
-     達成率バーの分母は週の7日固定。 */
+     周期 daily は分母7、days(曜日指定)は分母=その週の対象曜日数。
+     単位 / 一時停止(active) / 色分け(color) / ストリーク(backend が streak を返す) に対応。 */
+  var HABIT_COLOR_CSS = {
+    cyan: "var(--cyan)", magenta: "var(--magenta)", green: "var(--ok)",
+    amber: "var(--warn)", violet: "var(--violet)", pink: "#ff8fc7"
+  };
+  var HABIT_COLOR_KEYS = ["cyan", "magenta", "green", "amber", "violet", "pink"];
+  var HABIT_WD_JA = ["日", "月", "火", "水", "木", "金", "土"];
   var habitWeekKey = startOfWeekKey(jstDateKey(new Date()));
-  var habitsState = [];     // [{id,name,type,target,order}]
+  var habitsState = [];     // [{id,name,type,target,unit,cadence,days,active,color,order,streak}]
   var habitLog = {};        // { habitId: { "YYYY-MM-DD": value } }
   var habitDays = [];       // 表示中の週の7つの dateKey
   var habitLogTimers = {};  // "habitId|date" -> debounce timeout
@@ -1005,19 +1012,35 @@
     var wk = document.getElementById("pv-habit-week");
     if (wk && habitDays.length === 7) wk.textContent = habitMdLabel(habitDays[0]) + " – " + habitMdLabel(habitDays[6]);
     list.innerHTML = "";
-    if (!habitsState.length){
+
+    var active = habitsState.filter(function(h){ return h.active !== false; });
+    var paused = habitsState.filter(function(h){ return h.active === false; });
+
+    if (!active.length && !paused.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」から習慣を追加してください。</div>';
       return;
     }
+    if (!active.length){
+      list.innerHTML = '<div class="pv-habit-empty">有効な習慣がありません（一時停止中 ' + paused.length + ' 件）。「管理」から再開できます。</div>';
+      return;
+    }
+
     var todayKey = jstDateKey(new Date());
-    habitsState.forEach(function(h){
+    active.forEach(function(h){
       var log = habitLog[h.id] || {};
       var goal = h.type === "count" ? Math.max(1, h.target || 1) : 1;
+      var byDays = h.cadence === "days" && Array.isArray(h.days) && h.days.length;
+      var scheduled = {};
+      habitDays.forEach(function(dk){
+        scheduled[dk] = byDays ? (h.days.indexOf(keyWeekday(dk)) !== -1) : true;
+      });
+      var denom = byDays ? habitDays.filter(function(dk){ return scheduled[dk]; }).length : 7;
       var met = 0;
 
       var row = document.createElement("div");
       row.className = "pv-habit-row";
       row.setAttribute("data-habit-id", h.id);
+      if (h.color && HABIT_COLOR_CSS[h.color]) row.style.setProperty("--habit-accent", HABIT_COLOR_CSS[h.color]);
 
       var nameEl = document.createElement("div");
       nameEl.className = "pv-habit-name";
@@ -1025,8 +1048,14 @@
       if (h.type === "count"){
         var tgt = document.createElement("span");
         tgt.className = "pv-habit-target";
-        tgt.textContent = "×" + goal;
+        tgt.textContent = "×" + goal + (h.unit || "");
         nameEl.appendChild(tgt);
+      }
+      if (byDays){
+        var cad = document.createElement("span");
+        cad.className = "pv-habit-cad";
+        cad.textContent = h.days.slice().sort(function(a,b){return a-b;}).map(function(d){ return HABIT_WD_JA[d]; }).join("");
+        nameEl.appendChild(cad);
       }
       row.appendChild(nameEl);
 
@@ -1035,11 +1064,13 @@
       habitDays.forEach(function(dk){
         var v = Number(log[dk]) || 0;
         var isMet = v >= goal;
-        if (isMet) met++;
+        var counts = scheduled[dk];
+        if (isMet && counts) met++;
         var cell = document.createElement("button");
         cell.type = "button";
         cell.className = "pv-habit-cell " + (h.type === "count" ? "count" : "binary")
-          + (isMet ? " met" : "") + (v > 0 && !isMet ? " partial" : "") + (dk === todayKey ? " today" : "");
+          + (isMet ? " met" : "") + (v > 0 && !isMet ? " partial" : "")
+          + (dk === todayKey ? " today" : "") + (counts ? "" : " off");
         cell.setAttribute("data-date", dk);
         cell.setAttribute("aria-label", habitMdLabel(dk) + " " + (h.name || ""));
         if (h.type === "count"){
@@ -1059,16 +1090,30 @@
       var bar = document.createElement("div");
       bar.className = "pv-habit-bar";
       var fill = document.createElement("span");
-      fill.style.width = Math.round((met / 7) * 100) + "%";
+      fill.style.width = (denom ? Math.round((met / denom) * 100) : 0) + "%";
       bar.appendChild(fill);
       var frac = document.createElement("span");
       frac.className = "pv-habit-frac";
-      frac.textContent = met + "/7";
-      meta.appendChild(bar); meta.appendChild(frac);
+      frac.textContent = met + "/" + denom;
+      meta.appendChild(bar);
+      if (Number(h.streak) >= 2){
+        var st = document.createElement("span");
+        st.className = "pv-habit-streak";
+        st.textContent = "🔥" + h.streak;
+        meta.appendChild(st);
+      }
+      meta.appendChild(frac);
       row.appendChild(meta);
 
       list.appendChild(row);
     });
+
+    if (paused.length){
+      var note = document.createElement("div");
+      note.className = "pv-habit-paused-note";
+      note.textContent = "一時停止中 " + paused.length + " 件（「管理」から再開）";
+      list.appendChild(note);
+    }
   }
 
   function onHabitCellClick(habit, dateKey, cellEl){
@@ -1142,16 +1187,26 @@
     }, true);
   }
 
-  /* ---- 管理モーダル ---- */
+  /* ---- 管理モーダル (習慣ごとの縦積みブロック) ---- */
   function openHabitModal(){
     var modal = document.getElementById("habit-modal");
     if (!modal) return;
     var errEl = document.getElementById("habit-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     habitEditRows = habitsState.map(function(h){
-      return { id: h.id, name: h.name, type: h.type === "count" ? "count" : "binary", target: h.target || 1 };
+      return {
+        id: h.id,
+        name: h.name,
+        type: h.type === "count" ? "count" : "binary",
+        target: h.target || 1,
+        unit: h.unit || "",
+        cadence: h.cadence === "days" ? "days" : "daily",
+        days: Array.isArray(h.days) ? h.days.slice() : [],
+        active: h.active !== false,
+        color: HABIT_COLOR_KEYS.indexOf(h.color) !== -1 ? h.color : null
+      };
     });
-    renderHabitEditRows();
+    renderHabitBlocks();
     modal.hidden = false;
   }
   function closeHabitModal(){
@@ -1167,7 +1222,10 @@
     b.addEventListener("click", fn);
     return b;
   }
-  function renderHabitEditRows(){
+  function habitNewRow(){
+    return { id: uid(), name: "", type: "binary", target: 1, unit: "", cadence: "daily", days: [], active: true, color: null };
+  }
+  function renderHabitBlocks(){
     var wrap = document.getElementById("habit-rows");
     if (!wrap) return;
     wrap.innerHTML = "";
@@ -1175,47 +1233,119 @@
       wrap.innerHTML = '<div class="habit-edit-empty">習慣がありません。下のボタンで追加してください。</div>';
       return;
     }
+    var single = habitEditRows.length <= 1;
     habitEditRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-edit-row";
+      var block = document.createElement("div");
+      block.className = "habit-block";
 
+      // --- ヘッダ: 名前 + 並べ替え + 削除 ---
+      var head = document.createElement("div");
+      head.className = "habit-block-head";
       var name = document.createElement("input");
       name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 60;
       name.placeholder = "習慣名"; name.value = r.name || "";
       name.addEventListener("input", function(){ r.name = name.value; });
+      var up = mkHabitIconBtn("↑", "上へ", "", function(){
+        if (idx > 0){ var t = habitEditRows[idx - 1]; habitEditRows[idx - 1] = r; habitEditRows[idx] = t; renderHabitBlocks(); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(){
+        if (idx < habitEditRows.length - 1){ var t = habitEditRows[idx + 1]; habitEditRows[idx + 1] = r; habitEditRows[idx] = t; renderHabitBlocks(); }
+      });
+      up.hidden = down.hidden = single;
+      up.disabled = idx === 0;
+      down.disabled = idx === habitEditRows.length - 1;
+      var del = mkHabitIconBtn("×", "削除", "habit-edit-del", async function(){
+        if (r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
+        habitEditRows.splice(idx, 1); renderHabitBlocks();
+      });
+      head.appendChild(name); head.appendChild(up); head.appendChild(down); head.appendChild(del);
+      block.appendChild(head);
 
+      // --- 種別 + 目標 + 単位 ---
+      var lineType = document.createElement("div");
+      lineType.className = "habit-block-line";
       var type = document.createElement("select");
       type.className = "habit-edit-type";
       type.innerHTML = '<option value="binary">チェック</option><option value="count">回数</option>';
       type.value = r.type;
-
       var target = document.createElement("input");
       target.type = "number"; target.className = "habit-edit-target";
       target.min = "1"; target.max = "1000"; target.value = String(r.target || 1);
-      target.hidden = r.type !== "count";
+      target.setAttribute("aria-label", "1日の目標回数");
       target.addEventListener("input", function(){ r.target = Math.max(1, Math.round(Number(target.value) || 1)); });
-      type.addEventListener("change", function(){ r.type = type.value; target.hidden = r.type !== "count"; });
+      var unit = document.createElement("input");
+      unit.type = "text"; unit.className = "habit-edit-unit"; unit.maxLength = 8;
+      unit.placeholder = "単位"; unit.value = r.unit || "";
+      unit.setAttribute("aria-label", "単位");
+      unit.addEventListener("input", function(){ r.unit = unit.value; });
+      function syncTypeUI(){ var c = r.type === "count"; target.hidden = !c; unit.hidden = !c; }
+      type.addEventListener("change", function(){ r.type = type.value; syncTypeUI(); });
+      syncTypeUI();
+      lineType.appendChild(type); lineType.appendChild(target); lineType.appendChild(unit);
+      block.appendChild(lineType);
 
-      var up = mkHabitIconBtn("↑", "上へ", "", function(){
-        if (idx > 0){ var t = habitEditRows[idx - 1]; habitEditRows[idx - 1] = r; habitEditRows[idx] = t; renderHabitEditRows(); }
+      // --- 周期 ---
+      var lineCad = document.createElement("div");
+      lineCad.className = "habit-block-line";
+      var cad = document.createElement("select");
+      cad.className = "habit-edit-cadence";
+      cad.innerHTML = '<option value="daily">毎日</option><option value="days">曜日を指定</option>';
+      cad.value = r.cadence;
+      var daysWrap = document.createElement("div");
+      daysWrap.className = "habit-days";
+      HABIT_WD_JA.forEach(function(wd, di){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "weekday-btn" + (r.days.indexOf(di) !== -1 ? " active" : "");
+        b.textContent = wd;
+        b.addEventListener("click", function(){
+          var p = r.days.indexOf(di);
+          if (p === -1) r.days.push(di); else r.days.splice(p, 1);
+          b.classList.toggle("active", p === -1);
+        });
+        daysWrap.appendChild(b);
       });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(){
-        if (idx < habitEditRows.length - 1){ var t = habitEditRows[idx + 1]; habitEditRows[idx + 1] = r; habitEditRows[idx] = t; renderHabitEditRows(); }
-      });
-      // 習慣が1つだけなら並べ替えボタン自体を出さない。複数あるときは端を disabled に。
-      var single = habitEditRows.length <= 1;
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === habitEditRows.length - 1;
+      function syncCadUI(){ daysWrap.hidden = r.cadence !== "days"; }
+      cad.addEventListener("change", function(){ r.cadence = cad.value; syncCadUI(); });
+      syncCadUI();
+      lineCad.appendChild(cad); lineCad.appendChild(daysWrap);
+      block.appendChild(lineCad);
 
-      var del = mkHabitIconBtn("×", "削除", "habit-edit-del", async function(){
-        if (r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
-        habitEditRows.splice(idx, 1); renderHabitEditRows();
+      // --- 色 + 一時停止 ---
+      var lineMisc = document.createElement("div");
+      lineMisc.className = "habit-block-line habit-block-misc";
+      var sw = document.createElement("div");
+      sw.className = "habit-swatches";
+      function selectSwatch(val){
+        r.color = val;
+        sw.querySelectorAll(".habit-swatch").forEach(function(el){
+          el.classList.toggle("sel", (el.getAttribute("data-color") || null) === (val || null));
+        });
+      }
+      var none = document.createElement("button");
+      none.type = "button"; none.className = "habit-swatch none" + (r.color ? "" : " sel");
+      none.title = "色なし"; none.setAttribute("aria-label", "色なし");
+      none.addEventListener("click", function(){ selectSwatch(null); });
+      sw.appendChild(none);
+      HABIT_COLOR_KEYS.forEach(function(ck){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "habit-swatch" + (r.color === ck ? " sel" : "");
+        b.setAttribute("data-color", ck);
+        b.style.background = HABIT_COLOR_CSS[ck];
+        b.setAttribute("aria-label", "色 " + ck);
+        b.addEventListener("click", function(){ selectSwatch(ck); });
+        sw.appendChild(b);
       });
+      var pause = document.createElement("label");
+      pause.className = "habit-pause";
+      var pcb = document.createElement("input");
+      pcb.type = "checkbox"; pcb.checked = r.active === false;
+      pcb.addEventListener("change", function(){ r.active = !pcb.checked; });
+      pause.appendChild(pcb);
+      pause.appendChild(document.createTextNode(" 一時停止"));
+      lineMisc.appendChild(sw); lineMisc.appendChild(pause);
+      block.appendChild(lineMisc);
 
-      row.appendChild(name); row.appendChild(type); row.appendChild(target);
-      row.appendChild(up); row.appendChild(down); row.appendChild(del);
-      wrap.appendChild(row);
+      wrap.appendChild(block);
     });
   }
 
@@ -1224,19 +1354,25 @@
     var errEl = document.getElementById("habit-form-error");
     var saveBtn = document.getElementById("habit-save");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
     var cleaned = [];
     for (var i = 0; i < habitEditRows.length; i++){
       var r = habitEditRows[i];
       var nm = (r.name || "").trim();
-      if (!nm){
-        if (errEl){ errEl.textContent = "習慣名を入力してください（" + (i + 1) + "行目）。"; errEl.hidden = false; }
-        return;
-      }
+      if (!nm){ showErr("習慣名を入力してください（" + (i + 1) + "個目）。"); return; }
+      var cadence = r.cadence === "days" ? "days" : "daily";
+      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
+      if (cadence === "days" && !days.length){ showErr("「" + nm + "」の曜日を1つ以上選んでください。"); return; }
       cleaned.push({
         id: r.id,
         name: nm,
         type: r.type === "count" ? "count" : "binary",
-        target: r.type === "count" ? Math.max(1, Math.round(Number(r.target) || 1)) : 1
+        target: r.type === "count" ? Math.max(1, Math.round(Number(r.target) || 1)) : 1,
+        unit: r.type === "count" ? String(r.unit || "").trim().slice(0, 8) : "",
+        cadence: cadence,
+        days: days,
+        active: r.active !== false,
+        color: HABIT_COLOR_KEYS.indexOf(r.color) !== -1 ? r.color : null
       });
     }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
@@ -1270,8 +1406,8 @@
     if (cancelBtn) cancelBtn.addEventListener("click", closeHabitModal);
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeHabitModal(); });
     if (addRowBtn) addRowBtn.addEventListener("click", function(){
-      habitEditRows.push({ id: uid(), name: "", type: "binary", target: 1 });
-      renderHabitEditRows();
+      habitEditRows.push(habitNewRow());
+      renderHabitBlocks();
     });
     if (form) form.addEventListener("submit", onHabitModalSubmit);
 

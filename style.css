@@ -964,6 +964,7 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .pv-habit-target{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); flex:none; }
+  .pv-habit-cad{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); flex:none; letter-spacing:1px; }
   .pv-habit-cells{ display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; }
   .pv-habit-cell{
     aspect-ratio:1 / 1; min-height:26px; border-radius:6px; cursor:pointer;
@@ -972,17 +973,20 @@
     display:flex; align-items:center; justify-content:center; padding:0;
   }
   .pv-habit-cell:hover{ border-color: var(--cyan); }
+  .pv-habit-cell.off{ opacity:.4; }
   .pv-habit-cell.today{ border-color: rgba(44,227,255,0.5); }
   .pv-habit-cell.partial{ background: rgba(255,47,146,0.14); color: var(--text); }
   .pv-habit-cell.met{
-    background: linear-gradient(135deg, var(--magenta), var(--cyan));
+    background: var(--habit-accent, linear-gradient(135deg, var(--magenta), var(--cyan)));
     border-color: transparent; color: #0a0618;
   }
   .pv-habit-cell.binary svg{ width:14px; height:14px; }
   .pv-habit-meta{ display:flex; align-items:center; gap:8px; }
   .pv-habit-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
-  .pv-habit-bar span{ display:block; height:100%; border-radius:3px; background: linear-gradient(90deg, var(--magenta), var(--cyan)); box-shadow: 0 0 6px var(--magenta-dim); }
+  .pv-habit-bar span{ display:block; height:100%; border-radius:3px; background: var(--habit-accent, linear-gradient(90deg, var(--magenta), var(--cyan))); box-shadow: 0 0 6px var(--magenta-dim); }
+  .pv-habit-streak{ font-family: var(--font-mono); font-size:10.5px; color: var(--warn); flex:none; }
   .pv-habit-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
+  .pv-habit-paused-note{ font-size:11px; color: var(--text-faint); margin-top:2px; line-height:1.6; }
   .pv-habit-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-habit-status.is-err{ color: var(--err); }
 
@@ -1009,18 +1013,39 @@
   .habit-count-pop input::-webkit-outer-spin-button,
   .habit-count-pop input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 
-  /* 管理モーダルの行 */
-  .habit-rows{ display:flex; flex-direction:column; gap:8px; }
+  /* 管理モーダル: 習慣ごとの縦積みブロック */
+  .habit-rows{ display:flex; flex-direction:column; gap:10px; }
   .habit-edit-empty{ font-size:12px; color: var(--text-faint); }
-  .habit-edit-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-  /* .event-form の input/select は width:100% なので、行内では明示的に上書きする */
-  .habit-edit-row .habit-edit-name{ flex:1 1 110px; min-width:100px; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
-  .habit-edit-row .habit-edit-type{ flex:none; width:96px !important; padding:7px 8px !important; font-size:12.5px !important; }
-  .habit-edit-row .habit-edit-target{ flex:none; width:48px !important; padding:7px 6px !important; font-size:13px !important; text-align:center; }
-  /* 数値入力のネイティブ上下スピナーは消す(並べ替えの ↑↓ と紛らわしいため) */
+  .habit-block{
+    display:flex; flex-direction:column; gap:8px;
+    border:1px solid var(--hairline); border-radius:10px; padding:10px;
+    background: rgba(255,255,255,0.015);
+  }
+  .habit-block-head{ display:flex; align-items:center; gap:6px; }
+  .habit-block-line{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .habit-block-misc{ justify-content:space-between; }
+  /* .event-form の input/select は width:100% なので、ブロック内で明示的に上書きする */
+  .habit-block .habit-edit-name{ flex:1 1 auto; min-width:0; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
+  .habit-block .habit-edit-type{ flex:none; width:96px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  .habit-block .habit-edit-cadence{ flex:none; width:120px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  .habit-block .habit-edit-target{ flex:none; width:56px !important; padding:7px 6px !important; font-size:13px !important; text-align:center; }
+  .habit-block .habit-edit-unit{ flex:none; width:74px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  .habit-edit-target[hidden], .habit-edit-unit[hidden], .habit-days[hidden]{ display:none; }
+  /* 数値入力のネイティブ上下スピナーは消す */
   .habit-edit-target{ -moz-appearance:textfield; appearance:textfield; }
   .habit-edit-target::-webkit-outer-spin-button,
   .habit-edit-target::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .habit-days{ display:flex; gap:4px; flex-wrap:wrap; }
+  .habit-days .weekday-btn{ width:26px; height:26px; border-radius:6px; font-size:11px; }
+  .habit-swatches{ display:flex; align-items:center; gap:6px; }
+  .habit-swatch{
+    width:18px; height:18px; border-radius:50%; padding:0; cursor:pointer;
+    border:1px solid var(--panel-border);
+  }
+  .habit-swatch.none{ background: repeating-linear-gradient(45deg, rgba(255,255,255,0.10) 0 3px, transparent 3px 6px); }
+  .habit-swatch.sel{ outline:2px solid var(--text); outline-offset:1px; }
+  .habit-pause{ display:flex; align-items:center; gap:5px; font-size:11.5px; color: var(--text-dim); cursor:pointer; flex:none; }
+  .habit-pause input{ width:auto !important; }
   .habit-edit-btn{
     flex:none; width:28px; height:30px; border-radius:6px; cursor:pointer;
     border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
