@@ -1013,23 +1013,42 @@
   .habit-count-pop input::-webkit-outer-spin-button,
   .habit-count-pop input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 
-  /* 管理モーダル: 習慣ごとの縦積みブロック */
-  .habit-rows{ display:flex; flex-direction:column; gap:10px; }
+  /* 管理モーダル: 一覧 → タイトルを押して詳細設定 */
+  #habit-list-view[hidden], #habit-detail-view[hidden]{ display:none; }
+  .habit-rows{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
   .habit-edit-empty{ font-size:12px; color: var(--text-faint); }
-  .habit-block{
-    display:flex; flex-direction:column; gap:8px;
-    border:1px solid var(--hairline); border-radius:10px; padding:10px;
+
+  /* 一覧の行 */
+  .habit-list-row{
+    display:flex; align-items:center; gap:8px; cursor:pointer;
+    border:1px solid var(--hairline); border-radius:9px; padding:9px 10px;
     background: rgba(255,255,255,0.015);
   }
-  .habit-block-head{ display:flex; align-items:center; gap:6px; }
+  .habit-list-row:hover{ border-color: var(--cyan); }
+  .habit-list-row:focus-visible{ outline:2px solid var(--cyan); outline-offset:1px; }
+  .habit-list-row.is-paused{ opacity:.5; }
+  .habit-list-dot{ width:10px; height:10px; border-radius:50%; flex:none; border:1px solid var(--panel-border); }
+  .habit-list-dot.none{ background: repeating-linear-gradient(45deg, rgba(255,255,255,0.12) 0 2px, transparent 2px 4px); }
+  .habit-list-txt{ flex:1 1 auto; min-width:0; }
+  .habit-list-name{ font-size:13px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .habit-list-hint{ font-size:10.5px; color: var(--text-faint); letter-spacing:.3px; margin-top:2px; }
+  .habit-list-chev{ flex:none; color: var(--text-faint); font-size:18px; line-height:1; }
+
+  /* 詳細ビュー */
+  .habit-detail-back{
+    background:none; border:none; color: var(--cyan); cursor:pointer;
+    font-family: var(--font-body); font-size:12px; letter-spacing:.4px; padding:0 0 8px; margin:0;
+  }
+  #habit-detail-body{ display:flex; flex-direction:column; gap:10px; }
+  .habit-detail-del{ width:100%; margin-top:12px; }
   .habit-block-line{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .habit-block-misc{ justify-content:space-between; }
-  /* .event-form の input/select は width:100% なので、ブロック内で明示的に上書きする */
-  .habit-block .habit-edit-name{ flex:1 1 auto; min-width:0; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
-  .habit-block .habit-edit-type{ flex:none; width:96px !important; padding:7px 8px !important; font-size:12.5px !important; }
-  .habit-block .habit-edit-cadence{ flex:none; width:120px !important; padding:7px 8px !important; font-size:12.5px !important; }
-  .habit-block .habit-edit-target{ flex:none; width:56px !important; padding:7px 6px !important; font-size:13px !important; text-align:center; }
-  .habit-block .habit-edit-unit{ flex:none; width:74px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  /* .event-form の input/select は width:100% なので、詳細ビュー内で明示的に上書きする */
+  #habit-detail-body > .habit-edit-name{ width:100% !important; padding:8px 10px !important; font-size:13px !important; }
+  #habit-detail-body .habit-edit-type{ flex:none; width:96px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  #habit-detail-body .habit-edit-cadence{ flex:none; width:120px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  #habit-detail-body .habit-edit-target{ flex:none; width:56px !important; padding:7px 6px !important; font-size:13px !important; text-align:center; }
+  #habit-detail-body .habit-edit-unit{ flex:none; width:74px !important; padding:7px 8px !important; font-size:12.5px !important; }
   .habit-edit-target[hidden], .habit-edit-unit[hidden], .habit-days[hidden]{ display:none; }
   /* 数値入力のネイティブ上下スピナーは消す */
   .habit-edit-target{ -moz-appearance:textfield; appearance:textfield; }

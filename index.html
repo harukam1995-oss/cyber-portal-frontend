@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.9.0</span>
+      <span>v2.9.1</span>
     </div>
   </footer>
 </div>
@@ -903,8 +903,17 @@
       </button>
     </div>
     <form class="event-form" id="habit-form">
-      <div class="habit-rows" id="habit-rows"></div>
-      <button type="button" class="ev-btn habit-add-row" id="habit-add-row">＋ 習慣を追加</button>
+      <!-- 一覧ビュー: 習慣タイトルの一覧 + 新規作成 -->
+      <div id="habit-list-view">
+        <button type="button" class="ev-btn habit-add-row" id="habit-new">＋ 新規作成</button>
+        <div class="habit-rows" id="habit-rows"></div>
+      </div>
+      <!-- 詳細ビュー: 1習慣ぶんの設定 -->
+      <div id="habit-detail-view" hidden>
+        <button type="button" class="habit-detail-back" id="habit-detail-back">‹ 一覧へ戻る</button>
+        <div id="habit-detail-body"></div>
+        <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="habit-detail-del">この習慣を削除</button>
+      </div>
       <div class="event-form-error" id="habit-form-error" hidden></div>
       <div class="event-form-actions">
         <div class="event-form-actions-right">
