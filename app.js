@@ -3149,6 +3149,11 @@
       else if (!noteModal.hidden) closeNoteModal();
       else if (!taskModal.hidden) closeTaskModal();
       else if (!confirmModal.hidden) closeConfirmModal(false);
+      else if (settingsModal && !settingsModal.hidden) closeSettings();
+      else {
+        var finModal = document.getElementById("finance-modal");
+        if (finModal && !finModal.hidden) closeFinanceModal();
+      }
     }
   });
 
