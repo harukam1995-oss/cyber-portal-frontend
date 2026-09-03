@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.9.1</span>
+      <span>v2.10.0</span>
     </div>
   </footer>
 </div>
@@ -355,11 +355,27 @@
     </div>
 
     <div class="pv-bottom">
-      <!-- TODAY'S PLAN（次段階で実装） -->
-      <section class="panel pv-card pv-soon">
+      <!-- TODAY'S PLAN（v1d: Firestore、曜日別テンプレ、任意時刻、進捗％） -->
+      <section class="panel pv-card pv-plan">
         <div class="corner tl"></div><div class="corner br"></div>
-        <div class="card-head"><h2>TODAY'S PLAN</h2><span class="placeholder-tag">準備中</span></div>
-        <div class="card-body"><p class="pv-soon-msg">風呂・爪切りなど、今日やることの手動チェックリスト。</p></div>
+        <div class="card-head">
+          <h2>TODAY'S PLAN</h2>
+          <button type="button" class="pv-plan-tpl-btn" id="pv-plan-templates">テンプレ</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-plan-head">
+            <span class="pv-plan-date" id="pv-plan-date">--月--日</span>
+            <div class="pv-plan-bar"><span id="pv-plan-fill"></span></div>
+            <span class="pv-plan-frac" id="pv-plan-frac">0/0</span>
+          </div>
+          <div class="pv-plan-list" id="pv-plan-list"></div>
+          <form class="pv-plan-add" id="pv-plan-add-form">
+            <input type="text" id="pv-plan-add-text" maxlength="120" placeholder="やることを追加" autocomplete="off">
+            <input type="time" id="pv-plan-add-time" aria-label="時刻（任意）">
+            <button type="submit" id="pv-plan-add-btn" aria-label="追加">＋</button>
+          </form>
+          <p class="pv-plan-status" id="pv-plan-status">読み込み中…</p>
+        </div>
       </section>
       <!-- クイックアクセス -->
       <section class="panel pv-card">
@@ -932,6 +948,51 @@
   <button type="button" id="habit-count-plus" aria-label="1増やす">＋</button>
 </div>
 
+<!-- ================= TODAY'S PLAN テンプレート管理モーダル ================= -->
+<div class="modal-overlay" id="plan-modal" hidden role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="plan-modal-title">テンプレートの管理</h3>
+      <button class="modal-close" type="button" id="plan-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="plan-form">
+      <!-- 一覧ビュー: テンプレ名の一覧 + 新規作成 -->
+      <div id="plan-list-view">
+        <button type="button" class="ev-btn habit-add-row" id="plan-new">＋ 新規作成</button>
+        <div class="habit-rows" id="plan-rows"></div>
+      </div>
+      <!-- 詳細ビュー: 1テンプレぶんの項目編集 -->
+      <div id="plan-detail-view" hidden>
+        <button type="button" class="habit-detail-back" id="plan-detail-back">‹ 一覧へ戻る</button>
+        <div id="plan-detail-body"></div>
+        <button type="button" class="ev-btn pv-plan-apply-btn" id="plan-detail-apply">このテンプレを今日に適用</button>
+        <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="plan-detail-del">このテンプレを削除</button>
+      </div>
+      <div class="event-form-error" id="plan-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="plan-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="plan-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- テンプレ適用の3択（既存の項目があるとき） -->
+<div class="modal-overlay" id="plan-apply-modal" hidden role="dialog" aria-modal="true">
+  <div class="modal-panel plan-apply-panel">
+    <p id="plan-apply-msg">このテンプレを今日に適用します。</p>
+    <div class="plan-apply-actions">
+      <button type="button" class="ev-btn ev-btn-primary" id="plan-apply-append">追記</button>
+      <button type="button" class="ev-btn" id="plan-apply-replace">置き換え</button>
+      <button type="button" class="ev-btn" id="plan-apply-cancel">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= CALENDAR EVENT DETAIL POPOVER =================
      予定をクリックしたときに、いきなり編集フォームを開くのではなく
      まず読み取り用の小さなカードを出す。編集/削除はそこから。 -->
@@ -984,6 +1045,17 @@
         </label>
         <p class="settings-hint" id="settings-finance-current">現在: 未設定</p>
         <p class="settings-hint">「今月の収支」カードがこのシートの「家計簿」タブを読み書きします。空にすると連携を解除します。変更後は「はるか」の再連携が必要な場合があります。</p>
+      </div>
+
+      <div class="settings-section">
+        <h4>TODAY'S PLAN の既定テンプレ</h4>
+        <label>平日（月〜金）
+          <select id="settings-plan-weekday"><option value="">なし</option></select>
+        </label>
+        <label>休日（土日）
+          <select id="settings-plan-holiday"><option value="">なし</option></select>
+        </label>
+        <p class="settings-hint">新しい日を初めて開いたとき、その曜日の既定テンプレが自動で入ります。テンプレは「TODAY'S PLAN」カードの「テンプレ」から作成します。</p>
       </div>
 
       <div class="settings-section">

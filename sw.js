@@ -3,7 +3,7 @@
    - HTML はネットワーク優先(デプロイが即反映)、静的アセットは stale-while-revalidate
    - バックエンド API(別オリジン)は素通し
    - 通知クリックでポータルを前面化 */
-const CACHE = "cyber-portal-shell-v9";
+const CACHE = "cyber-portal-shell-v10";
 const SHELL = [
   "./",
   "./index.html",
