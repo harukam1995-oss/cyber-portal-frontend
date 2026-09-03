@@ -933,6 +933,95 @@
   .pv-fin-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-fin-reconnect{ margin-top:8px; }
 
+  /* ---------- 習慣トラッカー (v1c) ---------- */
+  .pv-habit .card-head{ display:flex; align-items:center; justify-content:space-between; }
+  .pv-habit-manage{
+    font-family: var(--font-body); font-size:11.5px; letter-spacing:.4px;
+    color: var(--cyan); background: rgba(44,227,255,0.06);
+    border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px; cursor:pointer;
+  }
+  .pv-habit-manage:hover{ border-color: var(--cyan); }
+  .pv-habit-weeknav{
+    display:flex; align-items:center; justify-content:center; gap:12px;
+    font-family: var(--font-mono); font-size:11.5px; color: var(--text-dim); margin-bottom:8px;
+  }
+  .pv-habit-weeknav button{
+    width:22px; height:22px; border-radius:5px; border:1px solid var(--panel-border);
+    background: rgba(255,255,255,0.02); color: var(--text-dim); cursor:pointer; line-height:1;
+    font-size:14px; display:flex; align-items:center; justify-content:center;
+  }
+  .pv-habit-weeknav button:hover{ border-color: var(--cyan); color: var(--text); }
+  .pv-habit-dowhead{
+    display:grid; grid-template-columns: repeat(7, 1fr); gap:4px;
+    padding-left: 0; margin-bottom:4px;
+  }
+  .pv-habit-dowhead span{ text-align:center; font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
+  .pv-habit-list{ display:flex; flex-direction:column; gap:12px; }
+  .pv-habit-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
+  .pv-habit-row{ display:flex; flex-direction:column; gap:5px; }
+  .pv-habit-name{
+    font-size:12.5px; color: var(--text); display:flex; align-items:baseline; gap:6px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pv-habit-target{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); flex:none; }
+  .pv-habit-cells{ display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; }
+  .pv-habit-cell{
+    aspect-ratio:1 / 1; min-height:26px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--hairline); background: rgba(255,255,255,0.03);
+    color: var(--text-dim); font-family: var(--font-mono); font-size:12px;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .pv-habit-cell:hover{ border-color: var(--cyan); }
+  .pv-habit-cell.today{ border-color: rgba(44,227,255,0.5); }
+  .pv-habit-cell.partial{ background: rgba(255,47,146,0.14); color: var(--text); }
+  .pv-habit-cell.met{
+    background: linear-gradient(135deg, var(--magenta), var(--cyan));
+    border-color: transparent; color: #0a0618;
+  }
+  .pv-habit-cell.binary svg{ width:14px; height:14px; }
+  .pv-habit-meta{ display:flex; align-items:center; gap:8px; }
+  .pv-habit-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
+  .pv-habit-bar span{ display:block; height:100%; border-radius:3px; background: linear-gradient(90deg, var(--magenta), var(--cyan)); box-shadow: 0 0 6px var(--magenta-dim); }
+  .pv-habit-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
+  .pv-habit-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
+  .pv-habit-status.is-err{ color: var(--err); }
+
+  /* 回数系セルのステッパー */
+  .habit-count-pop{
+    position:fixed; z-index:120; display:flex; align-items:center; gap:4px;
+    padding:5px; border-radius:8px;
+    background: var(--panel-solid); border:1px solid var(--panel-border);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .habit-count-pop[hidden]{ display:none; }
+  .habit-count-pop button{
+    width:26px; height:26px; border-radius:5px; border:1px solid var(--panel-border);
+    background: rgba(255,255,255,0.03); color: var(--text); cursor:pointer; font-size:15px; line-height:1;
+  }
+  .habit-count-pop button:hover{ border-color: var(--cyan); }
+  .habit-count-pop input{
+    width:52px; height:26px; text-align:center; border-radius:5px;
+    border:1px solid var(--panel-border); background: rgba(255,255,255,0.03);
+    color: var(--text); font-family: var(--font-mono); font-size:13px;
+  }
+
+  /* 管理モーダルの行 */
+  .habit-rows{ display:flex; flex-direction:column; gap:8px; }
+  .habit-edit-empty{ font-size:12px; color: var(--text-faint); }
+  .habit-edit-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  /* .event-form の input/select は width:100% なので、行内では明示的に上書きする */
+  .habit-edit-row .habit-edit-name{ flex:1 1 120px; min-width:110px; width:auto !important; padding:7px 9px !important; font-size:13px !important; }
+  .habit-edit-row .habit-edit-type{ flex:none; width:74px !important; padding:7px 6px !important; font-size:12px !important; }
+  .habit-edit-row .habit-edit-target{ flex:none; width:52px !important; padding:7px 6px !important; font-size:13px !important; }
+  .habit-edit-btn{
+    flex:none; width:28px; height:30px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
+    color: var(--text-dim); font-size:14px; line-height:1;
+  }
+  .habit-edit-btn:hover{ border-color: var(--cyan); color: var(--text); }
+  .habit-edit-btn.habit-edit-del:hover{ border-color: var(--err); color: var(--err); }
+  .habit-add-row{ margin-top:10px; width:100%; }
+
   .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
   .pv-today-date .yr{ color: var(--text-faint); font-size:12px; }
   .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; text-shadow: 0 0 16px var(--magenta-dim); }

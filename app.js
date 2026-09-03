@@ -734,7 +734,7 @@
      TODAY / WEATHER は共通ロジック(tick / loadWeather)が pv 要素も更新する。
      ここでは UPCOMING EVENTS(はるかカレンダー) と 装飾ヒーロー、
      今月の収支(v1b: 家計簿スプレッドシート連携)を担当。
-     習慣トラッカー・TODAY'S PLAN は次の段階で実装(HTMLは「準備中」枠)。 */
+     TODAY'S PLAN は次の段階で実装(HTMLは「準備中」枠)。 */
   function initPrivate(){
     var img = document.getElementById("pv-hero-img");
     if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length){
@@ -744,6 +744,8 @@
     loadPrivateUpcoming();
     wireFinanceModal();
     loadFinance();
+    wireHabitTracker();
+    loadHabits();
   }
 
   async function loadPrivateUpcoming(){
@@ -951,6 +953,323 @@
         if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
       }
     });
+  }
+
+  /* ================= プライベート: 習慣トラッカー (v1c) =================
+     Firestore に習慣定義(habits)と日次ログ(habit_log)を持つ。週は日曜始まり。
+     binary(やった/やってない) は 0↔1 トグル、count(回数系) はセルのステッパーで入力。
+     達成率バーの分母は週の7日固定。 */
+  var habitWeekKey = startOfWeekKey(jstDateKey(new Date()));
+  var habitsState = [];     // [{id,name,type,target,order}]
+  var habitLog = {};        // { habitId: { "YYYY-MM-DD": value } }
+  var habitDays = [];       // 表示中の週の7つの dateKey
+  var habitLogTimers = {};  // "habitId|date" -> debounce timeout
+  var habitTrackerWired = false;
+  var habitEditRows = [];   // 管理モーダルの作業コピー
+  var habitPopHabitId = null, habitPopDate = null;
+
+  function habitMdLabel(key){ var p = keyParts(key); return p.m + "/" + p.d; }
+  function buildWeekDays(sundayKey){
+    var a = []; for (var i = 0; i < 7; i++) a.push(addDaysKey(sundayKey, i)); return a;
+  }
+  function setHabitStatus(msg, isErr){
+    var el = document.getElementById("pv-habit-status");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.hidden = !msg;
+    el.classList.toggle("is-err", !!isErr);
+  }
+
+  async function loadHabits(){
+    var list = document.getElementById("pv-habit-list");
+    if (!list) return;
+    setHabitStatus("読み込み中…");
+    try {
+      var res = await apiFetch("/api/habits?week=" + encodeURIComponent(habitWeekKey));
+      habitsState = (res.habits || []).slice();
+      habitLog = res.log || {};
+      habitDays = (res.days && res.days.length === 7) ? res.days : buildWeekDays(habitWeekKey);
+      if (res.weekStart) habitWeekKey = res.weekStart;
+      renderHabits();
+      setHabitStatus("");
+    } catch (err){
+      habitsState = []; habitLog = {};
+      renderHabits();
+      setHabitStatus(apiErrorMessage(err, "習慣トラッカー"), true);
+    }
+  }
+
+  function renderHabits(){
+    var list = document.getElementById("pv-habit-list");
+    if (!list) return;
+    var wk = document.getElementById("pv-habit-week");
+    if (wk && habitDays.length === 7) wk.textContent = habitMdLabel(habitDays[0]) + " – " + habitMdLabel(habitDays[6]);
+    list.innerHTML = "";
+    if (!habitsState.length){
+      list.innerHTML = '<div class="pv-habit-empty">「管理」から習慣を追加してください。</div>';
+      return;
+    }
+    var todayKey = jstDateKey(new Date());
+    habitsState.forEach(function(h){
+      var log = habitLog[h.id] || {};
+      var goal = h.type === "count" ? Math.max(1, h.target || 1) : 1;
+      var met = 0;
+
+      var row = document.createElement("div");
+      row.className = "pv-habit-row";
+      row.setAttribute("data-habit-id", h.id);
+
+      var nameEl = document.createElement("div");
+      nameEl.className = "pv-habit-name";
+      nameEl.textContent = h.name || "(名称未設定)";
+      if (h.type === "count"){
+        var tgt = document.createElement("span");
+        tgt.className = "pv-habit-target";
+        tgt.textContent = "×" + goal;
+        nameEl.appendChild(tgt);
+      }
+      row.appendChild(nameEl);
+
+      var cells = document.createElement("div");
+      cells.className = "pv-habit-cells";
+      habitDays.forEach(function(dk){
+        var v = Number(log[dk]) || 0;
+        var isMet = v >= goal;
+        if (isMet) met++;
+        var cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "pv-habit-cell " + (h.type === "count" ? "count" : "binary")
+          + (isMet ? " met" : "") + (v > 0 && !isMet ? " partial" : "") + (dk === todayKey ? " today" : "");
+        cell.setAttribute("data-date", dk);
+        cell.setAttribute("aria-label", habitMdLabel(dk) + " " + (h.name || ""));
+        if (h.type === "count"){
+          cell.textContent = v ? String(v) : "";
+        } else {
+          cell.innerHTML = isMet
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l6 6L20 6"/></svg>'
+            : "";
+        }
+        cell.addEventListener("click", function(){ onHabitCellClick(h, dk, cell); });
+        cells.appendChild(cell);
+      });
+      row.appendChild(cells);
+
+      var meta = document.createElement("div");
+      meta.className = "pv-habit-meta";
+      var bar = document.createElement("div");
+      bar.className = "pv-habit-bar";
+      var fill = document.createElement("span");
+      fill.style.width = Math.round((met / 7) * 100) + "%";
+      bar.appendChild(fill);
+      var frac = document.createElement("span");
+      frac.className = "pv-habit-frac";
+      frac.textContent = met + "/7";
+      meta.appendChild(bar); meta.appendChild(frac);
+      row.appendChild(meta);
+
+      list.appendChild(row);
+    });
+  }
+
+  function onHabitCellClick(habit, dateKey, cellEl){
+    var cur = Number((habitLog[habit.id] || {})[dateKey]) || 0;
+    if (habit.type === "count"){
+      openHabitCountPop(habit, dateKey, cellEl);
+    } else {
+      setHabitValue(habit.id, dateKey, cur >= 1 ? 0 : 1);
+    }
+  }
+
+  function setHabitValue(habitId, dateKey, value){
+    value = Math.max(0, Math.min(1000, Math.round(Number(value) || 0)));
+    if (!habitLog[habitId]) habitLog[habitId] = {};
+    habitLog[habitId][dateKey] = value;
+    renderHabits();
+    var tkey = habitId + "|" + dateKey;
+    if (habitLogTimers[tkey]) clearTimeout(habitLogTimers[tkey]);
+    habitLogTimers[tkey] = setTimeout(function(){
+      delete habitLogTimers[tkey];
+      apiFetch("/api/habits/log", {
+        method: "PUT",
+        body: JSON.stringify({ habitId: habitId, date: dateKey, value: value })
+      }).catch(function(err){ setHabitStatus(apiErrorMessage(err, "習慣トラッカー"), true); });
+    }, 500);
+  }
+
+  /* ---- 回数系セルのステッパー(共有ポップオーバー) ---- */
+  function openHabitCountPop(habit, dateKey, cellEl){
+    var pop = document.getElementById("habit-count-pop");
+    var input = document.getElementById("habit-count-input");
+    if (!pop || !input) return;
+    habitPopHabitId = habit.id; habitPopDate = dateKey;
+    input.value = String(Number((habitLog[habit.id] || {})[dateKey]) || 0);
+    pop.hidden = false;
+    var r = cellEl.getBoundingClientRect();
+    var popW = pop.offsetWidth || 136, popH = pop.offsetHeight || 40;
+    var left = Math.min(Math.max(8, r.left + r.width / 2 - popW / 2), window.innerWidth - popW - 8);
+    var top = r.bottom + 6;
+    if (top + popH > window.innerHeight - 8) top = r.top - popH - 6;
+    pop.style.left = left + "px";
+    pop.style.top = top + "px";
+    input.focus(); input.select();
+  }
+  function closeHabitCountPop(commit){
+    var pop = document.getElementById("habit-count-pop");
+    if (!pop || pop.hidden) return;
+    if (commit && habitPopHabitId && habitPopDate){
+      var input = document.getElementById("habit-count-input");
+      setHabitValue(habitPopHabitId, habitPopDate, input ? input.value : 0);
+    }
+    pop.hidden = true;
+    habitPopHabitId = null; habitPopDate = null;
+  }
+  function wireHabitCountPop(){
+    var minus = document.getElementById("habit-count-minus");
+    var plus = document.getElementById("habit-count-plus");
+    var input = document.getElementById("habit-count-input");
+    if (minus) minus.addEventListener("click", function(){ input.value = String(Math.max(0, (Number(input.value) || 0) - 1)); input.focus(); });
+    if (plus) plus.addEventListener("click", function(){ input.value = String(Math.min(1000, (Number(input.value) || 0) + 1)); input.focus(); });
+    if (input) input.addEventListener("keydown", function(e){
+      if (e.key === "Enter"){ e.preventDefault(); closeHabitCountPop(true); }
+      else if (e.key === "Escape"){ e.preventDefault(); closeHabitCountPop(false); }
+    });
+    // ポップオーバー外のクリックで確定して閉じる(開いた瞬間の同一クリックは hidden 判定で無視される)
+    document.addEventListener("click", function(e){
+      var pop = document.getElementById("habit-count-pop");
+      if (!pop || pop.hidden) return;
+      if (pop.contains(e.target)) return;
+      closeHabitCountPop(true);
+    }, true);
+  }
+
+  /* ---- 管理モーダル ---- */
+  function openHabitModal(){
+    var modal = document.getElementById("habit-modal");
+    if (!modal) return;
+    var errEl = document.getElementById("habit-form-error");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    habitEditRows = habitsState.map(function(h){
+      return { id: h.id, name: h.name, type: h.type === "count" ? "count" : "binary", target: h.target || 1 };
+    });
+    renderHabitEditRows();
+    modal.hidden = false;
+  }
+  function closeHabitModal(){
+    var modal = document.getElementById("habit-modal");
+    if (modal) modal.hidden = true;
+  }
+  function mkHabitIconBtn(label, aria, cls, fn){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "habit-edit-btn" + (cls ? " " + cls : "");
+    b.textContent = label;
+    b.setAttribute("aria-label", aria);
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function renderHabitEditRows(){
+    var wrap = document.getElementById("habit-rows");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!habitEditRows.length){
+      wrap.innerHTML = '<div class="habit-edit-empty">習慣がありません。下のボタンで追加してください。</div>';
+      return;
+    }
+    habitEditRows.forEach(function(r, idx){
+      var row = document.createElement("div");
+      row.className = "habit-edit-row";
+
+      var name = document.createElement("input");
+      name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 60;
+      name.placeholder = "習慣名"; name.value = r.name || "";
+      name.addEventListener("input", function(){ r.name = name.value; });
+
+      var type = document.createElement("select");
+      type.className = "habit-edit-type";
+      type.innerHTML = '<option value="binary">チェック</option><option value="count">回数</option>';
+      type.value = r.type;
+
+      var target = document.createElement("input");
+      target.type = "number"; target.className = "habit-edit-target";
+      target.min = "1"; target.max = "1000"; target.value = String(r.target || 1);
+      target.hidden = r.type !== "count";
+      target.addEventListener("input", function(){ r.target = Math.max(1, Math.round(Number(target.value) || 1)); });
+      type.addEventListener("change", function(){ r.type = type.value; target.hidden = r.type !== "count"; });
+
+      var up = mkHabitIconBtn("↑", "上へ", "", function(){
+        if (idx > 0){ var t = habitEditRows[idx - 1]; habitEditRows[idx - 1] = r; habitEditRows[idx] = t; renderHabitEditRows(); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(){
+        if (idx < habitEditRows.length - 1){ var t = habitEditRows[idx + 1]; habitEditRows[idx + 1] = r; habitEditRows[idx] = t; renderHabitEditRows(); }
+      });
+      var del = mkHabitIconBtn("×", "削除", "habit-edit-del", async function(){
+        if (r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
+        habitEditRows.splice(idx, 1); renderHabitEditRows();
+      });
+
+      row.appendChild(name); row.appendChild(type); row.appendChild(target);
+      row.appendChild(up); row.appendChild(down); row.appendChild(del);
+      wrap.appendChild(row);
+    });
+  }
+
+  async function onHabitModalSubmit(e){
+    e.preventDefault();
+    var errEl = document.getElementById("habit-form-error");
+    var saveBtn = document.getElementById("habit-save");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    var cleaned = [];
+    for (var i = 0; i < habitEditRows.length; i++){
+      var r = habitEditRows[i];
+      var nm = (r.name || "").trim();
+      if (!nm){
+        if (errEl){ errEl.textContent = "習慣名を入力してください（" + (i + 1) + "行目）。"; errEl.hidden = false; }
+        return;
+      }
+      cleaned.push({
+        id: r.id,
+        name: nm,
+        type: r.type === "count" ? "count" : "binary",
+        target: r.type === "count" ? Math.max(1, Math.round(Number(r.target) || 1)) : 1
+      });
+    }
+    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/habits/bulk", { method: "PUT", body: JSON.stringify({ habits: cleaned }) });
+      closeHabitModal();
+      loadHabits();
+    } catch (err){
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "習慣トラッカー"); errEl.hidden = false; }
+    } finally {
+      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    }
+  }
+
+  function wireHabitTracker(){
+    if (habitTrackerWired) return;
+    habitTrackerWired = true;
+    var prev = document.getElementById("pv-habit-prev");
+    var next = document.getElementById("pv-habit-next");
+    var manage = document.getElementById("pv-habit-manage");
+    if (prev) prev.addEventListener("click", function(){ habitWeekKey = addDaysKey(habitWeekKey, -7); loadHabits(); });
+    if (next) next.addEventListener("click", function(){ habitWeekKey = addDaysKey(habitWeekKey, 7); loadHabits(); });
+    if (manage) manage.addEventListener("click", openHabitModal);
+
+    var modal = document.getElementById("habit-modal");
+    var closeBtn = document.getElementById("habit-modal-close");
+    var cancelBtn = document.getElementById("habit-cancel");
+    var addRowBtn = document.getElementById("habit-add-row");
+    var form = document.getElementById("habit-form");
+    if (closeBtn) closeBtn.addEventListener("click", closeHabitModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeHabitModal);
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeHabitModal(); });
+    if (addRowBtn) addRowBtn.addEventListener("click", function(){
+      habitEditRows.push({ id: uid(), name: "", type: "binary", target: 1 });
+      renderHabitEditRows();
+    });
+    if (form) form.addEventListener("submit", onHabitModalSubmit);
+
+    wireHabitCountPop();
   }
 
   /* ================= calendar page: state ================= */
@@ -3152,7 +3471,11 @@
       else if (settingsModal && !settingsModal.hidden) closeSettings();
       else {
         var finModal = document.getElementById("finance-modal");
+        var habModal = document.getElementById("habit-modal");
+        var habPop = document.getElementById("habit-count-pop");
         if (finModal && !finModal.hidden) closeFinanceModal();
+        else if (habModal && !habModal.hidden) closeHabitModal();
+        else if (habPop && !habPop.hidden) closeHabitCountPop(false);
       }
     }
   });

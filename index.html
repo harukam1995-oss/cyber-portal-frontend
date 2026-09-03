@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.7.1</span>
+      <span>v2.8.0</span>
     </div>
   </footer>
 </div>
@@ -324,11 +324,25 @@
     </section>
 
     <div class="pv-col">
-      <!-- 習慣トラッカー（次段階で実装） -->
-      <section class="panel pv-card pv-soon">
+      <!-- 習慣トラッカー（v1c: Firestore、日曜始まり、binary＋count） -->
+      <section class="panel pv-card pv-habit">
         <div class="corner tl"></div><div class="corner br"></div>
-        <div class="card-head"><h2>習慣トラッカー</h2><span class="placeholder-tag">準備中</span></div>
-        <div class="card-body"><p class="pv-soon-msg">週ごとの習慣チェックをここに。</p></div>
+        <div class="card-head">
+          <h2>習慣トラッカー</h2>
+          <button type="button" class="pv-habit-manage" id="pv-habit-manage">管理</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-habit-weeknav">
+            <button type="button" id="pv-habit-prev" aria-label="前の週">‹</button>
+            <span id="pv-habit-week">--/-- – --/--</span>
+            <button type="button" id="pv-habit-next" aria-label="次の週">›</button>
+          </div>
+          <div class="pv-habit-dowhead" aria-hidden="true">
+            <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+          </div>
+          <div class="pv-habit-list" id="pv-habit-list"></div>
+          <p class="pv-habit-status" id="pv-habit-status">読み込み中…</p>
+        </div>
       </section>
       <!-- UPCOMING EVENTS -->
       <section class="panel pv-card">
@@ -877,6 +891,36 @@
       </div>
     </form>
   </div>
+</div>
+
+<!-- ================= 習慣の管理モーダル ================= -->
+<div class="modal-overlay" id="habit-modal" hidden role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="habit-modal-title">習慣の管理</h3>
+      <button class="modal-close" type="button" id="habit-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="habit-form">
+      <div class="habit-rows" id="habit-rows"></div>
+      <button type="button" class="ev-btn habit-add-row" id="habit-add-row">＋ 習慣を追加</button>
+      <div class="event-form-error" id="habit-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="habit-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="habit-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 回数系セルのステッパー（クリックしたセルの位置に固定表示。app.js が移動する） -->
+<div class="habit-count-pop" id="habit-count-pop" hidden>
+  <button type="button" id="habit-count-minus" aria-label="1減らす">−</button>
+  <input type="number" id="habit-count-input" min="0" max="1000" inputmode="numeric">
+  <button type="button" id="habit-count-plus" aria-label="1増やす">＋</button>
 </div>
 
 <!-- ================= CALENDAR EVENT DETAIL POPOVER =================
