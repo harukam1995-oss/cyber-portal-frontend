@@ -730,10 +730,11 @@
     });
   });
 
-  /* ================= プライベート画面 (v1a) =================
+  /* ================= プライベート画面 (v1a / v1b) =================
      TODAY / WEATHER は共通ロジック(tick / loadWeather)が pv 要素も更新する。
-     ここでは UPCOMING EVENTS(はるかカレンダー) と 装飾ヒーローだけを担当。
-     今月の収支・習慣トラッカー・TODAY'S PLAN は次の段階で実装(HTMLは「準備中」枠)。 */
+     ここでは UPCOMING EVENTS(はるかカレンダー) と 装飾ヒーロー、
+     今月の収支(v1b: 家計簿スプレッドシート連携)を担当。
+     習慣トラッカー・TODAY'S PLAN は次の段階で実装(HTMLは「準備中」枠)。 */
   function initPrivate(){
     var img = document.getElementById("pv-hero-img");
     if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length){
@@ -741,6 +742,8 @@
     }
     loadWeather();          // 即時反映(通常は30分間隔)
     loadPrivateUpcoming();
+    wireFinanceModal();
+    loadFinance();
   }
 
   async function loadPrivateUpcoming(){
@@ -775,6 +778,179 @@
     } catch(err){
       el.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
     }
+  }
+
+  /* ================= プライベート: 今月の収支 (v1b) =================
+     バックエンド /api/sheets/finance が家計簿スプレッドシートの当月分(種別=収入/支出)を
+     集計して返す。カテゴリーのカスケードは「家計簿マスタ」タブの内容(res.categories)を使い、
+     取得できないときだけ下記フォールバックを使う。 */
+  var FIN_FALLBACK_CATEGORIES = {
+    "収入": ["給与", "利息", "配当"],
+    "支出": ["飲食代", "サブスク", "医療費", "交通費", "保険料"],
+    "貯蓄": ["生活防衛費", "車検"],
+    "投資": ["日本株", "米国株", "iDeCo"]
+  };
+  var FIN_CIRC = 2 * Math.PI * 52; // ドーナツの円周 (r=52)
+  var financeCategories = null;
+  var financeModalWired = false;
+
+  function finYen(n){
+    return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP");
+  }
+  function finSignedYen(n){
+    var v = Math.round(Number(n) || 0);
+    return (v < 0 ? "−" : "") + "¥" + Math.abs(v).toLocaleString("ja-JP");
+  }
+  // 当月の残り日数(JST、当日を含む)
+  function finMonthDaysLeft(){
+    var p = jstDateKey(new Date()).split("-").map(Number);
+    var daysInMonth = new Date(p[0], p[1], 0).getDate(); // p[1] は 1-12
+    return daysInMonth - p[2] + 1;
+  }
+
+  function finSetStatus(msg, showReconnect){
+    var st = document.getElementById("pv-fin-status");
+    var rc = document.getElementById("pv-fin-reconnect");
+    if (st){ st.textContent = msg || ""; st.hidden = !msg; }
+    if (rc) rc.hidden = !showReconnect;
+  }
+
+  function renderFinanceDonut(income, expense){
+    var incArc = document.getElementById("pv-fin-arc-income");
+    var expArc = document.getElementById("pv-fin-arc-expense");
+    if (!incArc || !expArc) return;
+    var total = income + expense;
+    if (total <= 0){
+      incArc.setAttribute("stroke-dasharray", "0 " + FIN_CIRC);
+      expArc.setAttribute("stroke-dasharray", "0 " + FIN_CIRC);
+      return;
+    }
+    var incLen = FIN_CIRC * (income / total);
+    var expLen = FIN_CIRC * (expense / total);
+    incArc.setAttribute("stroke-dasharray", incLen + " " + (FIN_CIRC - incLen));
+    incArc.setAttribute("stroke-dashoffset", "0");
+    expArc.setAttribute("stroke-dasharray", expLen + " " + (FIN_CIRC - expLen));
+    expArc.setAttribute("stroke-dashoffset", String(-incLen));
+  }
+
+  async function loadFinance(){
+    var main = document.getElementById("pv-fin-main");
+    var addBtn = document.getElementById("pv-fin-add");
+    if (!main) return;
+    finSetStatus("読み込み中…", false);
+    if (addBtn) addBtn.hidden = true;
+    try {
+      var res = await apiFetch("/api/sheets/finance");
+      if (!res || res.configured === false){
+        main.hidden = true;
+        finSetStatus("設定 → 家計簿スプレッドシート に共有 URL を登録してください。", false);
+        return;
+      }
+      financeCategories = (res.categories && Object.keys(res.categories).length) ? res.categories : FIN_FALLBACK_CATEGORIES;
+      var income = Number(res.income) || 0;
+      var expense = Number(res.expense) || 0;
+      var diff = (res.diff != null) ? Number(res.diff) : (income - expense);
+      document.getElementById("pv-fin-income").textContent = finYen(income);
+      document.getElementById("pv-fin-expense").textContent = finYen(expense);
+      var diffEl = document.getElementById("pv-fin-diff");
+      diffEl.textContent = finSignedYen(diff);
+      diffEl.classList.toggle("is-neg", diff < 0);
+      diffEl.classList.toggle("is-pos", diff >= 0);
+      document.getElementById("pv-fin-daysleft").textContent = finMonthDaysLeft() + "日";
+      renderFinanceDonut(income, expense);
+      main.hidden = false;
+      if (addBtn) addBtn.hidden = false;
+      finSetStatus("", false);
+    } catch (err){
+      main.hidden = true;
+      var code = err && err.code;
+      if (code === "google_scope_missing" || code === "google_not_connected"){
+        finSetStatus(apiErrorMessage(err, "家計簿"), true);
+      } else {
+        finSetStatus(apiErrorMessage(err, "家計簿"), false);
+      }
+    }
+  }
+
+  function finPopulateCategories(type){
+    var sel = document.getElementById("fin-category");
+    if (!sel) return;
+    var list = (financeCategories && financeCategories[type]) || FIN_FALLBACK_CATEGORIES[type] || [];
+    sel.innerHTML = "";
+    var blank = document.createElement("option");
+    blank.value = ""; blank.textContent = "（未選択）";
+    sel.appendChild(blank);
+    list.forEach(function(c){
+      var o = document.createElement("option");
+      o.value = c; o.textContent = c;
+      sel.appendChild(o);
+    });
+  }
+
+  function openFinanceModal(){
+    var modal = document.getElementById("finance-modal");
+    if (!modal) return;
+    var errEl = document.getElementById("finance-form-error");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    var dateEl = document.getElementById("fin-date");
+    if (dateEl) dateEl.value = jstDateKey(new Date());
+    var typeEl = document.getElementById("fin-type");
+    if (typeEl) typeEl.value = "支出";
+    var amtEl = document.getElementById("fin-amount");
+    if (amtEl) amtEl.value = "";
+    var noteEl = document.getElementById("fin-note");
+    if (noteEl) noteEl.value = "";
+    finPopulateCategories(typeEl ? typeEl.value : "支出");
+    modal.hidden = false;
+    if (amtEl) amtEl.focus();
+  }
+  function closeFinanceModal(){
+    var modal = document.getElementById("finance-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  function wireFinanceModal(){
+    if (financeModalWired) return;
+    financeModalWired = true;
+    var addBtn = document.getElementById("pv-fin-add");
+    var modal = document.getElementById("finance-modal");
+    var closeBtn = document.getElementById("finance-modal-close");
+    var cancelBtn = document.getElementById("fin-cancel");
+    var form = document.getElementById("finance-form");
+    var typeEl = document.getElementById("fin-type");
+    var reconnectBtn = document.getElementById("pv-fin-reconnect");
+    if (addBtn) addBtn.addEventListener("click", openFinanceModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeFinanceModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeFinanceModal);
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeFinanceModal(); });
+    if (typeEl) typeEl.addEventListener("change", function(){ finPopulateCategories(typeEl.value); });
+    if (reconnectBtn) reconnectBtn.addEventListener("click", function(){ startGoogleConnect("haruka"); });
+    if (form) form.addEventListener("submit", async function(e){
+      e.preventDefault();
+      var errEl = document.getElementById("finance-form-error");
+      var saveBtn = document.getElementById("fin-save");
+      var payload = {
+        date: document.getElementById("fin-date").value,
+        type: document.getElementById("fin-type").value,
+        amount: Number(document.getElementById("fin-amount").value),
+        category: document.getElementById("fin-category").value,
+        note: (document.getElementById("fin-note").value || "").trim()
+      };
+      function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
+      if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date)){ showErr("日付を入力してください。"); return; }
+      if (!(payload.amount > 0)){ showErr("金額はプラスの数値で入力してください。"); return; }
+      if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+      try {
+        await apiFetch("/api/sheets/finance", { method: "POST", body: JSON.stringify(payload) });
+        closeFinanceModal();
+        loadFinance();
+      } catch (err){
+        showErr(apiErrorMessage(err, "家計簿"));
+      } finally {
+        if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    });
   }
 
   /* ================= calendar page: state ================= */
@@ -3068,10 +3244,12 @@
   var elSetDefAcct = document.getElementById("settings-default-account");
   var elSetName = document.getElementById("settings-display-name");
   var elSetAvatar = document.getElementById("settings-avatar-text");
+  var elSetFinanceUrl = document.getElementById("settings-finance-url");
+  var elSetFinanceCurrent = document.getElementById("settings-finance-current");
 
   function fillSettingsForm(){
     var s = settingsState || {};
-    var w = s.weather || {}, d = s.display || {}, a = s.account || {};
+    var w = s.weather || {}, d = s.display || {}, a = s.account || {}, f = s.finance || {};
     if (elSetPlace) elSetPlace.value = "";
     if (elSetPlaceCurrent) elSetPlaceCurrent.textContent = "現在: " + (w.place || "柏市");
     if (elSetHero) elSetHero.checked = d.heroIllustration !== false;
@@ -3079,6 +3257,8 @@
     if (elSetDefAcct) elSetDefAcct.value = d.defaultAccount === "syslea" ? "syslea" : "haruka";
     if (elSetName) elSetName.value = a.displayName || "";
     if (elSetAvatar) elSetAvatar.value = a.avatarText || "";
+    if (elSetFinanceUrl) elSetFinanceUrl.value = f.sheetUrl || "";
+    if (elSetFinanceCurrent) elSetFinanceCurrent.textContent = "現在: " + (f.sheetId ? "設定済み" : "未設定");
   }
 
   async function fillSettingsConnState(){
@@ -3148,6 +3328,14 @@
       var placeInput = elSetPlace ? elSetPlace.value.trim() : "";
       if (placeInput) patch.weather = { place: placeInput };
 
+      // 家計簿シート URL: 現在値から変わったときだけ送る(空にすると連携解除)。
+      var financeChanged = false;
+      if (elSetFinanceUrl){
+        var curUrl = (settingsState && settingsState.finance && settingsState.finance.sheetUrl) || "";
+        var newUrl = elSetFinanceUrl.value.trim();
+        if (newUrl !== curUrl){ patch.finance = { sheetUrl: newUrl }; financeChanged = true; }
+      }
+
       if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
       try {
         var res = await apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(patch) });
@@ -3156,6 +3344,7 @@
           cacheSettings(res.settings);
           loadWeather();
         }
+        if (financeChanged && typeof loadFinance === "function") loadFinance();
         closeSettings();
       } catch(err){
         if (settingsErr){

@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.6.0</span>
+      <span>v2.7.0</span>
     </div>
   </footer>
 </div>
@@ -283,11 +283,35 @@
           <div class="pv-weather-note" id="pv-weather-note">接続確認中…</div>
         </div>
       </section>
-      <!-- 今月の収支（次段階で実装） -->
-      <section class="panel pv-card pv-soon">
+      <!-- 今月の収支（v1b: 家計簿スプレッドシート連携） -->
+      <section class="panel pv-card pv-fin">
         <div class="corner tl"></div><div class="corner br"></div>
-        <div class="card-head"><h2>今月の収支</h2><span class="placeholder-tag">準備中</span></div>
-        <div class="card-body"><p class="pv-soon-msg">家計簿スプレッドシートと連携予定です。</p></div>
+        <div class="card-head">
+          <h2>今月の収支</h2>
+          <button type="button" class="pv-fin-add" id="pv-fin-add" hidden>＋ 追加</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-fin-main" id="pv-fin-main" hidden>
+            <div class="pv-fin-donut-wrap">
+              <svg class="pv-fin-donut" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.07)" stroke-width="10"/>
+                <circle id="pv-fin-arc-expense" cx="60" cy="60" r="52" stroke="var(--magenta)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+                <circle id="pv-fin-arc-income" cx="60" cy="60" r="52" stroke="var(--cyan)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+              </svg>
+              <div class="pv-fin-donut-center">
+                <span class="pv-fin-donut-label">収支差</span>
+                <span class="pv-fin-donut-value" id="pv-fin-diff">¥--</span>
+              </div>
+            </div>
+            <dl class="pv-fin-figures">
+              <div><dt>収入合計</dt><dd id="pv-fin-income" class="is-income">¥--</dd></div>
+              <div><dt>支出合計</dt><dd id="pv-fin-expense" class="is-expense">¥--</dd></div>
+              <div><dt>当月の残り日数</dt><dd id="pv-fin-daysleft">--日</dd></div>
+            </dl>
+          </div>
+          <p class="pv-fin-status" id="pv-fin-status">読み込み中…</p>
+          <button type="button" class="inbox-reconnect pv-fin-reconnect" id="pv-fin-reconnect" hidden>Google再連携</button>
+        </div>
       </section>
     </div>
 
@@ -814,6 +838,47 @@
   </div>
 </div>
 
+<!-- ================= 取引追加モーダル（今月の収支） ================= -->
+<div class="modal-overlay" id="finance-modal" hidden role="dialog" aria-modal="true" aria-labelledby="finance-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="finance-modal-title">取引を追加</h3>
+      <button class="modal-close" type="button" id="finance-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="finance-form">
+      <label>日付
+        <input type="date" id="fin-date" required>
+      </label>
+      <label>種別
+        <select id="fin-type" required>
+          <option value="収入">収入</option>
+          <option value="支出" selected>支出</option>
+          <option value="貯蓄">貯蓄</option>
+          <option value="投資">投資</option>
+        </select>
+      </label>
+      <label>金額（プラスの値）
+        <input type="number" id="fin-amount" min="1" step="1" inputmode="numeric" required>
+      </label>
+      <label>カテゴリー
+        <select id="fin-category"></select>
+      </label>
+      <label>備考
+        <textarea id="fin-note" rows="2" maxlength="500"></textarea>
+      </label>
+      <div class="event-form-error" id="finance-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="fin-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="fin-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ================= CALENDAR EVENT DETAIL POPOVER =================
      予定をクリックしたときに、いきなり編集フォームを開くのではなく
      まず読み取り用の小さなカードを出す。編集/削除はそこから。 -->
@@ -857,6 +922,15 @@
           <span class="settings-conn-state" id="settings-conn-state-syslea">確認中…</span>
           <button type="button" class="ev-btn" data-account="syslea">再連携</button>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <h4>家計簿スプレッドシート</h4>
+        <label>共有 URL
+          <input type="url" id="settings-finance-url" maxlength="300" placeholder="https://docs.google.com/spreadsheets/d/..." autocomplete="off">
+        </label>
+        <p class="settings-hint" id="settings-finance-current">現在: 未設定</p>
+        <p class="settings-hint">「今月の収支」カードがこのシートの「家計簿」タブを読み書きします。空にすると連携を解除します。変更後は「はるか」の再連携が必要な場合があります。</p>
       </div>
 
       <div class="settings-section">
