@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.16.0</span>
+      <span>v2.17.0</span>
     </div>
   </footer>
 </div>
@@ -467,6 +467,12 @@
           <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
         </div>
         <div class="card-body">
+          <div class="pv-contracts-filter" id="pv-contracts-filter">
+            <button type="button" class="pv-contracts-filter-btn is-active" data-status="">すべて</button>
+            <button type="button" class="pv-contracts-filter-btn" data-status="依頼受領">依頼受領</button>
+            <button type="button" class="pv-contracts-filter-btn" data-status="送付済み">送付済み</button>
+            <button type="button" class="pv-contracts-filter-btn" data-status="締結済み">締結済み</button>
+          </div>
           <div class="pv-contracts-list" id="pv-contracts-list"></div>
           <p class="pv-contracts-status" id="pv-contracts-status">読み込み中…</p>
         </div>

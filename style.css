@@ -1204,6 +1204,14 @@
   #case-detail-body .case-edit-due{ width:100% !important; color-scheme: dark; }
 
   /* ---------- ビジネス: 契約書トラッカー(v1) ---------- */
+  .pv-contracts-filter{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .pv-contracts-filter-btn{
+    font-family: var(--font-mono); font-size:10.5px; letter-spacing:.3px; cursor:pointer;
+    color: var(--text-faint); background:transparent; border:1px solid var(--panel-border);
+    border-radius:6px; padding:4px 9px; transition: color .15s, border-color .15s, background .15s;
+  }
+  .pv-contracts-filter-btn:hover{ color: var(--text); border-color: var(--cyan); }
+  .pv-contracts-filter-btn.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.08); }
   .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; max-height:280px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-contracts-status.is-err{ color: var(--err); }

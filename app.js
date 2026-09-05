@@ -2303,6 +2303,7 @@
   var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--cyan)", "締結済み": "var(--ok)", "報告済み": "var(--violet)" };
   var CONTRACT_STATUS_VERB = { "依頼受領": "依頼", "送付済み": "送付", "締結済み": "締結", "報告済み": "報告" };
   var contractsState = [];      // [{id,title,client,requestedBy,status,statusDate,dueDate,confidential,source,order}]
+  var contractsFilterStatus = ""; // "" = すべて表示、それ以外は該当ステータスのみ表示
   var contractEditRows = [];    // 管理モーダルの作業コピー
   var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
@@ -2331,16 +2332,32 @@
     }
   }
 
+  function renderContractsFilterBar(){
+    var bar = document.getElementById("pv-contracts-filter");
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll(".pv-contracts-filter-btn"), function(btn){
+      btn.classList.toggle("is-active", btn.getAttribute("data-status") === contractsFilterStatus);
+    });
+  }
+
   function renderContracts(){
     var list = document.getElementById("pv-contracts-list");
     if (!list) return;
+    renderContractsFilterBar();
     list.innerHTML = "";
     if (!contractsState.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
       return;
     }
+    var filtered = contractsFilterStatus
+      ? contractsState.filter(function(c){ return c.status === contractsFilterStatus; })
+      : contractsState;
+    if (!filtered.length){
+      list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
+      return;
+    }
     var todayKey = jstDateKey(new Date());
-    contractsState.forEach(function(c){
+    filtered.forEach(function(c){
       var pending = c.status !== "締結済み" && c.status !== "報告済み";
       var overdue = pending && c.dueDate && c.dueDate < todayKey;
       var row = document.createElement("div");
@@ -2598,6 +2615,14 @@
     contractsWired = true;
     var manageBtn = document.getElementById("pv-contracts-manage");
     if (manageBtn) manageBtn.addEventListener("click", openContractModal);
+
+    var filterBar = document.getElementById("pv-contracts-filter");
+    if (filterBar) filterBar.addEventListener("click", function(e){
+      var btn = e.target.closest(".pv-contracts-filter-btn");
+      if (!btn) return;
+      contractsFilterStatus = btn.getAttribute("data-status") || "";
+      renderContracts();
+    });
 
     var modal = document.getElementById("contract-modal");
     var closeBtn = document.getElementById("contract-modal-close");
