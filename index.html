@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.13.0</span>
+      <span>v2.14.0</span>
     </div>
   </footer>
 </div>
@@ -459,7 +459,49 @@
           <p class="pv-cases-status" id="pv-cases-status">読み込み中…</p>
         </div>
       </section>
+      <!-- 契約書トラッカー -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head">
+          <h2>契約書トラッカー</h2>
+          <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-contracts-list" id="pv-contracts-list"></div>
+          <p class="pv-contracts-status" id="pv-contracts-status">読み込み中…</p>
+        </div>
+      </section>
     </div>
+  </div>
+</div>
+
+<!-- ================= 契約書トラッカーの管理モーダル ================= -->
+<div class="modal-overlay" id="contract-modal" hidden role="dialog" aria-modal="true" aria-labelledby="contract-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="contract-modal-title">契約書トラッカーの管理</h3>
+      <button class="modal-close" type="button" id="contract-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="contract-form">
+      <div id="contract-list-view">
+        <button type="button" class="ev-btn habit-add-row" id="contract-new">＋ 新規作成</button>
+        <div class="habit-rows" id="contract-rows"></div>
+      </div>
+      <div id="contract-detail-view" hidden>
+        <button type="button" class="habit-detail-back" id="contract-detail-back">‹ 一覧へ戻る</button>
+        <div id="contract-detail-body"></div>
+        <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="contract-detail-del">この契約書を削除</button>
+      </div>
+      <div class="event-form-error" id="contract-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="contract-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="contract-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 

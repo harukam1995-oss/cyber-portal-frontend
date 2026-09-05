@@ -2296,6 +2296,305 @@
     if (form) form.addEventListener("submit", onCaseModalSubmit);
   }
 
+  /* ================= ビジネス: 契約書トラッカー(v1) =================
+     営業から依頼される契約書送付の進捗を管理する。案件管理(cases)と同じ master-detail 管理モーダル。
+     「締結済み」「報告済み」以外(＝依頼受領／送付済み)はカード側で未締結として強調表示する。 */
+  var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
+  var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--cyan)", "締結済み": "var(--ok)", "報告済み": "var(--violet)" };
+  var contractsState = [];      // [{id,title,client,requestedBy,status,dueDate,confidential,order}]
+  var contractEditRows = [];    // 管理モーダルの作業コピー
+  var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
+  var contractsWired = false;
+
+  function contractSetStatus(msg, isErr){
+    var el = document.getElementById("pv-contracts-status");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.hidden = !msg;
+    el.classList.toggle("is-err", !!isErr);
+  }
+
+  async function loadContracts(){
+    var list = document.getElementById("pv-contracts-list");
+    if (!list) return;
+    contractSetStatus("読み込み中…");
+    try {
+      var res = await apiFetch("/api/contracts");
+      contractsState = res.contracts || [];
+      renderContracts();
+      contractSetStatus("");
+    } catch (err){
+      contractsState = [];
+      renderContracts();
+      contractSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
+    }
+  }
+
+  function renderContracts(){
+    var list = document.getElementById("pv-contracts-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!contractsState.length){
+      list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
+      return;
+    }
+    var todayKey = jstDateKey(new Date());
+    contractsState.forEach(function(c){
+      var pending = c.status !== "締結済み" && c.status !== "報告済み";
+      var overdue = pending && c.dueDate && c.dueDate < todayKey;
+      var row = document.createElement("div");
+      row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (overdue ? " is-overdue" : "");
+      row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
+
+      var head = document.createElement("div");
+      head.className = "pv-case-head";
+      var name = document.createElement("span");
+      name.className = "pv-case-name";
+      name.textContent = c.title || "(名称未設定)";
+      head.appendChild(name);
+      if (c.confidential){
+        var lock = document.createElement("span");
+        lock.className = "pv-case-lock";
+        lock.textContent = "🔒";
+        lock.title = "機密案件";
+        head.appendChild(lock);
+      }
+      if (pending){
+        var alert = document.createElement("span");
+        alert.className = "pv-contract-alert";
+        alert.textContent = overdue ? "⚠ 期限超過" : "⚠ 未締結";
+        head.appendChild(alert);
+      }
+      var status = document.createElement("span");
+      status.className = "pv-case-status-badge";
+      status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
+      status.textContent = c.status;
+      head.appendChild(status);
+      row.appendChild(head);
+
+      var metaLine = [];
+      if (c.client) metaLine.push(c.client);
+      if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
+      if (c.dueDate){ var p = keyParts(c.dueDate); metaLine.push(p.m + "/" + p.d + "まで"); }
+      if (metaLine.length){
+        var meta = document.createElement("div");
+        meta.className = "pv-case-client";
+        meta.textContent = metaLine.join(" ・ ");
+        row.appendChild(meta);
+      }
+
+      list.appendChild(row);
+    });
+  }
+
+  /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
+  function openContractModal(){
+    var modal = document.getElementById("contract-modal");
+    if (!modal) return;
+    var errEl = document.getElementById("contract-form-error");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    contractEditRows = contractsState.map(function(c){
+      return {
+        id: c.id, title: c.title, client: c.client || "", requestedBy: c.requestedBy || "",
+        status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
+        dueDate: c.dueDate || "", confidential: c.confidential === true
+      };
+    });
+    contractDetailIdx = null;
+    renderContractModal();
+    modal.hidden = false;
+  }
+  function closeContractModal(){
+    var modal = document.getElementById("contract-modal");
+    if (modal) modal.hidden = true;
+  }
+  function contractModalBack(){
+    if (contractDetailIdx != null){ contractDetailIdx = null; renderContractModal(); }
+    else closeContractModal();
+  }
+  function contractNewRow(){
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", dueDate: "", confidential: false };
+  }
+  function contractHint(r){
+    var pending = r.status !== "締結済み" && r.status !== "報告済み";
+    return (r.status || "依頼受領") + (pending ? " ・ ⚠未締結" : "") + (r.confidential ? " ・ 🔒機密" : "");
+  }
+  function renderContractModal(){
+    var listView = document.getElementById("contract-list-view");
+    var detailView = document.getElementById("contract-detail-view");
+    var title = document.getElementById("contract-modal-title");
+    var inDetail = contractDetailIdx != null && !!contractEditRows[contractDetailIdx];
+    if (!inDetail) contractDetailIdx = null;
+    if (listView) listView.hidden = inDetail;
+    if (detailView) detailView.hidden = !inDetail;
+    if (title) title.textContent = inDetail ? "契約書の設定" : "契約書トラッカーの管理";
+    if (inDetail) renderContractDetailView(contractDetailIdx);
+    else renderContractListView();
+  }
+  function renderContractListView(){
+    var wrap = document.getElementById("contract-rows");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!contractEditRows.length){
+      wrap.innerHTML = '<div class="habit-edit-empty">契約書がありません。「＋ 新規作成」から追加してください。</div>';
+      return;
+    }
+    var single = contractEditRows.length <= 1;
+    contractEditRows.forEach(function(r, idx){
+      var row = document.createElement("div");
+      row.className = "habit-list-row";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+
+      var txt = document.createElement("div");
+      txt.className = "habit-list-txt";
+      var nm = document.createElement("div");
+      nm.className = "habit-list-name";
+      nm.textContent = (r.title || "").trim() || "（名称未設定）";
+      var hint = document.createElement("div");
+      hint.className = "habit-list-hint";
+      hint.textContent = contractHint(r);
+      txt.appendChild(nm); txt.appendChild(hint);
+
+      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
+        e.stopPropagation();
+        if (idx > 0){ var t = contractEditRows[idx - 1]; contractEditRows[idx - 1] = r; contractEditRows[idx] = t; renderContractListView(); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
+        e.stopPropagation();
+        if (idx < contractEditRows.length - 1){ var t = contractEditRows[idx + 1]; contractEditRows[idx + 1] = r; contractEditRows[idx] = t; renderContractListView(); }
+      });
+      up.hidden = down.hidden = single;
+      up.disabled = idx === 0;
+      down.disabled = idx === contractEditRows.length - 1;
+
+      var chev = document.createElement("span");
+      chev.className = "habit-list-chev";
+      chev.textContent = "›";
+
+      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
+      function open(){ contractDetailIdx = idx; renderContractModal(); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      wrap.appendChild(row);
+    });
+  }
+  function renderContractDetailView(idx){
+    var body = document.getElementById("contract-detail-body");
+    var r = contractEditRows[idx];
+    if (!body || !r) return;
+    body.innerHTML = "";
+
+    var title = document.createElement("input");
+    title.type = "text"; title.className = "habit-edit-name"; title.maxLength = 80;
+    title.placeholder = "契約書名（例：A社 業務委託契約書）"; title.value = r.title || "";
+    title.addEventListener("input", function(){ r.title = title.value; });
+    body.appendChild(title);
+
+    var client = document.createElement("input");
+    client.type = "text"; client.className = "habit-edit-name"; client.maxLength = 60;
+    client.placeholder = "クライアント名（任意）"; client.value = r.client || "";
+    client.addEventListener("input", function(){ r.client = client.value; });
+    body.appendChild(client);
+
+    var requestedBy = document.createElement("input");
+    requestedBy.type = "text"; requestedBy.className = "habit-edit-name"; requestedBy.maxLength = 40;
+    requestedBy.placeholder = "依頼者（例：営業 山田）（任意）"; requestedBy.value = r.requestedBy || "";
+    requestedBy.addEventListener("input", function(){ r.requestedBy = requestedBy.value; });
+    body.appendChild(requestedBy);
+
+    var lineStatus = document.createElement("div");
+    lineStatus.className = "habit-block-line";
+    var status = document.createElement("select");
+    status.className = "habit-edit-cadence case-edit-status";
+    status.innerHTML = CONTRACT_STATUSES.map(function(s){ return '<option value="' + s + '">' + s + "</option>"; }).join("");
+    status.value = r.status;
+    status.addEventListener("change", function(){ r.status = status.value; });
+    var due = document.createElement("input");
+    due.type = "date"; due.className = "case-edit-due";
+    due.value = r.dueDate || "";
+    due.setAttribute("aria-label", "期限（任意）");
+    due.addEventListener("input", function(){ r.dueDate = due.value; });
+    lineStatus.appendChild(status); lineStatus.appendChild(due);
+    body.appendChild(lineStatus);
+
+    var lineMisc = document.createElement("div");
+    lineMisc.className = "habit-block-line";
+    var conf = document.createElement("label");
+    conf.className = "habit-pause";
+    var ccb = document.createElement("input");
+    ccb.type = "checkbox"; ccb.checked = r.confidential === true;
+    ccb.addEventListener("change", function(){ r.confidential = ccb.checked; });
+    conf.appendChild(ccb);
+    conf.appendChild(document.createTextNode(" 機密案件（クライアントの秘密情報を含む）"));
+    lineMisc.appendChild(conf);
+    body.appendChild(lineMisc);
+  }
+
+  async function onContractModalSubmit(e){
+    e.preventDefault();
+    var errEl = document.getElementById("contract-form-error");
+    var saveBtn = document.getElementById("contract-save");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
+    function failAt(i, msg){ contractDetailIdx = i; renderContractModal(); showErr(msg); }
+    var cleaned = [];
+    for (var i = 0; i < contractEditRows.length; i++){
+      var r = contractEditRows[i];
+      var nm = (r.title || "").trim();
+      if (!nm){ failAt(i, "契約書名を入力してください。"); return; }
+      cleaned.push({
+        id: r.id, title: nm.slice(0, 80), client: (r.client || "").trim().slice(0, 60),
+        requestedBy: (r.requestedBy || "").trim().slice(0, 40),
+        status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
+        dueDate: r.dueDate || "", confidential: r.confidential === true
+      });
+    }
+    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/contracts/bulk", { method: "PUT", body: JSON.stringify({ contracts: cleaned }) });
+      closeContractModal();
+      loadContracts();
+    } catch (err){
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "契約書トラッカー"); errEl.hidden = false; }
+    } finally {
+      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    }
+  }
+
+  function wireContracts(){
+    if (contractsWired) return;
+    contractsWired = true;
+    var manageBtn = document.getElementById("pv-contracts-manage");
+    if (manageBtn) manageBtn.addEventListener("click", openContractModal);
+
+    var modal = document.getElementById("contract-modal");
+    var closeBtn = document.getElementById("contract-modal-close");
+    var cancelBtn = document.getElementById("contract-cancel");
+    var newBtn = document.getElementById("contract-new");
+    var backBtn = document.getElementById("contract-detail-back");
+    var delBtn = document.getElementById("contract-detail-del");
+    var form = document.getElementById("contract-form");
+    if (closeBtn) closeBtn.addEventListener("click", closeContractModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeContractModal);
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeContractModal(); });
+    if (newBtn) newBtn.addEventListener("click", function(){
+      contractEditRows.push(contractNewRow());
+      contractDetailIdx = contractEditRows.length - 1;
+      renderContractModal();
+    });
+    if (backBtn) backBtn.addEventListener("click", function(){ contractDetailIdx = null; renderContractModal(); });
+    if (delBtn) delBtn.addEventListener("click", async function(){
+      if (contractDetailIdx == null) return;
+      var r = contractEditRows[contractDetailIdx];
+      if (r && r.title && !(await askConfirm('「' + r.title + '」を削除しますか?'))) return;
+      contractEditRows.splice(contractDetailIdx, 1);
+      contractDetailIdx = null;
+      renderContractModal();
+    });
+    if (form) form.addEventListener("submit", onContractModalSubmit);
+  }
+
   /* ================= ビジネス画面 (v1) =================
      TODAY は共通ロジック(tick)が biz 要素も更新する。ここではヒーロー画像・
      プロジェクトボード(案件管理)・最近のメモ(SYSLEA タグ)を担当。 */
@@ -2306,6 +2605,8 @@
     }
     wireCases();
     loadCases();
+    wireContracts();
+    loadContracts();
     var noteNewBtn = document.getElementById("biz-note-new");
     if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote("syslea"); });
     if (!notesInitialized){
@@ -4548,11 +4849,13 @@
         var planModal = document.getElementById("plan-modal");
         var planApply = document.getElementById("plan-apply-modal");
         var caseModal = document.getElementById("case-modal");
+        var contractModal = document.getElementById("contract-modal");
         if (planApply && !planApply.hidden) closePlanApply("cancel");
         else if (finModal && !finModal.hidden) closeFinanceModal();
         else if (habModal && !habModal.hidden) habitModalBack();
         else if (planModal && !planModal.hidden) planModalBack();
         else if (caseModal && !caseModal.hidden) caseModalBack();
+        else if (contractModal && !contractModal.hidden) contractModalBack();
         else if (habPop && !habPop.hidden) closeHabitCountPop(false);
       }
     }
