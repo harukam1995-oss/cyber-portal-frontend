@@ -1717,7 +1717,9 @@
       return {
         id: t.id,
         name: t.name,
-        items: (t.items || []).map(function(it){ return { id: it.id || uid(), text: it.text, time: it.time || "" }; })
+        items: (t.items || []).map(function(it){ return { id: it.id || uid(), text: it.text, time: it.time || "" }; }),
+        cadence: t.cadence === "daily" ? "daily" : (t.cadence === "days" ? "days" : "manual"),
+        days: Array.isArray(t.days) ? t.days.slice() : []
       };
     });
     planTplDetailIdx = null;
@@ -1734,9 +1736,14 @@
   }
   function planTplHint(r){
     var n = (r.items || []).filter(function(it){ return (it.text || "").trim(); }).length;
-    if (!n) return "項目なし";
+    var base = n ? (n + " 項目") : "項目なし";
     var timed = r.items.filter(function(it){ return it.time; }).length;
-    return n + " 項目" + (timed ? " ・ 時刻付き " + timed : "");
+    if (n && timed) base += " ・ 時刻付き " + timed;
+    var cad = r.cadence === "daily" ? "毎日自動"
+      : (r.cadence === "days" && r.days && r.days.length)
+        ? r.days.slice().sort(function(a,b){ return a - b; }).map(function(d){ return HABIT_WD_JA[d]; }).join("") + "に自動"
+        : "手動のみ";
+    return base + " ・ " + cad;
   }
   function renderPlanModal(){
     var listView = document.getElementById("plan-list-view");
@@ -1810,6 +1817,36 @@
     name.addEventListener("input", function(){ r.name = name.value; });
     body.appendChild(name);
 
+    // --- 周期(自動適用の条件) ---
+    var lineCad = document.createElement("div");
+    lineCad.className = "habit-block-line";
+    var cad = document.createElement("select");
+    cad.className = "habit-edit-cadence plan-tpl-cadence";
+    cad.innerHTML = '<option value="manual">手動のみ</option><option value="daily">毎日自動適用</option><option value="days">曜日を指定して自動適用</option>';
+    cad.value = r.cadence || "manual";
+    var daysWrap = document.createElement("div");
+    daysWrap.className = "habit-days";
+    HABIT_WD_JA.forEach(function(wd, di){
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "weekday-btn" + (r.days.indexOf(di) !== -1 ? " active" : "");
+      b.textContent = wd;
+      b.addEventListener("click", function(){
+        var p = r.days.indexOf(di);
+        if (p === -1) r.days.push(di); else r.days.splice(p, 1);
+        b.classList.toggle("active", p === -1);
+      });
+      daysWrap.appendChild(b);
+    });
+    function syncCadUI(){ daysWrap.hidden = r.cadence !== "days"; }
+    cad.addEventListener("change", function(){ r.cadence = cad.value; syncCadUI(); });
+    syncCadUI();
+    lineCad.appendChild(cad); lineCad.appendChild(daysWrap);
+    body.appendChild(lineCad);
+    var cadHint = document.createElement("p");
+    cadHint.className = "plan-tpl-cad-hint";
+    cadHint.textContent = "自動適用は、その日のプランが空のときだけ働きます（既存の項目は消しません）。";
+    body.appendChild(cadHint);
+
     var itemsWrap = document.createElement("div");
     itemsWrap.className = "plan-tpl-items";
     body.appendChild(itemsWrap);
@@ -1855,10 +1892,13 @@
       var r = planTplRows[i];
       var nm = (r.name || "").trim();
       if (!nm){ failAt(i, "テンプレ名を入力してください。"); return; }
+      var cadence = r.cadence === "daily" ? "daily" : (r.cadence === "days" ? "days" : "manual");
+      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
+      if (cadence === "days" && !days.length){ failAt(i, "「" + nm + "」の曜日を1つ以上選んでください。"); return; }
       var items = (r.items || []).map(function(it){
         return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 120), time: planNormTime(it.time) };
       }).filter(function(it){ return it.text; });
-      cleaned.push({ id: r.id, name: nm.slice(0, 40), items: items });
+      cleaned.push({ id: r.id, name: nm.slice(0, 40), items: items, cadence: cadence, days: days });
     }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
     try {
@@ -1892,7 +1932,7 @@
     if (cancelBtn) cancelBtn.addEventListener("click", closePlanModal);
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closePlanModal(); });
     if (newBtn) newBtn.addEventListener("click", function(){
-      planTplRows.push({ id: uid(), name: "", items: [] });
+      planTplRows.push({ id: uid(), name: "", items: [], cadence: "manual", days: [] });
       planTplDetailIdx = planTplRows.length - 1;
       renderPlanModal();
     });
@@ -4227,8 +4267,6 @@
   var elSetAvatar = document.getElementById("settings-avatar-text");
   var elSetFinanceUrl = document.getElementById("settings-finance-url");
   var elSetFinanceCurrent = document.getElementById("settings-finance-current");
-  var elSetPlanWeekday = document.getElementById("settings-plan-weekday");
-  var elSetPlanHoliday = document.getElementById("settings-plan-holiday");
 
   function fillSettingsForm(){
     var s = settingsState || {};
@@ -4242,34 +4280,6 @@
     if (elSetAvatar) elSetAvatar.value = a.avatarText || "";
     if (elSetFinanceUrl) elSetFinanceUrl.value = f.sheetUrl || "";
     if (elSetFinanceCurrent) elSetFinanceCurrent.textContent = "現在: " + (f.sheetId ? "設定済み" : "未設定");
-  }
-
-  // TODAY'S PLAN の既定テンプレ選択肢を埋める。テンプレ一覧は planTemplates を使い、
-  // 無ければ /api/plan から一度だけ取得する。保存済み ID が一覧に無くても選択は保持する。
-  async function fillPlanTemplateSelects(){
-    if (!elSetPlanWeekday && !elSetPlanHoliday) return;
-    var tpls = planTemplates;
-    if (!tpls || !tpls.length){
-      try { var res = await apiFetch("/api/plan"); tpls = res.templates || []; planTemplates = tpls; }
-      catch(e){ tpls = tpls || []; }
-    }
-    var pset = (settingsState && settingsState.plan) || {};
-    [[elSetPlanWeekday, pset.defaultWeekday], [elSetPlanHoliday, pset.defaultHoliday]].forEach(function(pair){
-      var sel = pair[0], cur = pair[1] || "";
-      if (!sel) return;
-      sel.innerHTML = '<option value="">なし</option>';
-      tpls.forEach(function(t){
-        var o = document.createElement("option");
-        o.value = t.id; o.textContent = t.name || "(名称未設定)";
-        sel.appendChild(o);
-      });
-      if (cur && !tpls.some(function(t){ return t.id === cur; })){
-        var o2 = document.createElement("option");
-        o2.value = cur; o2.textContent = "(削除されたテンプレ)";
-        sel.appendChild(o2);
-      }
-      sel.value = cur;
-    });
   }
 
   async function fillSettingsConnState(){
@@ -4303,9 +4313,8 @@
     if (settingsErr){ settingsErr.hidden = true; settingsErr.textContent = ""; }
     fillSettingsForm();
     settingsModal.hidden = false;
-    if (!settingsState){ loadSettings().then(function(){ fillSettingsForm(); fillPlanTemplateSelects(); }); }
+    if (!settingsState){ loadSettings().then(fillSettingsForm); }
     fillSettingsConnState();
-    fillPlanTemplateSelects();
   }
   function closeSettings(){ if (settingsModal) settingsModal.hidden = true; }
 
@@ -4348,18 +4357,6 @@
         if (newUrl !== curUrl){ patch.finance = { sheetUrl: newUrl }; financeChanged = true; }
       }
 
-      // TODAY'S PLAN の曜日別既定テンプレ: 変わったときだけ送る。
-      var planChanged = false;
-      if (elSetPlanWeekday || elSetPlanHoliday){
-        var curPlan = (settingsState && settingsState.plan) || {};
-        var npWd = elSetPlanWeekday ? elSetPlanWeekday.value : (curPlan.defaultWeekday || "");
-        var npHd = elSetPlanHoliday ? elSetPlanHoliday.value : (curPlan.defaultHoliday || "");
-        if (npWd !== (curPlan.defaultWeekday || "") || npHd !== (curPlan.defaultHoliday || "")){
-          patch.plan = { defaultWeekday: npWd, defaultHoliday: npHd };
-          planChanged = true;
-        }
-      }
-
       if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
       try {
         var res = await apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(patch) });
@@ -4369,7 +4366,6 @@
           loadWeather();
         }
         if (financeChanged && typeof loadFinance === "function") loadFinance();
-        if (planChanged && typeof loadPlan === "function") loadPlan();
         closeSettings();
       } catch(err){
         if (settingsErr){

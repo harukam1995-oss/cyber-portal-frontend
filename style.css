@@ -29,6 +29,17 @@
   *{ box-sizing: border-box; }
   html, body{ margin:0; padding:0; }
 
+  /* ---------- スクロールバー(ブラウザ既定の白いバーを世界観に合わせる) ---------- */
+  *{ scrollbar-width: thin; scrollbar-color: rgba(180,150,255,0.35) rgba(255,255,255,0.04); }
+  *::-webkit-scrollbar{ width:8px; height:8px; }
+  *::-webkit-scrollbar-track{ background: rgba(255,255,255,0.03); }
+  *::-webkit-scrollbar-thumb{
+    background: rgba(180,150,255,0.35); border-radius:5px;
+    border:2px solid transparent; background-clip:padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover{ background: rgba(44,227,255,0.5); background-clip:padding-box; }
+  *::-webkit-scrollbar-corner{ background: transparent; }
+
   body{
     background: radial-gradient(ellipse 120% 80% at 50% -10%, #1a0d3d 0%, var(--bg) 45%, var(--bg-deep) 100%);
     color: var(--text);
@@ -892,9 +903,13 @@
     display:grid;
     grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 340px);
     gap: clamp(12px, 1.6vw, 18px);
-    align-items:start;
+    align-items:stretch;
   }
   .pv-col{ display:flex; flex-direction:column; gap: clamp(12px, 1.6vw, 18px); min-width:0; }
+  /* 列の高さが揃うよう、各列の最後のカードで余った縦幅を吸収する(習慣トラッカーなどに
+     引っ張られて他の列の下に隙間が空くのを防ぐ)。 */
+  .pv-col > .pv-card:last-child{ flex:1 1 auto; display:flex; flex-direction:column; }
+  .pv-col > .pv-card:last-child .card-body{ flex:1 1 auto; }
   .pv-bottom{
     grid-column: 1 / -1;
     display:grid; grid-template-columns: 1fr 1fr;
@@ -953,10 +968,10 @@
   .pv-habit-weeknav button:hover{ border-color: var(--cyan); color: var(--text); }
   .pv-habit-dowhead{
     display:grid; grid-template-columns: repeat(7, 1fr); gap:4px;
-    padding-left: 0; margin-bottom:4px;
+    padding-left: 0; margin-bottom:6px;
   }
-  .pv-habit-dowhead span{ text-align:center; font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
-  .pv-habit-list{ display:flex; flex-direction:column; gap:12px; max-height:270px; overflow-y:auto; }
+  .pv-habit-dowhead span{ text-align:center; font-size:12px; font-weight:600; letter-spacing:.5px; color: var(--text-dim); }
+  .pv-habit-list{ display:flex; flex-direction:column; gap:12px; max-height:176px; overflow-y:auto; }
   .pv-habit-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
   .pv-habit-row{ display:flex; flex-direction:column; gap:5px; }
   .pv-habit-name{
@@ -964,7 +979,7 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .pv-habit-target{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); flex:none; }
-  .pv-habit-cad{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); flex:none; letter-spacing:1px; }
+  .pv-habit-cad{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-dim); flex:none; letter-spacing:1px; }
   .pv-habit-cells{ display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; }
   .pv-habit-cell{
     aspect-ratio:1 / 1; min-height:26px; border-radius:6px; cursor:pointer;
@@ -1144,6 +1159,8 @@
   .plan-tpl-text{ flex:1 1 auto !important; min-width:0; width:auto !important; padding:7px 9px !important; font-size:12.5px !important; }
   .plan-tpl-time{ flex:none; width:96px !important; padding:7px 6px !important; font-size:12px !important; font-family: var(--font-mono); color-scheme: dark; }
   .plan-tpl-additem{ align-self:flex-start; margin-top:2px; }
+  #plan-detail-body .plan-tpl-cadence{ flex:none; width:190px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  .plan-tpl-cad-hint{ font-size:11px; color: var(--text-faint); line-height:1.5; margin:-4px 0 0; }
   .pv-plan-apply-btn{ width:100%; margin-top:12px; }
   .pv-plan-apply-btn:hover{ border-color: var(--cyan); color: var(--text); }
 
