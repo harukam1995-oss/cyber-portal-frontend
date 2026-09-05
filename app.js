@@ -2595,6 +2595,58 @@
     if (form) form.addEventListener("submit", onContractModalSubmit);
   }
 
+  /* ================= ビジネス: Slackダイジェスト(フェーズB) =================
+     読み取り専用。Claudeの定期実行タスクが /api/slack-digest へ書き込み、
+     このカードはその最新10件を表示するだけ(手動の作成/編集/削除はない)。 */
+  function slackDigestSetStatus(msg, isErr){
+    var el = document.getElementById("pv-slack-status");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.hidden = !msg;
+    el.classList.toggle("is-err", !!isErr);
+  }
+
+  async function loadSlackDigest(){
+    var list = document.getElementById("pv-slack-list");
+    if (!list) return;
+    slackDigestSetStatus("読み込み中…");
+    try {
+      var res = await apiFetch("/api/slack-digest");
+      var digests = res.digests || [];
+      list.innerHTML = "";
+      if (!digests.length){
+        list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクの設定後、9/13/16/18時に届きます。</div>';
+      } else {
+        digests.forEach(function(d){
+          var item = document.createElement("div");
+          item.className = "pv-slack-item";
+          var meta = document.createElement("div");
+          meta.className = "pv-slack-meta";
+          var time = document.createElement("span");
+          time.className = "pv-slack-time";
+          time.textContent = d.createdAt ? fmtSavedAt(d.createdAt) : "";
+          meta.appendChild(time);
+          if (d.channels && d.channels.length){
+            var chans = document.createElement("span");
+            chans.className = "pv-slack-channels";
+            chans.textContent = d.channels.map(function(c){ return "#" + c; }).join(" ");
+            meta.appendChild(chans);
+          }
+          item.appendChild(meta);
+          var body = document.createElement("div");
+          body.className = "pv-slack-summary";
+          body.textContent = d.summary || "";
+          item.appendChild(body);
+          list.appendChild(item);
+        });
+      }
+      slackDigestSetStatus("");
+    } catch (err){
+      list.innerHTML = "";
+      slackDigestSetStatus(apiErrorMessage(err, "Slackダイジェスト"), true);
+    }
+  }
+
   /* ================= ビジネス画面 (v1) =================
      TODAY は共通ロジック(tick)が biz 要素も更新する。ここではヒーロー画像・
      プロジェクトボード(案件管理)・最近のメモ(SYSLEA タグ)を担当。 */
@@ -2607,6 +2659,7 @@
     loadCases();
     wireContracts();
     loadContracts();
+    loadSlackDigest();
     var noteNewBtn = document.getElementById("biz-note-new");
     if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote("syslea"); });
     if (!notesInitialized){
