@@ -1203,16 +1203,28 @@
   .case-edit-progress-label{ font-size:12.5px; color: var(--text-dim); }
   #case-detail-body .case-edit-due{ width:100% !important; color-scheme: dark; }
 
-  /* ---------- ビジネス: 契約書トラッカー(v1) ---------- */
-  .pv-contracts-filter{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-  .pv-contracts-filter-btn{
+  /* ---------- ビジネス: 契約書トラッカー ---------- */
+  .pv-contracts-tabs{ display:flex; gap:2px; margin-bottom:8px; border-bottom:1px solid var(--panel-border); }
+  .pv-contracts-tab{
     font-family: var(--font-mono); font-size:10.5px; letter-spacing:.3px; cursor:pointer;
-    color: var(--text-faint); background:transparent; border:1px solid var(--panel-border);
-    border-radius:6px; padding:4px 9px; transition: color .15s, border-color .15s, background .15s;
+    color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent;
+    padding:5px 8px; transition: color .15s, border-color .15s;
   }
-  .pv-contracts-filter-btn:hover{ color: var(--text); border-color: var(--cyan); }
-  .pv-contracts-filter-btn.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.08); }
-  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; max-height:280px; overflow-y:auto; }
+  .pv-contracts-tab:hover{ color: var(--text); }
+  .pv-contracts-tab.is-active{ color: var(--cyan); border-bottom-color: var(--cyan); }
+  .pv-contracts-tab-alert{ color: var(--warn); }
+  .pv-contracts-tab-alert.is-active{ color: var(--warn); border-bottom-color: var(--warn); }
+  .pv-contracts-search{ display:flex; gap:6px; margin-bottom:8px; }
+  .pv-contracts-q{
+    flex:1 1 auto; min-width:0; font-size:12px; padding:5px 8px; color-scheme: dark;
+    background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
+  }
+  .pv-contracts-q::placeholder{ color: var(--text-faint); }
+  .pv-contracts-requester{
+    flex:none; font-size:11px; padding:5px 6px; color-scheme: dark;
+    background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
+  }
+  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:300px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-contracts-status.is-err{ color: var(--err); }
   .pv-contract-row{
@@ -1222,14 +1234,16 @@
   }
   .pv-contract-row:hover, .pv-contract-row:focus-visible{ background: rgba(255,255,255,0.05); border-color: var(--cyan); outline:none; }
   .pv-contract-row.is-pending{ background: rgba(255,207,107,0.04); }
-  .pv-contract-row.is-pending:hover, .pv-contract-row.is-pending:focus-visible{ background: rgba(255,207,107,0.10); }
+  .pv-contract-row.is-alert{ background: rgba(255,207,107,0.08); }
+  .pv-contract-row.is-alert:hover, .pv-contract-row.is-alert:focus-visible{ background: rgba(255,207,107,0.14); }
   .pv-contract-row.is-overdue{ border-left-color: var(--err); background: rgba(255,60,90,0.06); }
   .pv-contract-row.is-overdue:hover, .pv-contract-row.is-overdue:focus-visible{ background: rgba(255,60,90,0.12); }
+  .pv-contract-subtitle{ font-size:11px; color: var(--text-faint); }
   .pv-contract-alert{
     flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
     color: var(--warn); border:1px solid rgba(255,207,107,0.4); border-radius:5px; padding:2px 6px;
   }
-  .pv-contract-row.is-overdue .pv-contract-alert{ color: var(--err); border-color: rgba(255,80,80,0.4); }
+  .pv-contract-alert.is-err{ color: var(--err); border-color: rgba(255,80,80,0.4); }
   .pv-contract-slack-badge{
     flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
     color: var(--violet); border:1px solid var(--violet); border-radius:5px; padding:2px 6px;
@@ -1240,6 +1254,14 @@
   #contract-detail-body .case-edit-due{ flex:none; width:150px !important; padding:7px 8px !important; font-size:12.5px !important; color-scheme: dark; }
   .pv-contract-slack-note{ font-size:11.5px; color: var(--violet); line-height:1.6; }
   .pv-contract-field-label{ font-size:12px; color: var(--text-dim); margin-right:8px; }
+  .pv-contract-chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .pv-contract-chip{
+    font-size:11px; cursor:pointer; color: var(--text-dim);
+    background:transparent; border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .pv-contract-chip:hover{ color: var(--text); border-color: var(--cyan); }
+  .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.10); }
 
   /* ---------- ビジネス: Slackダイジェスト(フェーズB) ---------- */
   .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:280px; overflow-y:auto; }

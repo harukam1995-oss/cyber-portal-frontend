@@ -17,7 +17,7 @@
 <meta name="apple-mobile-web-app-title" content="Cyber Portal">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
-<link rel="stylesheet" href="style.css?v=20" />
+<link rel="stylesheet" href="style.css?v=21" />
 </head>
 <body>
 
@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.18.0</span>
+      <span>v2.19.0</span>
     </div>
   </footer>
 </div>
@@ -467,11 +467,23 @@
           <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
         </div>
         <div class="card-body">
-          <div class="pv-contracts-filter" id="pv-contracts-filter">
-            <button type="button" class="pv-contracts-filter-btn is-active" data-status="">すべて</button>
-            <button type="button" class="pv-contracts-filter-btn" data-status="依頼受領">依頼受領</button>
-            <button type="button" class="pv-contracts-filter-btn" data-status="送付済み">送付済み</button>
-            <button type="button" class="pv-contracts-filter-btn" data-status="締結済み">締結済み</button>
+          <div class="pv-contracts-tabs" id="pv-contracts-tabs">
+            <button type="button" class="pv-contracts-tab pv-contracts-tab-alert" data-tab="alert">アラート</button>
+            <button type="button" class="pv-contracts-tab" data-tab="依頼受領">依頼</button>
+            <button type="button" class="pv-contracts-tab" data-tab="送付済み">送付</button>
+            <button type="button" class="pv-contracts-tab" data-tab="締結済み">締結</button>
+            <button type="button" class="pv-contracts-tab is-active" data-tab="">すべて</button>
+          </div>
+          <div class="pv-contracts-search">
+            <input type="search" id="pv-contracts-q" class="pv-contracts-q" placeholder="会社名・依頼者・日付で検索" autocomplete="off" maxlength="80">
+            <select id="pv-contracts-requester" class="pv-contracts-requester" aria-label="依頼者で絞り込み">
+              <option value="">依頼者（すべて）</option>
+              <option value="河野">河野</option>
+              <option value="藤井">藤井</option>
+              <option value="船木">船木</option>
+              <option value="竹内">竹内</option>
+              <option value="__other">その他</option>
+            </select>
           </div>
           <div class="pv-contracts-list" id="pv-contracts-list"></div>
           <p class="pv-contracts-status" id="pv-contracts-status">読み込み中…</p>
@@ -1249,8 +1261,8 @@
   </div>
 </div>
 
-<script src="app.js?v=20"></script>
-<script type="module" src="auth.js?v=20"></script>
+<script src="app.js?v=21"></script>
+<script type="module" src="auth.js?v=21"></script>
 
 </body>
 </html>

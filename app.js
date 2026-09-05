@@ -2296,17 +2296,31 @@
     if (form) form.addEventListener("submit", onCaseModalSubmit);
   }
 
-  /* ================= ビジネス: 契約書トラッカー(v1) =================
+  /* ================= ビジネス: 契約書トラッカー =================
      営業から依頼される契約書送付の進捗を管理する。案件管理(cases)と同じ master-detail 管理モーダル。
-     「締結済み」「報告済み」以外(＝依頼受領／送付済み)はカード側で未締結として強調表示する。 */
+     client(会社名)が主識別子。title(契約書名)は任意の補足。
+     status は手動選択。requestedDate/sentDate/signedDate(依頼日/送付日/締結日)で遅延をアラート表示する。 */
   var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
   var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--cyan)", "締結済み": "var(--ok)", "報告済み": "var(--violet)" };
-  var CONTRACT_STATUS_VERB = { "依頼受領": "依頼", "送付済み": "送付", "締結済み": "締結", "報告済み": "報告" };
-  var contractsState = [];      // [{id,title,client,requestedBy,status,statusDate,dueDate,confidential,source,order}]
-  var contractsFilterStatus = ""; // "" = すべて表示、それ以外は該当ステータスのみ表示
+  var CONTRACT_REQUESTERS = ["河野", "藤井", "船木", "竹内"]; // 依頼者の quick-pick / 絞り込み候補
+  var contractsState = [];      // [{id,title,client,requestedBy,status,requestedDate,sentDate,signedDate,dueDate,confidential,source,order}]
+  var contractsTab = "";        // "" = すべて / "alert" / "依頼受領" / "送付済み" / "締結済み"
+  var contractsQuery = "";      // 検索窓の文字列
+  var contractsRequester = "";  // 依頼者の絞り込み("" = すべて、"__other" = 既知4名以外)
   var contractEditRows = [];    // 管理モーダルの作業コピー
   var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
+
+  // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
+  function contractAlertLabels(c){
+    var today = jstDateKey(new Date());
+    var out = [];
+    if (c.requestedDate && !c.sentDate) out.push("⚠ 送付待ち");
+    if (c.sentDate && !c.signedDate && addDaysKey(c.sentDate, 7) < today) out.push("⚠ 締結遅延");
+    var unsigned = c.status !== "締結済み" && c.status !== "報告済み";
+    if (c.dueDate && c.dueDate < today && unsigned) out.push("⚠ 期限超過");
+    return out;
+  }
 
   function contractSetStatus(msg, isErr){
     var el = document.getElementById("pv-contracts-status");
@@ -2332,43 +2346,68 @@
     }
   }
 
-  function renderContractsFilterBar(){
-    var bar = document.getElementById("pv-contracts-filter");
+  function renderContractsTabs(){
+    var bar = document.getElementById("pv-contracts-tabs");
     if (!bar) return;
-    Array.prototype.forEach.call(bar.querySelectorAll(".pv-contracts-filter-btn"), function(btn){
-      btn.classList.toggle("is-active", btn.getAttribute("data-status") === contractsFilterStatus);
+    Array.prototype.forEach.call(bar.querySelectorAll(".pv-contracts-tab"), function(btn){
+      btn.classList.toggle("is-active", btn.getAttribute("data-tab") === contractsTab);
     });
+  }
+
+  function contractMD(key){ var p = keyParts(key); return p.m + "/" + p.d; }
+
+  function contractMatchesQuery(c, q){
+    var hay = [c.client, c.title, c.requestedBy, c.status].join(" ");
+    ["requestedDate", "sentDate", "signedDate", "dueDate"].forEach(function(k){
+      if (c[k]) hay += " " + c[k] + " " + contractMD(c[k]);
+    });
+    return hay.toLowerCase().indexOf(q) !== -1;
   }
 
   function renderContracts(){
     var list = document.getElementById("pv-contracts-list");
     if (!list) return;
-    renderContractsFilterBar();
+    renderContractsTabs();
     list.innerHTML = "";
     if (!contractsState.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
       return;
     }
-    var filtered = contractsFilterStatus
-      ? contractsState.filter(function(c){ return c.status === contractsFilterStatus; })
-      : contractsState;
+
+    var q = contractsQuery.trim().toLowerCase();
+    var filtered = contractsState.filter(function(c){
+      // タブ
+      if (contractsTab === "alert"){ if (!contractAlertLabels(c).length) return false; }
+      else if (contractsTab === "締結済み"){ if (c.status !== "締結済み" && c.status !== "報告済み") return false; }
+      else if (contractsTab){ if (c.status !== contractsTab) return false; }
+      // 依頼者
+      if (contractsRequester === "__other"){
+        if (CONTRACT_REQUESTERS.some(function(n){ return (c.requestedBy || "").indexOf(n) !== -1; })) return false;
+      } else if (contractsRequester){
+        if ((c.requestedBy || "").indexOf(contractsRequester) === -1) return false;
+      }
+      // 検索窓
+      if (q && !contractMatchesQuery(c, q)) return false;
+      return true;
+    });
+
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
     }
-    var todayKey = jstDateKey(new Date());
     filtered.forEach(function(c){
+      var alerts = contractAlertLabels(c);
       var pending = c.status !== "締結済み" && c.status !== "報告済み";
-      var overdue = pending && c.dueDate && c.dueDate < todayKey;
+      var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
       var row = document.createElement("div");
-      row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (overdue ? " is-overdue" : "");
+      row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
       row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
 
       var head = document.createElement("div");
       head.className = "pv-case-head";
       var name = document.createElement("span");
       name.className = "pv-case-name";
-      name.textContent = c.title || "(名称未設定)";
+      name.textContent = c.client || c.title || "(名称未設定)";
       head.appendChild(name);
       if (c.confidential){
         var lock = document.createElement("span");
@@ -2377,11 +2416,18 @@
         lock.title = "機密案件";
         head.appendChild(lock);
       }
-      if (pending){
-        var alert = document.createElement("span");
-        alert.className = "pv-contract-alert";
-        alert.textContent = overdue ? "⚠ 期限超過" : "⚠ 未締結";
-        head.appendChild(alert);
+      if (alerts.length){
+        alerts.forEach(function(t){
+          var a = document.createElement("span");
+          a.className = "pv-contract-alert" + (t === "⚠ 期限超過" ? " is-err" : "");
+          a.textContent = t;
+          head.appendChild(a);
+        });
+      } else if (pending){
+        var alertEl = document.createElement("span");
+        alertEl.className = "pv-contract-alert";
+        alertEl.textContent = "⚠ 未締結";
+        head.appendChild(alertEl);
       }
       var status = document.createElement("span");
       status.className = "pv-case-status-badge";
@@ -2397,11 +2443,20 @@
       }
       row.appendChild(head);
 
+      // 契約書名が会社名と別なら、小さくサブ行に出す。
+      if (c.title && c.title !== c.client){
+        var sub = document.createElement("div");
+        sub.className = "pv-contract-subtitle";
+        sub.textContent = c.title;
+        row.appendChild(sub);
+      }
+
       var metaLine = [];
-      if (c.statusDate){ var sd = keyParts(c.statusDate); metaLine.push(sd.m + "/" + sd.d + (CONTRACT_STATUS_VERB[c.status] || "")); }
-      if (c.client) metaLine.push(c.client);
+      if (c.requestedDate) metaLine.push("依頼 " + contractMD(c.requestedDate));
+      if (c.sentDate) metaLine.push("送付 " + contractMD(c.sentDate));
+      if (c.signedDate) metaLine.push("締結 " + contractMD(c.signedDate));
       if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
-      if (c.dueDate){ var p = keyParts(c.dueDate); metaLine.push(p.m + "/" + p.d + "まで"); }
+      if (c.dueDate) metaLine.push("期限 " + contractMD(c.dueDate) + " まで");
       if (metaLine.length){
         var meta = document.createElement("div");
         meta.className = "pv-case-client";
@@ -2434,7 +2489,8 @@
       return {
         id: c.id, title: c.title, client: c.client || "", requestedBy: c.requestedBy || "",
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
-        statusDate: c.statusDate || "", dueDate: c.dueDate || "", confidential: c.confidential === true,
+        requestedDate: c.requestedDate || "", sentDate: c.sentDate || "", signedDate: c.signedDate || "",
+        dueDate: c.dueDate || "", confidential: c.confidential === true,
         source: c.source === "slack" ? "slack" : "manual"
       };
     });
@@ -2456,7 +2512,7 @@
     else closeContractModal();
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", statusDate: "", dueDate: "", confidential: false, source: "manual" };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
@@ -2493,7 +2549,7 @@
       txt.className = "habit-list-txt";
       var nm = document.createElement("div");
       nm.className = "habit-list-name";
-      nm.textContent = (r.title || "").trim() || "（名称未設定）";
+      nm.textContent = (r.client || "").trim() || (r.title || "").trim() || "（名称未設定）";
       var hint = document.createElement("div");
       hint.className = "habit-list-hint";
       hint.textContent = contractHint(r);
@@ -2535,23 +2591,40 @@
       body.appendChild(slackNote);
     }
 
-    var title = document.createElement("input");
-    title.type = "text"; title.className = "habit-edit-name"; title.maxLength = 80;
-    title.placeholder = "契約書名（例：A社 業務委託契約書）"; title.value = r.title || "";
-    title.addEventListener("input", function(){ r.title = title.value; r.source = "manual"; });
-    body.appendChild(title);
-
     var client = document.createElement("input");
     client.type = "text"; client.className = "habit-edit-name"; client.maxLength = 60;
-    client.placeholder = "クライアント名（任意）"; client.value = r.client || "";
+    client.placeholder = "クライアント名（会社名）"; client.value = r.client || "";
     client.addEventListener("input", function(){ r.client = client.value; r.source = "manual"; });
     body.appendChild(client);
 
+    var title = document.createElement("input");
+    title.type = "text"; title.className = "habit-edit-name"; title.maxLength = 80;
+    title.placeholder = "契約書名（任意・会社名と別のとき）"; title.value = r.title || "";
+    title.addEventListener("input", function(){ r.title = title.value; r.source = "manual"; });
+    body.appendChild(title);
+
     var requestedBy = document.createElement("input");
     requestedBy.type = "text"; requestedBy.className = "habit-edit-name"; requestedBy.maxLength = 40;
-    requestedBy.placeholder = "依頼者（例：営業 山田）（任意）"; requestedBy.value = r.requestedBy || "";
+    requestedBy.placeholder = "依頼者（任意）"; requestedBy.value = r.requestedBy || "";
     requestedBy.addEventListener("input", function(){ r.requestedBy = requestedBy.value; r.source = "manual"; });
     body.appendChild(requestedBy);
+
+    var reqChips = document.createElement("div");
+    reqChips.className = "pv-contract-chips";
+    CONTRACT_REQUESTERS.forEach(function(nm){
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "pv-contract-chip" + (r.requestedBy === nm ? " is-active" : "");
+      chip.textContent = nm;
+      chip.addEventListener("click", function(){
+        r.requestedBy = (r.requestedBy === nm) ? "" : nm;
+        r.source = "manual";
+        requestedBy.value = r.requestedBy;
+        renderContractDetailView(idx);
+      });
+      reqChips.appendChild(chip);
+    });
+    body.appendChild(reqChips);
 
     var lineStatus = document.createElement("div");
     lineStatus.className = "habit-block-line";
@@ -2568,18 +2641,24 @@
     lineStatus.appendChild(status); lineStatus.appendChild(due);
     body.appendChild(lineStatus);
 
-    var lineStatusDate = document.createElement("div");
-    lineStatusDate.className = "habit-block-line";
-    var statusDateLabel = document.createElement("span");
-    statusDateLabel.className = "pv-contract-field-label";
-    statusDateLabel.textContent = "ステータス更新日（任意）";
-    var statusDate = document.createElement("input");
-    statusDate.type = "date"; statusDate.className = "case-edit-due";
-    statusDate.value = r.statusDate || "";
-    statusDate.setAttribute("aria-label", "ステータス更新日（任意）");
-    statusDate.addEventListener("input", function(){ r.statusDate = statusDate.value; r.source = "manual"; });
-    lineStatusDate.appendChild(statusDateLabel); lineStatusDate.appendChild(statusDate);
-    body.appendChild(lineStatusDate);
+    [
+      { key: "requestedDate", label: "依頼日" },
+      { key: "sentDate", label: "送付日" },
+      { key: "signedDate", label: "締結日" }
+    ].forEach(function(f){
+      var line = document.createElement("div");
+      line.className = "habit-block-line";
+      var lbl = document.createElement("span");
+      lbl.className = "pv-contract-field-label";
+      lbl.textContent = f.label + "（任意）";
+      var inp = document.createElement("input");
+      inp.type = "date"; inp.className = "case-edit-due";
+      inp.value = r[f.key] || "";
+      inp.setAttribute("aria-label", f.label + "（任意）");
+      inp.addEventListener("input", function(){ r[f.key] = inp.value; r.source = "manual"; });
+      line.appendChild(lbl); line.appendChild(inp);
+      body.appendChild(line);
+    });
 
     var lineMisc = document.createElement("div");
     lineMisc.className = "habit-block-line";
@@ -2604,13 +2683,15 @@
     var cleaned = [];
     for (var i = 0; i < contractEditRows.length; i++){
       var r = contractEditRows[i];
+      var cl = (r.client || "").trim();
       var nm = (r.title || "").trim();
-      if (!nm){ failAt(i, "契約書名を入力してください。"); return; }
+      if (!cl && !nm){ failAt(i, "クライアント名（会社名）を入力してください。"); return; }
       cleaned.push({
-        id: r.id, title: nm.slice(0, 80), client: (r.client || "").trim().slice(0, 60),
+        id: r.id, title: nm.slice(0, 80), client: cl.slice(0, 60),
         requestedBy: (r.requestedBy || "").trim().slice(0, 40),
         status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
-        statusDate: r.statusDate || "", dueDate: r.dueDate || "", confidential: r.confidential === true,
+        requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
+        dueDate: r.dueDate || "", confidential: r.confidential === true,
         source: r.source === "slack" ? "slack" : "manual"
       });
     }
@@ -2632,13 +2713,17 @@
     var manageBtn = document.getElementById("pv-contracts-manage");
     if (manageBtn) manageBtn.addEventListener("click", function(){ openContractModal(); });
 
-    var filterBar = document.getElementById("pv-contracts-filter");
-    if (filterBar) filterBar.addEventListener("click", function(e){
-      var btn = e.target.closest(".pv-contracts-filter-btn");
+    var tabsBar = document.getElementById("pv-contracts-tabs");
+    if (tabsBar) tabsBar.addEventListener("click", function(e){
+      var btn = e.target.closest(".pv-contracts-tab");
       if (!btn) return;
-      contractsFilterStatus = btn.getAttribute("data-status") || "";
+      contractsTab = btn.getAttribute("data-tab") || "";
       renderContracts();
     });
+    var qInput = document.getElementById("pv-contracts-q");
+    if (qInput) qInput.addEventListener("input", function(){ contractsQuery = qInput.value; renderContracts(); });
+    var reqSel = document.getElementById("pv-contracts-requester");
+    if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContracts(); });
 
     var modal = document.getElementById("contract-modal");
     var closeBtn = document.getElementById("contract-modal-close");
