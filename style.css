@@ -956,7 +956,7 @@
     padding-left: 0; margin-bottom:4px;
   }
   .pv-habit-dowhead span{ text-align:center; font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
-  .pv-habit-list{ display:flex; flex-direction:column; gap:12px; }
+  .pv-habit-list{ display:flex; flex-direction:column; gap:12px; max-height:340px; overflow-y:auto; }
   .pv-habit-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
   .pv-habit-row{ display:flex; flex-direction:column; gap:5px; }
   .pv-habit-name{
