@@ -2409,12 +2409,23 @@
         row.appendChild(meta);
       }
 
+      // 一覧のカードを直接タップ → 管理モーダルを開いてその契約書の詳細ビューへ直行。
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      (function(id){
+        function open(){ openContractModal(id); }
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", function(e){
+          if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); }
+        });
+      })(c.id);
+
       list.appendChild(row);
     });
   }
 
   /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
-  function openContractModal(){
+  function openContractModal(targetId){
     var modal = document.getElementById("contract-modal");
     if (!modal) return;
     var errEl = document.getElementById("contract-form-error");
@@ -2428,6 +2439,11 @@
       };
     });
     contractDetailIdx = null;
+    if (targetId){
+      for (var i = 0; i < contractEditRows.length; i++){
+        if (contractEditRows[i].id === targetId){ contractDetailIdx = i; break; }
+      }
+    }
     renderContractModal();
     modal.hidden = false;
   }
@@ -2614,7 +2630,7 @@
     if (contractsWired) return;
     contractsWired = true;
     var manageBtn = document.getElementById("pv-contracts-manage");
-    if (manageBtn) manageBtn.addEventListener("click", openContractModal);
+    if (manageBtn) manageBtn.addEventListener("click", function(){ openContractModal(); });
 
     var filterBar = document.getElementById("pv-contracts-filter");
     if (filterBar) filterBar.addEventListener("click", function(e){
