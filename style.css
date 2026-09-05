@@ -1171,6 +1171,43 @@
   .plan-apply-panel p{ margin:0; font-size:13px; color: var(--text); line-height:1.7; }
   .plan-apply-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
 
+  /* ---------- ビジネス: プロジェクトボード(案件管理, v1) ---------- */
+  .pv-cases-list{ display:flex; flex-direction:column; gap:12px; max-height:420px; overflow-y:auto; }
+  .pv-cases-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
+  .pv-cases-status.is-err{ color: var(--err); }
+  .pv-case-row{ display:flex; flex-direction:column; gap:5px; padding-bottom:2px; }
+  .pv-case-head{ display:flex; align-items:center; gap:6px; }
+  .pv-case-name{ flex:1 1 auto; min-width:0; font-size:13px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pv-case-lock{ flex:none; font-size:11px; }
+  .pv-case-status-badge{
+    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.5px;
+    color: var(--case-accent, var(--cyan)); border:1px solid var(--case-accent, var(--cyan));
+    border-radius:5px; padding:2px 7px;
+  }
+  .pv-case-client{ font-size:11px; color: var(--text-faint); }
+  .pv-case-meta{ display:flex; align-items:center; gap:8px; }
+  .pv-case-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
+  .pv-case-bar span{ display:block; height:100%; border-radius:3px; background: var(--case-accent, var(--cyan)); box-shadow: 0 0 6px var(--case-accent, var(--cyan)); }
+  .pv-case-pct{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:30px; text-align:right; }
+  .pv-case-due{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); flex:none; }
+
+  /* 案件詳細フォーム(#case-detail-body の入力幅を habit-detail-body と同様に上書き) */
+  #case-detail-body{ display:flex; flex-direction:column; gap:10px; }
+  #case-detail-body .case-edit-status{ flex:none; width:100px !important; padding:7px 8px !important; font-size:12.5px !important; }
+  #case-detail-body .case-edit-progress{
+    flex:none; width:64px !important; padding:7px 6px !important; font-size:13px !important; text-align:center;
+    -moz-appearance:textfield; appearance:textfield;
+  }
+  #case-detail-body .case-edit-progress::-webkit-outer-spin-button,
+  #case-detail-body .case-edit-progress::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .case-edit-progress-label{ font-size:12.5px; color: var(--text-dim); }
+  #case-detail-body .case-edit-due{ width:100% !important; color-scheme: dark; }
+
+  /* ---------- ビジネス: 最近のメモ(SYSLEA タグ) ---------- */
+  .biz-note-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .biz-note-list .pv-up-item{ cursor:pointer; }
+  .biz-note-list .pv-up-item:hover .pv-up-title{ color: var(--cyan); }
+
   .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
   .pv-today-date .yr{ color: var(--text-faint); font-size:12px; }
   .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; text-shadow: 0 0 16px var(--magenta-dim); }

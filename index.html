@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.12.0</span>
+      <span>v2.13.0</span>
     </div>
   </footer>
 </div>
@@ -396,12 +396,101 @@
   </div>
 </div>
 
-<!-- ================= ビジネス VIEW (準備中) ================= -->
+<!-- ================= ビジネス VIEW (v1: プロジェクトボード＋最近のメモ＋クイックアクセス) ================= -->
 <div class="frame" id="view-business" hidden>
-  <section class="panel pv-soon" style="padding:44px 24px; text-align:center;">
-    <h2 style="font-family:var(--font-display); letter-spacing:2px; color:var(--cyan); margin:0;">ビジネス</h2>
-    <p style="color:var(--text-faint); margin-top:12px;">請求書・社長の予定・仕事タスクなどをここに構築予定です。</p>
-  </section>
+  <div class="pv-grid">
+    <div class="pv-col">
+      <!-- TODAY -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head"><h2>TODAY</h2></div>
+        <div class="card-body">
+          <div class="pv-today-date"><span id="biz-md">--/--</span><span id="biz-dow">---</span><span class="yr" id="biz-yr">----</span></div>
+          <div class="pv-today-clock"><span id="biz-time">--:--</span><span class="sec" id="biz-sec">--</span></div>
+          <div class="pv-today-tz">JAPAN STANDARD TIME &nbsp;·&nbsp; <b>UTC+9</b></div>
+        </div>
+      </section>
+      <!-- 最近のメモ（SYSLEA タグ） -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head">
+          <h2>最近のメモ</h2>
+          <button type="button" class="pv-fin-add" id="biz-note-new">＋ 新規メモ</button>
+        </div>
+        <div class="card-body">
+          <ul class="biz-note-list" id="biz-note-list"><li class="sched-empty">読み込み中…</li></ul>
+        </div>
+      </section>
+      <!-- クイックアクセス -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head"><h2>クイックアクセス</h2></div>
+        <div class="card-body">
+          <div class="quick-grid">
+            <button class="quick-tile" type="button" id="biz-quick-tasks"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>タスク管理</span></button>
+            <button class="quick-tile" type="button" id="biz-quick-calendar"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg><span>カレンダー</span></button>
+            <button class="quick-tile" type="button" id="biz-quick-notes"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>メモ</span></button>
+            <button class="quick-tile" type="button" id="biz-quick-mail"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>メール</span></button>
+            <button class="quick-tile" type="button" id="biz-quick-ideas"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-4 10.5c.6.6 1 1.6 1 2.5h6c0-.9.4-1.9 1-2.5A6 6 0 0 0 12 2Z"/></svg><span>アイデア帳</span></button>
+            <a class="quick-tile" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M6.3 17.7l2.8-2.8M14.9 9.1l2.8-2.8"/></svg><span>Claude</span></a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel pv-hero">
+      <div class="corner tl"></div><div class="corner br"></div>
+      <img class="pv-hero-img" id="biz-hero-img" alt="">
+      <div class="scanlines"></div>
+      <div class="vignette"></div>
+      <div class="pv-hero-vtext">積み重ねが、力になる</div>
+    </section>
+
+    <div class="pv-col">
+      <!-- プロジェクトボード（案件管理） -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head">
+          <h2>プロジェクトボード</h2>
+          <button type="button" class="pv-habit-manage" id="pv-cases-manage">管理</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-cases-list" id="pv-cases-list"></div>
+          <p class="pv-cases-status" id="pv-cases-status">読み込み中…</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ================= プロジェクトの管理モーダル ================= -->
+<div class="modal-overlay" id="case-modal" hidden role="dialog" aria-modal="true" aria-labelledby="case-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="case-modal-title">プロジェクトの管理</h3>
+      <button class="modal-close" type="button" id="case-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="case-form">
+      <div id="case-list-view">
+        <button type="button" class="ev-btn habit-add-row" id="case-new">＋ 新規作成</button>
+        <div class="habit-rows" id="case-rows"></div>
+      </div>
+      <div id="case-detail-view" hidden>
+        <button type="button" class="habit-detail-back" id="case-detail-back">‹ 一覧へ戻る</button>
+        <div id="case-detail-body"></div>
+        <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="case-detail-del">このプロジェクトを削除</button>
+      </div>
+      <div class="event-form-error" id="case-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="case-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="case-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- ================= CALENDAR VIEW ================= -->
