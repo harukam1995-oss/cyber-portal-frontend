@@ -2301,7 +2301,8 @@
      「締結済み」「報告済み」以外(＝依頼受領／送付済み)はカード側で未締結として強調表示する。 */
   var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
   var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--cyan)", "締結済み": "var(--ok)", "報告済み": "var(--violet)" };
-  var contractsState = [];      // [{id,title,client,requestedBy,status,dueDate,confidential,order}]
+  var CONTRACT_STATUS_VERB = { "依頼受領": "依頼", "送付済み": "送付", "締結済み": "締結", "報告済み": "報告" };
+  var contractsState = [];      // [{id,title,client,requestedBy,status,statusDate,dueDate,confidential,source,order}]
   var contractEditRows = [];    // 管理モーダルの作業コピー
   var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
@@ -2370,9 +2371,17 @@
       status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
       status.textContent = c.status;
       head.appendChild(status);
+      if (c.source === "slack"){
+        var slackBadge = document.createElement("span");
+        slackBadge.className = "pv-contract-slack-badge";
+        slackBadge.textContent = "Slack検知";
+        slackBadge.title = "Slackダイジェストが自動検知・更新した項目です。内容を確認してください。";
+        head.appendChild(slackBadge);
+      }
       row.appendChild(head);
 
       var metaLine = [];
+      if (c.statusDate){ var sd = keyParts(c.statusDate); metaLine.push(sd.m + "/" + sd.d + (CONTRACT_STATUS_VERB[c.status] || "")); }
       if (c.client) metaLine.push(c.client);
       if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
       if (c.dueDate){ var p = keyParts(c.dueDate); metaLine.push(p.m + "/" + p.d + "まで"); }
@@ -2397,7 +2406,8 @@
       return {
         id: c.id, title: c.title, client: c.client || "", requestedBy: c.requestedBy || "",
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
-        dueDate: c.dueDate || "", confidential: c.confidential === true
+        statusDate: c.statusDate || "", dueDate: c.dueDate || "", confidential: c.confidential === true,
+        source: c.source === "slack" ? "slack" : "manual"
       };
     });
     contractDetailIdx = null;
@@ -2413,11 +2423,11 @@
     else closeContractModal();
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", dueDate: "", confidential: false };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", statusDate: "", dueDate: "", confidential: false, source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
-    return (r.status || "依頼受領") + (pending ? " ・ ⚠未締結" : "") + (r.confidential ? " ・ 🔒機密" : "");
+    return (r.status || "依頼受領") + (pending ? " ・ ⚠未締結" : "") + (r.confidential ? " ・ 🔒機密" : "") + (r.source === "slack" ? " ・ Slack検知" : "");
   }
   function renderContractModal(){
     var listView = document.getElementById("contract-list-view");
@@ -2485,22 +2495,29 @@
     if (!body || !r) return;
     body.innerHTML = "";
 
+    if (r.source === "slack"){
+      var slackNote = document.createElement("div");
+      slackNote.className = "pv-contract-slack-note";
+      slackNote.textContent = "Slackダイジェストが自動検知・更新した項目です。内容を確認し、必要なら修正してください。";
+      body.appendChild(slackNote);
+    }
+
     var title = document.createElement("input");
     title.type = "text"; title.className = "habit-edit-name"; title.maxLength = 80;
     title.placeholder = "契約書名（例：A社 業務委託契約書）"; title.value = r.title || "";
-    title.addEventListener("input", function(){ r.title = title.value; });
+    title.addEventListener("input", function(){ r.title = title.value; r.source = "manual"; });
     body.appendChild(title);
 
     var client = document.createElement("input");
     client.type = "text"; client.className = "habit-edit-name"; client.maxLength = 60;
     client.placeholder = "クライアント名（任意）"; client.value = r.client || "";
-    client.addEventListener("input", function(){ r.client = client.value; });
+    client.addEventListener("input", function(){ r.client = client.value; r.source = "manual"; });
     body.appendChild(client);
 
     var requestedBy = document.createElement("input");
     requestedBy.type = "text"; requestedBy.className = "habit-edit-name"; requestedBy.maxLength = 40;
     requestedBy.placeholder = "依頼者（例：営業 山田）（任意）"; requestedBy.value = r.requestedBy || "";
-    requestedBy.addEventListener("input", function(){ r.requestedBy = requestedBy.value; });
+    requestedBy.addEventListener("input", function(){ r.requestedBy = requestedBy.value; r.source = "manual"; });
     body.appendChild(requestedBy);
 
     var lineStatus = document.createElement("div");
@@ -2509,14 +2526,27 @@
     status.className = "habit-edit-cadence case-edit-status";
     status.innerHTML = CONTRACT_STATUSES.map(function(s){ return '<option value="' + s + '">' + s + "</option>"; }).join("");
     status.value = r.status;
-    status.addEventListener("change", function(){ r.status = status.value; });
+    status.addEventListener("change", function(){ r.status = status.value; r.source = "manual"; });
     var due = document.createElement("input");
     due.type = "date"; due.className = "case-edit-due";
     due.value = r.dueDate || "";
     due.setAttribute("aria-label", "期限（任意）");
-    due.addEventListener("input", function(){ r.dueDate = due.value; });
+    due.addEventListener("input", function(){ r.dueDate = due.value; r.source = "manual"; });
     lineStatus.appendChild(status); lineStatus.appendChild(due);
     body.appendChild(lineStatus);
+
+    var lineStatusDate = document.createElement("div");
+    lineStatusDate.className = "habit-block-line";
+    var statusDateLabel = document.createElement("span");
+    statusDateLabel.className = "pv-contract-field-label";
+    statusDateLabel.textContent = "ステータス更新日（任意）";
+    var statusDate = document.createElement("input");
+    statusDate.type = "date"; statusDate.className = "case-edit-due";
+    statusDate.value = r.statusDate || "";
+    statusDate.setAttribute("aria-label", "ステータス更新日（任意）");
+    statusDate.addEventListener("input", function(){ r.statusDate = statusDate.value; r.source = "manual"; });
+    lineStatusDate.appendChild(statusDateLabel); lineStatusDate.appendChild(statusDate);
+    body.appendChild(lineStatusDate);
 
     var lineMisc = document.createElement("div");
     lineMisc.className = "habit-block-line";
@@ -2524,7 +2554,7 @@
     conf.className = "habit-pause";
     var ccb = document.createElement("input");
     ccb.type = "checkbox"; ccb.checked = r.confidential === true;
-    ccb.addEventListener("change", function(){ r.confidential = ccb.checked; });
+    ccb.addEventListener("change", function(){ r.confidential = ccb.checked; r.source = "manual"; });
     conf.appendChild(ccb);
     conf.appendChild(document.createTextNode(" 機密案件（クライアントの秘密情報を含む）"));
     lineMisc.appendChild(conf);
@@ -2547,7 +2577,8 @@
         id: r.id, title: nm.slice(0, 80), client: (r.client || "").trim().slice(0, 60),
         requestedBy: (r.requestedBy || "").trim().slice(0, 40),
         status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
-        dueDate: r.dueDate || "", confidential: r.confidential === true
+        statusDate: r.statusDate || "", dueDate: r.dueDate || "", confidential: r.confidential === true,
+        source: r.source === "slack" ? "slack" : "manual"
       });
     }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
