@@ -823,6 +823,7 @@
   .settings-conn-state.is-stale{ color: var(--warn); }
   .settings-conn-row .ev-btn{ flex:0 0 auto; padding:5px 12px; font-size:11px; }
   .settings-hint{ margin:0; font-size:11px; color: var(--text-faint); letter-spacing:.3px; }
+  .settings-hint.is-err{ color: var(--err); }
   .settings-check{ flex-direction:row !important; align-items:center; gap:8px !important; cursor:pointer; }
   .settings-check input{ width:auto; }
 

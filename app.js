@@ -4318,6 +4318,35 @@
   }
   function closeSettings(){ if (settingsModal) settingsModal.hidden = true; }
 
+  // データのバックアップ(レベル1): /api/export を叩いて全データを1つの JSON にまとめ、
+  // その場で Blob URL を作ってダウンロードさせる。サーバーには何も保存しない。
+  async function exportAllData(){
+    var btn = document.getElementById("settings-export-btn");
+    var statusEl = document.getElementById("settings-export-status");
+    if (statusEl){ statusEl.hidden = true; statusEl.classList.remove("is-err"); }
+    if (btn){ btn.disabled = true; btn.textContent = "書き出し中…"; }
+    try {
+      var data = await apiFetch("/api/export");
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "cyber-portal-export-" + jstDateKey(new Date()) + ".json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    } catch (err){
+      if (statusEl){
+        statusEl.textContent = apiErrorMessage(err, "エクスポート");
+        statusEl.hidden = false;
+        statusEl.classList.add("is-err");
+      }
+    } finally {
+      if (btn){ btn.disabled = false; btn.textContent = "全データをJSONでダウンロード"; }
+    }
+  }
+
   if (settingsBtn) settingsBtn.addEventListener("click", openSettings);
   var settingsClose = document.getElementById("settings-modal-close");
   var settingsCancel = document.getElementById("settings-cancel");
@@ -4329,6 +4358,8 @@
   document.querySelectorAll("#settings-modal .settings-conn-row button[data-account]").forEach(function(btn){
     btn.addEventListener("click", function(){ startGoogleConnect(btn.getAttribute("data-account")); });
   });
+  var settingsExportBtn = document.getElementById("settings-export-btn");
+  if (settingsExportBtn) settingsExportBtn.addEventListener("click", exportAllData);
 
   if (settingsForm){
     settingsForm.addEventListener("submit", async function(e){

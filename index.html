@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.11.0</span>
+      <span>v2.12.0</span>
     </div>
   </footer>
 </div>
@@ -1083,6 +1083,13 @@
         <label>アバター文字（1〜2文字）
           <input type="text" id="settings-avatar-text" maxlength="2" placeholder="遥" autocomplete="off">
         </label>
+      </div>
+
+      <div class="settings-section">
+        <h4>データのバックアップ</h4>
+        <p class="settings-hint">タスク・メモ・習慣トラッカー・TODAY'S PLAN・設定を1つのJSONファイルにまとめてダウンロードします。パスワードやGoogle連携トークンなどの認証情報は含まれません。週1回程度、手元に保存することをおすすめします。</p>
+        <button type="button" class="ev-btn" id="settings-export-btn">全データをJSONでダウンロード</button>
+        <p class="settings-hint" id="settings-export-status" hidden></p>
       </div>
 
       <div class="event-form-error" id="settings-form-error" hidden></div>
