@@ -2064,327 +2064,6 @@
     if (aModal) aModal.addEventListener("click", function(e){ if (e.target === aModal) closePlanApply("cancel"); });
   }
 
-  /* ================= ビジネス: プロジェクトボード(案件管理, v1) =================
-     Firestore に案件定義(cases)を持つ。習慣/テンプレと同じ master-detail 管理モーダル。
-     機密フラグ(confidential)は「データ保存とバックアップ」ノートの方針どおり持たせておく
-     (現時点は表示上の鍵アイコンのみ。将来のエージェント連携で内容非展開の扱いにする想定)。 */
-  var CASE_STATUSES = ["進行中", "計画中", "完了"];
-  var CASE_STATUS_COLOR = { "進行中": "var(--cyan)", "計画中": "var(--warn)", "完了": "var(--ok)" };
-  var casesState = [];      // [{id,name,client,status,progress,dueDate,confidential,order}]
-  var caseEditRows = [];    // 管理モーダルの作業コピー
-  var caseDetailIdx = null; // null = 一覧ビュー、数値 = そのプロジェクトの詳細ビュー
-  var casesWired = false;
-  var casesLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
-
-  var caseSetStatus = makeStatusSetter("pv-cases-status");
-
-  function applyCases(list){
-    casesState = list || [];
-    casesLoadOk = true;
-    renderCases();
-    caseSetStatus("");
-  }
-  function failCases(err){
-    casesState = [];
-    renderCases();
-    caseSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
-  }
-  async function loadCases(){
-    var list = document.getElementById("pv-cases-list");
-    if (!list) return;
-    caseSetStatus("読み込み中…");
-    try { applyCases((await apiFetch("/api/cases")).cases); }
-    catch (err){ failCases(err); }
-  }
-
-  function renderCases(){
-    var list = document.getElementById("pv-cases-list");
-    if (!list) return;
-    list.innerHTML = "";
-    if (!casesState.length){
-      list.innerHTML = '<div class="pv-habit-empty">「管理」からプロジェクトを追加してください。</div>';
-      return;
-    }
-    casesState.forEach(function(c){
-      var row = document.createElement("div");
-      row.className = "pv-case-row";
-      row.style.setProperty("--case-accent", CASE_STATUS_COLOR[c.status] || "var(--cyan)");
-
-      var head = document.createElement("div");
-      head.className = "pv-case-head";
-      var name = document.createElement("span");
-      name.className = "pv-case-name";
-      name.textContent = c.name || "(名称未設定)";
-      head.appendChild(name);
-      if (c.confidential){
-        var lock = document.createElement("span");
-        lock.className = "pv-case-lock";
-        lock.textContent = "🔒";
-        lock.title = "機密案件";
-        head.appendChild(lock);
-      }
-      var status = document.createElement("span");
-      status.className = "pv-case-status-badge";
-      status.textContent = c.status;
-      head.appendChild(status);
-      row.appendChild(head);
-
-      if (c.client){
-        var client = document.createElement("div");
-        client.className = "pv-case-client";
-        client.textContent = c.client;
-        row.appendChild(client);
-      }
-
-      var meta = document.createElement("div");
-      meta.className = "pv-case-meta";
-      var bar = document.createElement("div");
-      bar.className = "pv-case-bar";
-      var fill = document.createElement("span");
-      fill.style.width = c.progress + "%";
-      bar.appendChild(fill);
-      meta.appendChild(bar);
-      var pct = document.createElement("span");
-      pct.className = "pv-case-pct";
-      pct.textContent = c.progress + "%";
-      meta.appendChild(pct);
-      if (c.dueDate){
-        var due = document.createElement("span");
-        due.className = "pv-case-due";
-        var p = keyParts(c.dueDate);
-        due.textContent = p.m + "/" + p.d + "まで";
-        meta.appendChild(due);
-      }
-      row.appendChild(meta);
-
-      list.appendChild(row);
-    });
-  }
-
-  /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
-  function openCaseModal(){
-    var modal = document.getElementById("case-modal");
-    if (!modal) return;
-    // 取得に失敗している状態で開くと、空の作業コピーを保存して全消しになりかねない。
-    if (!casesLoadOk){
-      caseSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
-      loadCases();
-      return;
-    }
-    var errEl = document.getElementById("case-form-error");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    caseEditRows = casesState.map(function(c){
-      return {
-        id: c.id, name: c.name, client: c.client || "",
-        status: CASE_STATUSES.indexOf(c.status) !== -1 ? c.status : "進行中",
-        progress: c.progress || 0, dueDate: c.dueDate || "",
-        confidential: c.confidential === true
-      };
-    });
-    caseDetailIdx = null;
-    renderCaseModal();
-    modal.hidden = false;
-  }
-  function closeCaseModal(){
-    var modal = document.getElementById("case-modal");
-    if (modal) modal.hidden = true;
-  }
-  function caseModalBack(){
-    if (caseDetailIdx != null){ caseDetailIdx = null; renderCaseModal(); }
-    else closeCaseModal();
-  }
-  function caseNewRow(){
-    return { id: uid(), name: "", client: "", status: "計画中", progress: 0, dueDate: "", confidential: false };
-  }
-  function caseHint(r){
-    return (r.status || "計画中") + " ・ " + (r.progress || 0) + "%" + (r.confidential ? " ・ 🔒機密" : "");
-  }
-  function renderCaseModal(){
-    var listView = document.getElementById("case-list-view");
-    var detailView = document.getElementById("case-detail-view");
-    var title = document.getElementById("case-modal-title");
-    var inDetail = caseDetailIdx != null && !!caseEditRows[caseDetailIdx];
-    if (!inDetail) caseDetailIdx = null;
-    if (listView) listView.hidden = inDetail;
-    if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "プロジェクトの設定" : "プロジェクトの管理";
-    if (inDetail) renderCaseDetailView(caseDetailIdx);
-    else renderCaseListView();
-  }
-  function renderCaseListView(){
-    var wrap = document.getElementById("case-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    if (!caseEditRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">プロジェクトがありません。「＋ 新規作成」から追加してください。</div>';
-      return;
-    }
-    var single = caseEditRows.length <= 1;
-    caseEditRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row";
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-
-      var txt = document.createElement("div");
-      txt.className = "habit-list-txt";
-      var nm = document.createElement("div");
-      nm.className = "habit-list-name";
-      nm.textContent = (r.name || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div");
-      hint.className = "habit-list-hint";
-      hint.textContent = caseHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = caseEditRows[idx - 1]; caseEditRows[idx - 1] = r; caseEditRows[idx] = t; renderCaseListView(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < caseEditRows.length - 1){ var t = caseEditRows[idx + 1]; caseEditRows[idx + 1] = r; caseEditRows[idx] = t; renderCaseListView(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === caseEditRows.length - 1;
-
-      var chev = document.createElement("span");
-      chev.className = "habit-list-chev";
-      chev.textContent = "›";
-
-      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ caseDetailIdx = idx; renderCaseModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
-  }
-  function renderCaseDetailView(idx){
-    var body = document.getElementById("case-detail-body");
-    var r = caseEditRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
-
-    var name = document.createElement("input");
-    name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 60;
-    name.placeholder = "プロジェクト名"; name.value = r.name || "";
-    name.addEventListener("input", function(){ r.name = name.value; });
-    body.appendChild(name);
-
-    var client = document.createElement("input");
-    client.type = "text"; client.className = "habit-edit-name"; client.maxLength = 60;
-    client.placeholder = "クライアント名（任意）"; client.value = r.client || "";
-    client.addEventListener("input", function(){ r.client = client.value; });
-    body.appendChild(client);
-
-    var lineStatus = document.createElement("div");
-    lineStatus.className = "habit-block-line";
-    var status = document.createElement("select");
-    status.className = "habit-edit-cadence case-edit-status";
-    status.innerHTML = CASE_STATUSES.map(function(s){ return '<option value="' + s + '">' + s + "</option>"; }).join("");
-    status.value = r.status;
-    status.addEventListener("change", function(){ r.status = status.value; });
-    var progress = document.createElement("input");
-    progress.type = "number"; progress.className = "habit-edit-target case-edit-progress";
-    progress.min = "0"; progress.max = "100"; progress.value = String(r.progress || 0);
-    progress.setAttribute("aria-label", "進捗率(%)");
-    progress.addEventListener("input", function(){ r.progress = Math.max(0, Math.min(100, Math.round(Number(progress.value) || 0))); });
-    var progressLabel = document.createElement("span");
-    progressLabel.className = "case-edit-progress-label";
-    progressLabel.textContent = "%";
-    lineStatus.appendChild(status); lineStatus.appendChild(progress); lineStatus.appendChild(progressLabel);
-    body.appendChild(lineStatus);
-
-    var due = document.createElement("input");
-    due.type = "date"; due.className = "case-edit-due";
-    due.value = r.dueDate || "";
-    due.setAttribute("aria-label", "期限（任意）");
-    due.addEventListener("input", function(){ r.dueDate = due.value; });
-    body.appendChild(due);
-
-    var lineMisc = document.createElement("div");
-    lineMisc.className = "habit-block-line";
-    var conf = document.createElement("label");
-    conf.className = "habit-pause";
-    var ccb = document.createElement("input");
-    ccb.type = "checkbox"; ccb.checked = r.confidential === true;
-    ccb.addEventListener("change", function(){ r.confidential = ccb.checked; });
-    conf.appendChild(ccb);
-    conf.appendChild(document.createTextNode(" 機密案件（クライアントの秘密情報を含む）"));
-    lineMisc.appendChild(conf);
-    body.appendChild(lineMisc);
-  }
-
-  async function onCaseModalSubmit(e){
-    e.preventDefault();
-    var errEl = document.getElementById("case-form-error");
-    var saveBtn = document.getElementById("case-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
-    function failAt(i, msg){ caseDetailIdx = i; renderCaseModal(); showErr(msg); }
-    if (!casesLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
-    var cleaned = [];
-    for (var i = 0; i < caseEditRows.length; i++){
-      var r = caseEditRows[i];
-      var nm = (r.name || "").trim();
-      if (!nm){ failAt(i, "プロジェクト名を入力してください。"); return; }
-      cleaned.push({
-        id: r.id, name: nm.slice(0, 60), client: (r.client || "").trim().slice(0, 60),
-        status: CASE_STATUSES.indexOf(r.status) !== -1 ? r.status : "計画中",
-        progress: Math.max(0, Math.min(100, Math.round(Number(r.progress) || 0))),
-        dueDate: r.dueDate || "", confidential: r.confidential === true
-      });
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      // casesLoadOk 済み = 空でもユーザーが意図的に全削除した状態。X-Allow-Empty で許可。
-      await apiFetch("/api/cases/bulk", {
-        method: "PUT",
-        headers: { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ cases: cleaned })
-      });
-      closeCaseModal();
-      loadCases();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
-  function wireCases(){
-    if (casesWired) return;
-    casesWired = true;
-    var manageBtn = document.getElementById("pv-cases-manage");
-    if (manageBtn) manageBtn.addEventListener("click", openCaseModal);
-
-    var modal = document.getElementById("case-modal");
-    var closeBtn = document.getElementById("case-modal-close");
-    var cancelBtn = document.getElementById("case-cancel");
-    var newBtn = document.getElementById("case-new");
-    var backBtn = document.getElementById("case-detail-back");
-    var delBtn = document.getElementById("case-detail-del");
-    var form = document.getElementById("case-form");
-    if (closeBtn) closeBtn.addEventListener("click", closeCaseModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closeCaseModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeCaseModal(); });
-    if (newBtn) newBtn.addEventListener("click", function(){
-      caseEditRows.push(caseNewRow());
-      caseDetailIdx = caseEditRows.length - 1;
-      renderCaseModal();
-    });
-    if (backBtn) backBtn.addEventListener("click", function(){ caseDetailIdx = null; renderCaseModal(); });
-    if (delBtn) delBtn.addEventListener("click", async function(){
-      if (caseDetailIdx == null) return;
-      var r = caseEditRows[caseDetailIdx];
-      if (r && r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
-      caseEditRows.splice(caseDetailIdx, 1);
-      caseDetailIdx = null;
-      renderCaseModal();
-    });
-    if (form) form.addEventListener("submit", onCaseModalSubmit);
-  }
-
   /* ================= ビジネス: 契約書トラッカー =================
      営業から依頼される契約書送付の進捗を管理する。案件管理(cases)と同じ master-detail 管理モーダル。
      client(会社名)が主識別子。title(契約書名)は任意の補足。
@@ -2849,7 +2528,9 @@
     if (form) form.addEventListener("submit", onContractModalSubmit);
   }
 
-  /* ================= ビジネス: イベント／月次トラッカー =================
+  /* ================= ビジネス: プロジェクトボード =================
+     表示名は「プロジェクトボード」だが内部の識別子・コレクション・API は event_trackers のまま
+     (旧「イベント／月次トラッカー」。旧 cases ベースのプロジェクトボードは 2026/09/06 に廃止)。
      事前定義したプロジェクト(月次決算・オフィス引っ越し等)のチェックリスト。
      定期タスク event-digest がメール＋Slackから進捗を自動入力する(契約書トラッカーと同型)。
      手動編集した項目は自動反映が上書きしない。 */
@@ -2884,7 +2565,7 @@
   function failEventTrackers(err){
     eventTrackersState = [];
     renderEventTrackers();
-    eventSetStatus(apiErrorMessage(err, "イベントトラッカー"), true);
+    eventSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
   }
   async function loadEventTrackers(){
     var list = document.getElementById("pv-events-list");
@@ -2899,7 +2580,7 @@
     if (!list) return;
     list.innerHTML = "";
     if (!eventTrackersState.length){
-      list.innerHTML = '<div class="pv-habit-empty">「管理」からイベント／月次トラッカーを追加してください。</div>';
+      list.innerHTML = '<div class="pv-habit-empty">「管理」からプロジェクトを追加してください。</div>';
       return;
     }
     var today = jstDateKey(new Date());
@@ -2974,14 +2655,14 @@
 
   /* ---- イベントトラッカー管理モーダル (cases/contracts と同じ master-detail) ---- */
   function openEventModal(targetId){
-    var modal = document.getElementById("event-modal");
+    var modal = document.getElementById("pb-modal");
     if (!modal) return;
     if (!eventTrackersLoadOk){
       eventSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
       loadEventTrackers();
       return;
     }
-    var errEl = document.getElementById("event-form-error");
+    var errEl = document.getElementById("pb-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     eventEditRows = eventTrackersState.map(function(t){
       var m = t.match || {};
@@ -3013,7 +2694,11 @@
     renderEventModal();
     modal.hidden = false;
   }
-  function closeEventModal(){ var m = document.getElementById("event-modal"); if (m) m.hidden = true; }
+  function closeEventModal(){ var m = document.getElementById("pb-modal"); if (m) m.hidden = true; }
+  function eventModalBack(){
+    if (eventDetailIdx != null){ eventDetailIdx = null; renderEventModal(); }
+    else closeEventModal();
+  }
   function eventNewRow(){
     return { id: uid(), name: "", kind: "oneoff", period: "", dueDate: "", status: "計画中", autoIngest: true, confidential: false,
       match: { keywords: [], gmailQuery: "", senders: [], slackChannels: [] }, items: [], digest: [] };
@@ -3024,23 +2709,23 @@
     return (r.status || "計画中") + " ・ " + d + "/" + n + " 完了" + (r.autoIngest === false ? " ・ 自動オフ" : "") + (r.confidential ? " ・ 🔒機密" : "");
   }
   function renderEventModal(){
-    var listView = document.getElementById("event-list-view");
-    var detailView = document.getElementById("event-detail-view");
-    var title = document.getElementById("event-modal-title");
+    var listView = document.getElementById("pb-list-view");
+    var detailView = document.getElementById("pb-detail-view");
+    var title = document.getElementById("pb-modal-title");
     var inDetail = eventDetailIdx != null && !!eventEditRows[eventDetailIdx];
     if (!inDetail) eventDetailIdx = null;
     if (listView) listView.hidden = inDetail;
     if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "トラッカーの設定" : "イベント／月次トラッカーの管理";
+    if (title) title.textContent = inDetail ? "プロジェクトの設定" : "プロジェクトボードの管理";
     if (inDetail) renderEventDetailView(eventDetailIdx);
     else renderEventListView();
   }
   function renderEventListView(){
-    var wrap = document.getElementById("event-rows");
+    var wrap = document.getElementById("pb-rows");
     if (!wrap) return;
     wrap.innerHTML = "";
     if (!eventEditRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">トラッカーがありません。「＋ 新規作成」から追加してください。</div>';
+      wrap.innerHTML = '<div class="habit-edit-empty">プロジェクトがありません。「＋ 新規作成」から追加してください。</div>';
       return;
     }
     var single = eventEditRows.length <= 1;
@@ -3074,14 +2759,14 @@
     });
   }
   function renderEventDetailView(idx){
-    var body = document.getElementById("event-detail-body");
+    var body = document.getElementById("pb-detail-body");
     var r = eventEditRows[idx];
     if (!body || !r) return;
     body.innerHTML = "";
 
     var name = document.createElement("input");
     name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 120;
-    name.placeholder = "トラッカー名（例：2026年9月度_月次決算）"; name.value = r.name || "";
+    name.placeholder = "プロジェクト名（例：2026年9月度_月次決算 / オフィス引っ越し）"; name.value = r.name || "";
     name.addEventListener("input", function(){ r.name = name.value; });
     body.appendChild(name);
 
@@ -3225,8 +2910,8 @@
 
   async function onEventModalSubmit(e){
     e.preventDefault();
-    var errEl = document.getElementById("event-form-error");
-    var saveBtn = document.getElementById("event-save");
+    var errEl = document.getElementById("pb-form-error");
+    var saveBtn = document.getElementById("pb-save");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
     function failAt(i, msg){ eventDetailIdx = i; renderEventModal(); showErr(msg); }
@@ -3235,7 +2920,7 @@
     for (var i = 0; i < eventEditRows.length; i++){
       var r = eventEditRows[i];
       var nm = (r.name || "").trim();
-      if (!nm){ failAt(i, "トラッカー名を入力してください。"); return; }
+      if (!nm){ failAt(i, "プロジェクト名を入力してください。"); return; }
       var kind = r.kind === "recurring" ? "recurring" : "oneoff";
       var items = (r.items || []).map(function(it){
         return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200), done: it.done === true,
@@ -3266,7 +2951,7 @@
       closeEventModal();
       loadEventTrackers();
     } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "イベントトラッカー"); errEl.hidden = false; }
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
     } finally {
       if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
     }
@@ -3277,13 +2962,13 @@
     eventTrackersWired = true;
     var manageBtn = document.getElementById("pv-events-manage");
     if (manageBtn) manageBtn.addEventListener("click", function(){ openEventModal(); });
-    var modal = document.getElementById("event-modal");
-    var closeBtn = document.getElementById("event-modal-close");
-    var cancelBtn = document.getElementById("event-cancel");
-    var newBtn = document.getElementById("event-new");
-    var backBtn = document.getElementById("event-detail-back");
-    var delBtn = document.getElementById("event-detail-del");
-    var form = document.getElementById("event-form");
+    var modal = document.getElementById("pb-modal");
+    var closeBtn = document.getElementById("pb-modal-close");
+    var cancelBtn = document.getElementById("pb-cancel");
+    var newBtn = document.getElementById("pb-new");
+    var backBtn = document.getElementById("pb-detail-back");
+    var delBtn = document.getElementById("pb-detail-del");
+    var form = document.getElementById("pb-form");
     if (closeBtn) closeBtn.addEventListener("click", closeEventModal);
     if (cancelBtn) cancelBtn.addEventListener("click", closeEventModal);
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeEventModal(); });
@@ -3341,22 +3026,19 @@
     });
   }
 
-  // ビジネスタブ初期化: cases / contracts / slack_digest をまとめて1回で取得する。
-  // (個別の loadCases / loadContracts は保存後の再取得・失敗時の再試行用に残している)
+  // ビジネスタブ初期化: プロジェクトボード(event_trackers) / contracts / slack_digest を1回で取得。
+  // (個別の loadEventTrackers / loadContracts は保存後の再取得・失敗時の再試行用に残している)
   async function loadBusinessBootstrap(){
-    caseSetStatus("読み込み中…");
     contractSetStatus("読み込み中…");
     eventSetStatus("読み込み中…");
     slackDigestSetStatus("読み込み中…");
     try {
       var res = await apiFetch("/api/bootstrap/business");
-      applyCases(res.cases);
       applyContracts(res.contracts);
       applyEventTrackers(res.eventTrackers);
       renderSlackDigest(res.digests || []);
       slackDigestSetStatus("");
     } catch (err){
-      failCases(err);
       failContracts(err);
       failEventTrackers(err);
       var sl = document.getElementById("pv-slack-list");
@@ -3365,15 +3047,14 @@
     }
   }
 
-  /* ================= ビジネス画面 (v1) =================
+  /* ================= ビジネス画面 =================
      TODAY は共通ロジック(tick)が biz 要素も更新する。ここではヒーロー画像・
-     プロジェクトボード(案件管理)・最近のメモ(SYSLEA タグ)を担当。 */
+     プロジェクトボード(event_trackers)・最近のメモ(SYSLEA タグ)を担当。 */
   function initBusiness(){
     var img = document.getElementById("biz-hero-img");
     if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length){
       img.src = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
     }
-    wireCases();
     wireContracts();
     wireEventTrackers();
     loadBusinessBootstrap();
@@ -5615,13 +5296,13 @@
         var habPop = document.getElementById("habit-count-pop");
         var planModal = document.getElementById("plan-modal");
         var planApply = document.getElementById("plan-apply-modal");
-        var caseModal = document.getElementById("case-modal");
+        var pbModal = document.getElementById("pb-modal");
         var contractModal = document.getElementById("contract-modal");
         if (planApply && !planApply.hidden) closePlanApply("cancel");
         else if (finModal && !finModal.hidden) closeFinanceModal();
         else if (habModal && !habModal.hidden) habitModalBack();
         else if (planModal && !planModal.hidden) planModalBack();
-        else if (caseModal && !caseModal.hidden) caseModalBack();
+        else if (pbModal && !pbModal.hidden) eventModalBack();
         else if (contractModal && !contractModal.hidden) contractModalBack();
         else if (habPop && !habPop.hidden) closeHabitCountPop(false);
       }
