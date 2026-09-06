@@ -276,6 +276,8 @@
   var dateFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month: "2-digit", day: "2-digit" });
   var yearFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, year: "numeric" });
   var dowFmt  = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, weekday: "short" });
+  // jstParts() が毎秒呼ばれるので、フォーマッタはここで一度だけ生成する。
+  var jstPartsFmt = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
   var elTime = document.getElementById("hud-time");
   var elSec  = document.getElementById("hud-sec");
@@ -327,8 +329,7 @@
   }
 
   function jstParts(d){
-    var fmt = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false });
-    var parts = fmt.formatToParts(d).reduce(function(acc,p){ acc[p.type]=p.value; return acc; }, {});
+    var parts = jstPartsFmt.formatToParts(d).reduce(function(acc,p){ acc[p.type]=p.value; return acc; }, {});
     var h = parseInt(parts.hour === "24" ? "0" : parts.hour, 10);
     return { h: h, m: parseInt(parts.minute,10), s: parseInt(parts.second,10) };
   }
@@ -416,7 +417,7 @@
     }
   }
   // 30分ごとに更新
-  setInterval(loadWeather, 30 * 60 * 1000);
+  setInterval(function(){ if (document.visibilityState === "visible") loadWeather(); }, 30 * 60 * 1000);
 
   /* ================= generative skyline (original artwork, canvas) ================= */
   var canvas = document.getElementById("skyline");
@@ -433,6 +434,9 @@
 
   function resize(){
     var w = canvas.clientWidth, h = canvas.clientHeight;
+    // ヒーロー非表示(設定OFF)やスマホ(CSSで .scene を非表示)では canvas に
+    // レイアウトサイズが無いので、重い drawScene を丸ごとスキップする。
+    if (!w || !h) return;
     canvas.width = w * DPR; canvas.height = h * DPR;
     ctx.setTransform(DPR,0,0,DPR,0,0);
     drawScene(w,h);
@@ -596,7 +600,13 @@
     }
   }
 
-  window.addEventListener("resize", resize);
+  // resize は drawScene(数百描画命令)を伴うので、連続する resize イベントは
+  // 150ms デバウンスして最後の1回だけ再描画する。
+  var resizeTimer = null;
+  window.addEventListener("resize", function(){
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  });
   resize();
 
   /* ================= hero illustrations (user-supplied artwork, one shown at random per load) ================= */
@@ -7290,7 +7300,10 @@
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 未読件数を定期的に取り直す(通知センター/デスクトップ通知のため)。
-  setInterval(function(){ if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser) loadGmailUnreadCount(); }, 3 * 60 * 1000);
+  setInterval(function(){
+    if (document.visibilityState !== "visible") return;
+    if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser) loadGmailUnreadCount();
+  }, 3 * 60 * 1000);
   // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
   // (モジュールスクリプトの実行順は保証されないため)にも対応する。
   if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
