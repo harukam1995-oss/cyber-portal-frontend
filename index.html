@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.28.4</span>
+      <span>v2.28.5</span>
     </div>
   </footer>
 </div>
@@ -350,6 +350,19 @@
         <div class="card-head"><h2>UPCOMING EVENTS</h2></div>
         <div class="card-body">
           <ul class="pv-up-list" id="pv-upcoming"><li class="sched-empty">読み込み中…</li></ul>
+        </div>
+      </section>
+      <!-- サブスク管理（users/{uid}/subscriptions） -->
+      <section class="panel pv-card">
+        <div class="corner tl"></div><div class="corner br"></div>
+        <div class="card-head">
+          <h2>サブスク</h2>
+          <button type="button" class="pv-habit-manage" id="pv-subs-manage">管理</button>
+        </div>
+        <div class="card-body">
+          <div class="pv-subs-list" id="pv-subs-list"></div>
+          <div class="pv-subs-total" id="pv-subs-total" hidden></div>
+          <p class="pv-subs-status" id="pv-subs-status">読み込み中…</p>
         </div>
       </section>
     </div>
@@ -860,6 +873,7 @@
       <nav class="ideas-crumbs" id="ideas-crumbs" aria-label="パンくず"></nav>
     </div>
     <div class="cal-toolbar-right">
+      <button type="button" class="cal-new-btn" id="ideas-new">+ 新規ノート</button>
       <button type="button" class="cal-nav-btn" id="ideas-refresh" title="再読み込み">↻</button>
     </div>
   </section>
@@ -1211,6 +1225,58 @@
   <div class="event-popover-actions">
     <button type="button" class="ev-btn ev-btn-danger" id="event-popover-delete">削除</button>
     <button type="button" class="ev-btn ev-btn-primary" id="event-popover-edit">編集</button>
+  </div>
+</div>
+
+<!-- ================= サブスク管理モーダル ================= -->
+<div class="modal-overlay" id="subs-modal" hidden role="dialog" aria-modal="true" aria-labelledby="subs-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="subs-modal-title">サブスクの管理</h3>
+      <button class="modal-close" type="button" id="subs-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="subs-form">
+      <button type="button" class="ev-btn habit-add-row" id="subs-add">＋ 追加</button>
+      <div class="subs-rows" id="subs-rows"></div>
+      <div class="event-form-error" id="subs-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="subs-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="subs-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= アイデア帳: 新規ノート作成モーダル ================= -->
+<div class="modal-overlay" id="idea-modal" hidden role="dialog" aria-modal="true" aria-labelledby="idea-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="idea-modal-title">新規ノート</h3>
+      <button class="modal-close" type="button" id="idea-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="idea-form">
+      <p class="settings-hint" id="idea-modal-loc">保存先: Obsidian</p>
+      <label>ファイル名
+        <input type="text" id="idea-name-input" maxlength="120" placeholder="例: メモ 2026-09-07" autocomplete="off" required>
+      </label>
+      <div class="field-block">
+        <span>内容（Markdown）</span>
+        <textarea id="idea-body-input" class="idea-body-input" rows="12" placeholder="# 見出し&#10;&#10;本文…"></textarea>
+      </div>
+      <div class="event-form-error" id="idea-form-error" hidden></div>
+      <div class="event-form-actions">
+        <div class="event-form-actions-right">
+          <button type="button" id="idea-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="idea-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 

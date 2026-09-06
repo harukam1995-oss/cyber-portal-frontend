@@ -938,6 +938,8 @@
     loadHabits();
     wirePlan();
     loadPlan();
+    wireSubs();
+    loadSubs();
   }
 
   async function loadPrivateUpcoming(){
@@ -972,6 +974,224 @@
     } catch(err){
       el.innerHTML = '<li class="sched-error">' + escapeHtml(apiErrorMessage(err, "Google Calendar")) + '</li>';
     }
+  }
+
+  /* ================= プライベート: サブスク管理 =================
+     users/{uid}/subscriptions を /api/subscriptions で読み書き(tasks/notes と同じ crud)。
+     カードは有効なサブスクを次回課金日順に表示 + 月合計/年合計。管理モーダルは行エディタ。 */
+  var subsState = [];
+  var subsSetStatus = makeStatusSetter("pv-subs-status");
+  var subsWired = false;
+  var subsRows = []; // 管理モーダルの作業コピー
+
+  function subYen(n){ return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP"); }
+  function subMonthlyAmount(s){
+    var a = Number(s.amount) || 0;
+    return s.cycle === "yearly" ? a / 12 : a;
+  }
+  // 次回課金日を YYYYMMDD の整数キーにして返す(並べ替え用)。
+  function subNextKey(s){
+    var p = new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date()).split("-");
+    var ty = +p[0], tm = +p[1], td = +p[2];
+    var day = Math.min(31, Math.max(1, Number(s.day) || 1));
+    if (s.cycle === "yearly"){
+      var mo = Math.min(12, Math.max(1, Number(s.month) || 1));
+      var y = ty;
+      if (mo < tm || (mo === tm && day < td)) y = ty + 1;
+      return y * 10000 + mo * 100 + day;
+    }
+    var y2 = ty, m2 = tm;
+    if (day < td){ m2 = tm + 1; if (m2 > 12){ m2 = 1; y2 = ty + 1; } }
+    return y2 * 10000 + m2 * 100 + day;
+  }
+  function subWhenLabel(s){
+    var day = Math.min(31, Math.max(1, Number(s.day) || 1));
+    if (s.cycle === "yearly"){
+      var mo = Math.min(12, Math.max(1, Number(s.month) || 1));
+      return "毎年" + mo + "/" + day;
+    }
+    return "毎月" + day + "日";
+  }
+
+  function renderSubs(){
+    var list = document.getElementById("pv-subs-list");
+    var totalEl = document.getElementById("pv-subs-total");
+    if (!list) return;
+    var active = subsState.filter(function(s){ return s.active !== false && (s.name || "").trim(); });
+    if (!active.length){
+      list.innerHTML = '<div class="pv-habit-empty">「管理」からサブスクを登録してください。</div>';
+      if (totalEl) totalEl.hidden = true;
+      return;
+    }
+    active.sort(function(a, b){ return subNextKey(a) - subNextKey(b); });
+    list.innerHTML = "";
+    active.forEach(function(s){
+      var row = document.createElement("div");
+      row.className = "pv-sub-row";
+      row.tabIndex = 0; row.setAttribute("role", "button");
+      var name = document.createElement("span");
+      name.className = "pv-sub-name"; name.textContent = s.name;
+      var when = document.createElement("span");
+      when.className = "pv-sub-when"; when.textContent = subWhenLabel(s);
+      var amt = document.createElement("span");
+      amt.className = "pv-sub-amount";
+      amt.textContent = subYen(s.amount) + (s.cycle === "yearly" ? "/年" : "");
+      row.appendChild(name); row.appendChild(when); row.appendChild(amt);
+      var open = function(){ openSubsModal(); };
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      list.appendChild(row);
+    });
+    var monthly = active.reduce(function(a, s){ return a + subMonthlyAmount(s); }, 0);
+    if (totalEl){
+      totalEl.hidden = false;
+      totalEl.textContent = "月合計 " + subYen(monthly) + " ・ 年 " + subYen(monthly * 12);
+    }
+  }
+
+  async function loadSubs(){
+    subsSetStatus("読み込み中…");
+    try {
+      var res = await apiFetch("/api/subscriptions");
+      subsState = res.subscriptions || [];
+      renderSubs();
+      subsSetStatus("");
+    } catch(err){
+      subsSetStatus(apiErrorMessage(err, "サブスク") || "取得に失敗しました", true);
+    }
+  }
+
+  function newSubRow(){
+    return { id: "", name: "", amount: "", cycle: "monthly", month: 1, day: 1, active: true };
+  }
+  function renderSubsRows(){
+    var wrap = document.getElementById("subs-rows");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!subsRows.length){
+      wrap.innerHTML = '<p class="pv-habit-empty">「＋ 追加」でサブスクを追加してください。</p>';
+      return;
+    }
+    subsRows.forEach(function(r, idx){
+      var box = document.createElement("div");
+      box.className = "subs-row";
+      // 1行目: 名前 + 削除
+      var l1 = document.createElement("div"); l1.className = "subs-row-line";
+      var nm = document.createElement("input");
+      nm.type = "text"; nm.maxLength = 60; nm.placeholder = "サービス名"; nm.value = r.name || "";
+      nm.className = "subs-in subs-in-name";
+      nm.addEventListener("input", function(){ r.name = nm.value; });
+      var del = document.createElement("button");
+      del.type = "button"; del.className = "subs-row-del"; del.setAttribute("aria-label", "削除");
+      del.textContent = "✕";
+      del.addEventListener("click", function(){ subsRows.splice(idx, 1); renderSubsRows(); });
+      l1.appendChild(nm); l1.appendChild(del);
+      // 2行目: 金額 + 周期 + (月) + 日 + 有効
+      var l2 = document.createElement("div"); l2.className = "subs-row-line";
+      var amt = document.createElement("input");
+      amt.type = "number"; amt.min = "0"; amt.step = "1"; amt.placeholder = "金額"; amt.value = r.amount === "" ? "" : r.amount;
+      amt.className = "subs-in subs-in-amt";
+      amt.addEventListener("input", function(){ r.amount = amt.value; });
+      var cyc = document.createElement("select");
+      cyc.className = "subs-in subs-in-cyc";
+      cyc.innerHTML = '<option value="monthly">毎月</option><option value="yearly">毎年</option>';
+      cyc.value = r.cycle === "yearly" ? "yearly" : "monthly";
+      var mo = document.createElement("input");
+      mo.type = "number"; mo.min = "1"; mo.max = "12"; mo.placeholder = "月"; mo.value = r.month || 1;
+      mo.className = "subs-in subs-in-mo";
+      mo.hidden = cyc.value !== "yearly";
+      mo.addEventListener("input", function(){ r.month = mo.value; });
+      var dy = document.createElement("input");
+      dy.type = "number"; dy.min = "1"; dy.max = "31"; dy.placeholder = "日"; dy.value = r.day || 1;
+      dy.className = "subs-in subs-in-dy";
+      dy.addEventListener("input", function(){ r.day = dy.value; });
+      cyc.addEventListener("change", function(){ r.cycle = cyc.value; mo.hidden = cyc.value !== "yearly"; });
+      var actWrap = document.createElement("label");
+      actWrap.className = "subs-row-active";
+      var act = document.createElement("input");
+      act.type = "checkbox"; act.checked = r.active !== false;
+      act.addEventListener("change", function(){ r.active = act.checked; });
+      actWrap.appendChild(act); actWrap.appendChild(document.createTextNode("有効"));
+      l2.appendChild(amt); l2.appendChild(cyc); l2.appendChild(mo); l2.appendChild(dy); l2.appendChild(actWrap);
+      box.appendChild(l1); box.appendChild(l2);
+      wrap.appendChild(box);
+    });
+  }
+  function openSubsModal(){
+    var modal = document.getElementById("subs-modal");
+    if (!modal) return;
+    subsRows = subsState.map(function(s){
+      return {
+        id: s.id || "",
+        name: s.name || "",
+        amount: (s.amount === 0 || s.amount) ? s.amount : "",
+        cycle: s.cycle === "yearly" ? "yearly" : "monthly",
+        month: Number(s.month) || 1,
+        day: Number(s.day) || 1,
+        active: s.active !== false
+      };
+    });
+    if (!subsRows.length) subsRows.push(newSubRow());
+    var err = document.getElementById("subs-form-error");
+    if (err){ err.hidden = true; err.textContent = ""; }
+    renderSubsRows();
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+  function closeSubsModal(){
+    var modal = document.getElementById("subs-modal");
+    if (modal) modal.hidden = true;
+    document.body.style.overflow = "";
+  }
+  async function saveSubs(){
+    var err = document.getElementById("subs-form-error");
+    var cleaned = subsRows
+      .filter(function(r){ return (r.name || "").trim(); })
+      .map(function(r, idx){
+        var o = {
+          name: String(r.name).trim().slice(0, 60),
+          amount: Math.max(0, Math.round(Number(r.amount) || 0)),
+          cycle: r.cycle === "yearly" ? "yearly" : "monthly",
+          day: Math.min(31, Math.max(1, Number(r.day) || 1)),
+          month: Math.min(12, Math.max(1, Number(r.month) || 1)),
+          active: r.active !== false,
+          order: idx
+        };
+        if (r.id) o.id = r.id;
+        return o;
+      });
+    var saveBtn = document.getElementById("subs-save");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      var res = await apiFetch("/api/subscriptions/bulk", {
+        method: "PUT",
+        body: JSON.stringify({ subscriptions: cleaned })
+      });
+      // 保存後の正データを取り直す(id 採番を反映)
+      await loadSubs();
+      closeSubsModal();
+    } catch(e){
+      if (err){ err.hidden = false; err.textContent = apiErrorMessage(e, "サブスク") || "保存に失敗しました"; }
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+  function wireSubs(){
+    if (subsWired) return;
+    subsWired = true;
+    var mng = document.getElementById("pv-subs-manage");
+    if (mng) mng.addEventListener("click", openSubsModal);
+    var add = document.getElementById("subs-add");
+    if (add) add.addEventListener("click", function(){ subsRows.push(newSubRow()); renderSubsRows(); });
+    var cancel = document.getElementById("subs-cancel");
+    if (cancel) cancel.addEventListener("click", closeSubsModal);
+    var close = document.getElementById("subs-modal-close");
+    if (close) close.addEventListener("click", closeSubsModal);
+    var modal = document.getElementById("subs-modal");
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeSubsModal(); });
+    var form = document.getElementById("subs-form");
+    if (form) form.addEventListener("submit", function(e){ e.preventDefault(); saveSubs(); });
   }
 
   /* ================= プライベート: 今月の収支 (v1b) =================
@@ -6655,6 +6875,7 @@
       else if (!mailModal.hidden) closeMailModal();
       else if (!noteModal.hidden) closeNoteModal();
       else if (!taskModal.hidden) closeTaskModal();
+      else if (ideaModal && !ideaModal.hidden) closeIdeaModal();
       else if (!confirmModal.hidden) closeConfirmModal(false);
       else if (settingsModal && !settingsModal.hidden) closeSettings();
       else {
@@ -6665,12 +6886,14 @@
         var planApply = document.getElementById("plan-apply-modal");
         var pbModal = document.getElementById("pb-modal");
         var contractModal = document.getElementById("contract-modal");
+        var subsModal = document.getElementById("subs-modal");
         if (planApply && !planApply.hidden) closePlanApply("cancel");
         else if (finModal && !finModal.hidden) closeFinanceModal();
         else if (habModal && !habModal.hidden) habitModalBack();
         else if (planModal && !planModal.hidden) planModalBack();
         else if (pbModal && !pbModal.hidden) pbModalBack();
         else if (contractModal && !contractModal.hidden) contractModalBack();
+        else if (subsModal && !subsModal.hidden) closeSubsModal();
         else if (habPop && !habPop.hidden) closeHabitCountPop(false);
       }
     }
@@ -7066,6 +7289,65 @@
     var cur = ideasStack[ideasStack.length - 1] || { id: null, name: "Obsidian" };
     ideasOpenFolder(cur.id, cur.name, true);
   });
+
+  /* ---- アイデア帳: 新規ノート作成(POST /api/drive/notes。drive 書き込みスコープ) ---- */
+  var ideaModal = document.getElementById("idea-modal");
+  var ideaNameInput = document.getElementById("idea-name-input");
+  var ideaBodyInput = document.getElementById("idea-body-input");
+  var ideaFormError = document.getElementById("idea-form-error");
+
+  function openIdeaModal(){
+    if (!ideaModal) return;
+    var loc = document.getElementById("idea-modal-loc");
+    if (loc) loc.textContent = "保存先: " + ideasStack.map(function(n){ return n.name; }).join(" / ");
+    ideaNameInput.value = "";
+    ideaBodyInput.value = "";
+    if (ideaFormError){ ideaFormError.hidden = true; ideaFormError.textContent = ""; }
+    ideaModal.hidden = false;
+    document.body.style.overflow = "hidden";
+    setTimeout(function(){ ideaNameInput.focus(); }, 0);
+  }
+  function closeIdeaModal(){
+    if (ideaModal) ideaModal.hidden = true;
+    document.body.style.overflow = "";
+  }
+  async function saveIdea(){
+    var cur = ideasStack[ideasStack.length - 1] || { id: null, name: "Obsidian" };
+    var name = (ideaNameInput.value || "").trim();
+    if (!name){
+      if (ideaFormError){ ideaFormError.hidden = false; ideaFormError.textContent = "ファイル名を入力してください。"; }
+      return;
+    }
+    var saveBtn = document.getElementById("idea-save");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      var res = await apiFetch("/api/drive/notes", {
+        method: "POST",
+        body: JSON.stringify({ folder: cur.id || "", name: name, content: ideaBodyInput.value || "" })
+      });
+      closeIdeaModal();
+      // 作成先フォルダを開き直して反映
+      ideasOpenFolder(cur.id, cur.name, true);
+    } catch(err){
+      if (ideaFormError){
+        ideaFormError.hidden = false;
+        ideaFormError.textContent = (err && err.code === "google_scope_missing")
+          ? "Drive の書き込み権限がありません。設定から「はるか」を再連携してください。"
+          : (apiErrorMessage(err, "Google Drive") || "ノートの作成に失敗しました");
+      }
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+  var ideaNewBtn = document.getElementById("ideas-new");
+  if (ideaNewBtn) ideaNewBtn.addEventListener("click", openIdeaModal);
+  var ideaCloseBtn = document.getElementById("idea-modal-close");
+  if (ideaCloseBtn) ideaCloseBtn.addEventListener("click", closeIdeaModal);
+  var ideaCancelBtn = document.getElementById("idea-cancel");
+  if (ideaCancelBtn) ideaCancelBtn.addEventListener("click", closeIdeaModal);
+  if (ideaModal) ideaModal.addEventListener("click", function(e){ if (e.target === ideaModal) closeIdeaModal(); });
+  var ideaForm = document.getElementById("idea-form");
+  if (ideaForm) ideaForm.addEventListener("submit", function(e){ e.preventDefault(); saveIdea(); });
 
   /* 簡易 Markdown レンダラ。Obsidian ノート閲覧に必要な範囲だけ対応:
      見出し / 箇条書き・番号リスト / 引用 / 水平線 / フェンスコード /
