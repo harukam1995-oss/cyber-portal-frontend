@@ -17,6 +17,8 @@
     var p = key.split("-").map(Number);
     return { y: p[0], m: p[1], d: p[2] };
   }
+  // "YYYY-MM-DD" → "M/D"(月日ラベル)。habit/contract/カレンダーで同じ実装だったものを1本化。
+  function mdLabel(key){ var p = keyParts(key); return p.m + "/" + p.d; }
   function addDaysKey(key, n){
     var p = keyParts(key);
     var d = new Date(Date.UTC(p.y, p.m - 1, p.d + n));
@@ -113,6 +115,68 @@
   // ---- バックエンドAPI(Render) + Firebase Authentication ----
   var API_BASE = "https://cyber-portal-backend.onrender.com";
 
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  // Render Free はアイドルでスピンダウンし、次のリクエストで ~50秒 のコールドスタートが
+  // 起きる。ログイン処理(Firebase SDK ロード + Google 往復)の裏で先に叩いておくと、
+  // その待ち時間にサーバー起動が重なって体感が縮む。認証不要の /healthz を使う。
+  var warmPingAt = 0;
+  function warmBackend(){
+    var now = Date.now();
+    if (now - warmPingAt < 60000) return;   // 1分に1回まで
+    warmPingAt = now;
+    try { fetch(API_BASE + "/healthz", { cache: "no-store", mode: "cors" }).catch(function(){}); } catch(e){}
+  }
+  warmBackend();
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible") warmBackend();
+  });
+
+  // コールドスタート中は 502/503/504 やネットワークエラーが返ることがある。
+  // その場合だけ短いバックオフで数回リトライする。リトライ中のリクエストが1本でも
+  // ある間だけ「起動中」トーストを出す(同時に多数のリクエストが飛ぶので、
+  // 成功したものが即トーストを消さないよう本数で管理する)。
+  var warmToastEl = null;
+  var warmingCount = 0;
+  function setWarming(delta){
+    warmingCount = Math.max(0, warmingCount + delta);
+    var on = warmingCount > 0;
+    if (on && !warmToastEl){
+      warmToastEl = document.createElement("div");
+      warmToastEl.className = "server-warming-toast";
+      warmToastEl.textContent = "サーバーを起動しています…(最大1分ほど)";
+      document.body.appendChild(warmToastEl);
+    }
+    if (warmToastEl) warmToastEl.hidden = !on;
+  }
+
+  async function rawFetchWithRetry(url, init){
+    var delays = [0, 2500, 5000];
+    var lastErr = null;
+    var counted = false;
+    try {
+      for (var i = 0; i < delays.length; i++){
+        if (delays[i]) await sleep(delays[i]);
+        try {
+          var res = await fetch(url, init);
+          if (res.status === 502 || res.status === 503 || res.status === 504){
+            lastErr = new Error("APIエラー: " + res.status);
+            lastErr.code = "http_" + res.status;
+            if (!counted){ counted = true; setWarming(1); }
+            continue;
+          }
+          return res;
+        } catch(netErr){
+          lastErr = netErr;
+          if (!counted){ counted = true; setWarming(1); }
+        }
+      }
+      throw lastErr || new Error("ネットワークエラー");
+    } finally {
+      if (counted) setWarming(-1);
+    }
+  }
+
   async function getIdToken(){
     var auth = window.__cyberPortalAuth;
     if (!auth || !auth.currentUser) return null;
@@ -131,7 +195,7 @@
       { "Content-Type": "application/json", "Authorization": "Bearer " + token },
       options.headers || {}
     );
-    var res = await fetch(API_BASE + path, Object.assign({}, options, { headers: headers }));
+    var res = await rawFetchWithRetry(API_BASE + path, Object.assign({}, options, { headers: headers }));
     if (!res.ok){
       var body = null;
       try { body = await res.json(); } catch(e){}
@@ -154,7 +218,11 @@
     invalid_token: "認証の有効期限が切れました。再ログインしてください。",
     google_not_connected: "{service}の Google 連携が必要です(未連携、または有効期限切れ)。連携ボタンから再連携してください。",
     upstream_error: "{service}の取得に失敗しました。しばらくしてから再度お試しください。",
-    rate_limited: "リクエストが多すぎます。少し待ってから再度お試しください。"
+    rate_limited: "リクエストが多すぎます。少し待ってから再度お試しください。",
+    http_502: "サーバーが起動中か一時的に応答していません。少し待って再読み込みしてください。",
+    http_503: "サーバーが起動中か一時的に応答していません。少し待って再読み込みしてください。",
+    http_504: "サーバーの応答がありませんでした。少し待って再読み込みしてください。",
+    empty_replace_blocked: "読み込みに失敗している可能性があるため保存を中止しました。再読み込みしてください。"
   };
   function apiErrorMessage(err, service){
     var code = err && err.code;
@@ -592,7 +660,19 @@
 
   // ホームの TODAY'S SCHEDULE。バックエンド(/api/google/calendar/today)から取得する。
   // 旧MCPのwatchTool方式は廃止し、読み込み時と更新ボタン押下時に単発フェッチする。
-  async function initCalendarWatch(){
+  // initCalendarWatch は authready / タブ表示 / 更新ボタン等 複数箇所から呼ばれるので、
+  // 同じアカウントの取得が進行中なら相乗りして二重フェッチを防ぐ。
+  var schedInFlight = null;
+  var schedInFlightAcct = null;
+  function initCalendarWatch(){
+    if (schedInFlight && schedInFlightAcct === schedAccount) return schedInFlight;
+    schedInFlightAcct = schedAccount;
+    schedInFlight = runCalendarWatch();
+    var done = function(){ schedInFlight = null; schedInFlightAcct = null; };
+    schedInFlight.then(done, done);
+    return schedInFlight;
+  }
+  async function runCalendarWatch(){
     var acct = schedAccount;
     var label = acct === "syslea" ? "SYSLEA" : "はるか";
     if (schedRefreshBtn){ schedRefreshBtn.classList.remove("spinning"); }
@@ -1001,17 +1081,22 @@
   var habitEditRows = [];   // 管理モーダルの作業コピー
   var habitPopHabitId = null, habitPopDate = null;
 
-  function habitMdLabel(key){ var p = keyParts(key); return p.m + "/" + p.d; }
+  function habitMdLabel(key){ return mdLabel(key); }
   function buildWeekDays(sundayKey){
     var a = []; for (var i = 0; i < 7; i++) a.push(addDaysKey(sundayKey, i)); return a;
   }
-  function setHabitStatus(msg, isErr){
-    var el = document.getElementById("pv-habit-status");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.hidden = !msg;
-    el.classList.toggle("is-err", !!isErr);
+  // カード下の1行ステータス表示。habit / plan / cases / contracts / slack で
+  // 要素 id 以外は同一だったのでファクトリに集約。(msg, isErr) 呼び出しは従来どおり。
+  function makeStatusSetter(elId){
+    return function(msg, isErr){
+      var el = document.getElementById(elId);
+      if (!el) return;
+      el.textContent = msg || "";
+      el.hidden = !msg;
+      el.classList.toggle("is-err", !!isErr);
+    };
   }
+  var setHabitStatus = makeStatusSetter("pv-habit-status");
 
   async function loadHabits(){
     var list = document.getElementById("pv-habit-list");
@@ -1524,13 +1609,7 @@
   var planTplDetailIdx = null;  // null = 一覧ビュー、数値 = そのテンプレの詳細ビュー
   var planApplyResolve = null;
 
-  function planSetStatus(msg, isErr){
-    var el = document.getElementById("pv-plan-status");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.hidden = !msg;
-    el.classList.toggle("is-err", !!isErr);
-  }
+  var planSetStatus = makeStatusSetter("pv-plan-status");
 
   // "HH:MM" として妥当なら 0 詰めして返す。それ以外は ""。
   function planNormTime(v){
@@ -1995,29 +2074,27 @@
   var caseEditRows = [];    // 管理モーダルの作業コピー
   var caseDetailIdx = null; // null = 一覧ビュー、数値 = そのプロジェクトの詳細ビュー
   var casesWired = false;
+  var casesLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
 
-  function caseSetStatus(msg, isErr){
-    var el = document.getElementById("pv-cases-status");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.hidden = !msg;
-    el.classList.toggle("is-err", !!isErr);
+  var caseSetStatus = makeStatusSetter("pv-cases-status");
+
+  function applyCases(list){
+    casesState = list || [];
+    casesLoadOk = true;
+    renderCases();
+    caseSetStatus("");
   }
-
+  function failCases(err){
+    casesState = [];
+    renderCases();
+    caseSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
+  }
   async function loadCases(){
     var list = document.getElementById("pv-cases-list");
     if (!list) return;
     caseSetStatus("読み込み中…");
-    try {
-      var res = await apiFetch("/api/cases");
-      casesState = res.cases || [];
-      renderCases();
-      caseSetStatus("");
-    } catch (err){
-      casesState = [];
-      renderCases();
-      caseSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
-    }
+    try { applyCases((await apiFetch("/api/cases")).cases); }
+    catch (err){ failCases(err); }
   }
 
   function renderCases(){
@@ -2088,6 +2165,12 @@
   function openCaseModal(){
     var modal = document.getElementById("case-modal");
     if (!modal) return;
+    // 取得に失敗している状態で開くと、空の作業コピーを保存して全消しになりかねない。
+    if (!casesLoadOk){
+      caseSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      loadCases();
+      return;
+    }
     var errEl = document.getElementById("case-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     caseEditRows = casesState.map(function(c){
@@ -2239,6 +2322,7 @@
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
     function failAt(i, msg){ caseDetailIdx = i; renderCaseModal(); showErr(msg); }
+    if (!casesLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
     var cleaned = [];
     for (var i = 0; i < caseEditRows.length; i++){
       var r = caseEditRows[i];
@@ -2253,7 +2337,12 @@
     }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
     try {
-      await apiFetch("/api/cases/bulk", { method: "PUT", body: JSON.stringify({ cases: cleaned }) });
+      // casesLoadOk 済み = 空でもユーザーが意図的に全削除した状態。X-Allow-Empty で許可。
+      await apiFetch("/api/cases/bulk", {
+        method: "PUT",
+        headers: { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ cases: cleaned })
+      });
       closeCaseModal();
       loadCases();
     } catch (err){
@@ -2310,6 +2399,7 @@
   var contractEditRows = [];    // 管理モーダルの作業コピー
   var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
+  var contractsLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
 
   // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
   function contractAlertLabels(c){
@@ -2322,28 +2412,25 @@
     return out;
   }
 
-  function contractSetStatus(msg, isErr){
-    var el = document.getElementById("pv-contracts-status");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.hidden = !msg;
-    el.classList.toggle("is-err", !!isErr);
-  }
+  var contractSetStatus = makeStatusSetter("pv-contracts-status");
 
+  function applyContracts(list){
+    contractsState = list || [];
+    contractsLoadOk = true;
+    renderContracts();
+    contractSetStatus("");
+  }
+  function failContracts(err){
+    contractsState = [];
+    renderContracts();
+    contractSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
+  }
   async function loadContracts(){
     var list = document.getElementById("pv-contracts-list");
     if (!list) return;
     contractSetStatus("読み込み中…");
-    try {
-      var res = await apiFetch("/api/contracts");
-      contractsState = res.contracts || [];
-      renderContracts();
-      contractSetStatus("");
-    } catch (err){
-      contractsState = [];
-      renderContracts();
-      contractSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
-    }
+    try { applyContracts((await apiFetch("/api/contracts")).contracts); }
+    catch (err){ failContracts(err); }
   }
 
   function renderContractsTabs(){
@@ -2354,7 +2441,7 @@
     });
   }
 
-  function contractMD(key){ var p = keyParts(key); return p.m + "/" + p.d; }
+  function contractMD(key){ return mdLabel(key); }
 
   function contractMatchesQuery(c, q){
     var hay = [c.client, c.title, c.requestedBy, c.status].join(" ");
@@ -2483,6 +2570,11 @@
   function openContractModal(targetId){
     var modal = document.getElementById("contract-modal");
     if (!modal) return;
+    if (!contractsLoadOk){
+      contractSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      loadContracts();
+      return;
+    }
     var errEl = document.getElementById("contract-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     contractEditRows = contractsState.map(function(c){
@@ -2680,6 +2772,7 @@
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
     function failAt(i, msg){ contractDetailIdx = i; renderContractModal(); showErr(msg); }
+    if (!contractsLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
     var cleaned = [];
     for (var i = 0; i < contractEditRows.length; i++){
       var r = contractEditRows[i];
@@ -2697,7 +2790,11 @@
     }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
     try {
-      await apiFetch("/api/contracts/bulk", { method: "PUT", body: JSON.stringify({ contracts: cleaned }) });
+      await apiFetch("/api/contracts/bulk", {
+        method: "PUT",
+        headers: { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ contracts: cleaned })
+      });
       closeContractModal();
       loadContracts();
     } catch (err){
@@ -2755,51 +2852,57 @@
   /* ================= ビジネス: Slackダイジェスト(フェーズB) =================
      読み取り専用。Claudeの定期実行タスクが /api/slack-digest へ書き込み、
      このカードはその最新10件を表示するだけ(手動の作成/編集/削除はない)。 */
-  function slackDigestSetStatus(msg, isErr){
-    var el = document.getElementById("pv-slack-status");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.hidden = !msg;
-    el.classList.toggle("is-err", !!isErr);
-  }
+  var slackDigestSetStatus = makeStatusSetter("pv-slack-status");
 
-  async function loadSlackDigest(){
+  function renderSlackDigest(digests){
     var list = document.getElementById("pv-slack-list");
     if (!list) return;
+    list.innerHTML = "";
+    if (!digests || !digests.length){
+      list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクの設定後、9/13/16/18時に届きます。</div>';
+      return;
+    }
+    digests.forEach(function(d){
+      var item = document.createElement("div");
+      item.className = "pv-slack-item";
+      var meta = document.createElement("div");
+      meta.className = "pv-slack-meta";
+      var time = document.createElement("span");
+      time.className = "pv-slack-time";
+      time.textContent = d.createdAt ? fmtSavedAt(d.createdAt) : "";
+      meta.appendChild(time);
+      if (d.channels && d.channels.length){
+        var chans = document.createElement("span");
+        chans.className = "pv-slack-channels";
+        chans.textContent = d.channels.map(function(c){ return "#" + c; }).join(" ");
+        meta.appendChild(chans);
+      }
+      item.appendChild(meta);
+      var body = document.createElement("div");
+      body.className = "pv-slack-summary";
+      body.textContent = d.summary || "";
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  }
+
+  // ビジネスタブ初期化: cases / contracts / slack_digest をまとめて1回で取得する。
+  // (個別の loadCases / loadContracts は保存後の再取得・失敗時の再試行用に残している)
+  async function loadBusinessBootstrap(){
+    caseSetStatus("読み込み中…");
+    contractSetStatus("読み込み中…");
     slackDigestSetStatus("読み込み中…");
     try {
-      var res = await apiFetch("/api/slack-digest");
-      var digests = res.digests || [];
-      list.innerHTML = "";
-      if (!digests.length){
-        list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクの設定後、9/13/16/18時に届きます。</div>';
-      } else {
-        digests.forEach(function(d){
-          var item = document.createElement("div");
-          item.className = "pv-slack-item";
-          var meta = document.createElement("div");
-          meta.className = "pv-slack-meta";
-          var time = document.createElement("span");
-          time.className = "pv-slack-time";
-          time.textContent = d.createdAt ? fmtSavedAt(d.createdAt) : "";
-          meta.appendChild(time);
-          if (d.channels && d.channels.length){
-            var chans = document.createElement("span");
-            chans.className = "pv-slack-channels";
-            chans.textContent = d.channels.map(function(c){ return "#" + c; }).join(" ");
-            meta.appendChild(chans);
-          }
-          item.appendChild(meta);
-          var body = document.createElement("div");
-          body.className = "pv-slack-summary";
-          body.textContent = d.summary || "";
-          item.appendChild(body);
-          list.appendChild(item);
-        });
-      }
+      var res = await apiFetch("/api/bootstrap/business");
+      applyCases(res.cases);
+      applyContracts(res.contracts);
+      renderSlackDigest(res.digests || []);
       slackDigestSetStatus("");
     } catch (err){
-      list.innerHTML = "";
+      failCases(err);
+      failContracts(err);
+      var sl = document.getElementById("pv-slack-list");
+      if (sl) sl.innerHTML = "";
       slackDigestSetStatus(apiErrorMessage(err, "Slackダイジェスト"), true);
     }
   }
@@ -2813,10 +2916,8 @@
       img.src = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
     }
     wireCases();
-    loadCases();
     wireContracts();
-    loadContracts();
-    loadSlackDigest();
+    loadBusinessBootstrap();
     var noteNewBtn = document.getElementById("biz-note-new");
     if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote("syslea"); });
     if (!notesInitialized){
@@ -2840,10 +2941,7 @@
     var p = keyParts(key);
     return p.y + "年" + p.m + "月" + p.d + "日(" + DOW_JA[keyWeekday(key)] + ")";
   }
-  function formatDateLabelShort(key){
-    var p = keyParts(key);
-    return p.m + "/" + p.d;
-  }
+  function formatDateLabelShort(key){ return mdLabel(key); }
   function formatColHeader(key){
     var p = keyParts(key);
     var today = key === jstDateKey(new Date());

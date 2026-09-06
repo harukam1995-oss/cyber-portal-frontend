@@ -3,7 +3,10 @@
    - HTML はネットワーク優先(デプロイが即反映)、静的アセットは stale-while-revalidate
    - バックエンド API(別オリジン)は素通し
    - 通知クリックでポータルを前面化 */
-const CACHE = "cyber-portal-shell-v21";
+// このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
+// install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
+// (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
+const CACHE = "cyber-portal-shell-v22";
 const SHELL = [
   "./",
   "./index.html",
@@ -22,7 +25,13 @@ const SHELL = [
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE)
-      .then((c) => c.addAll(SHELL).catch(() => {}))
+      .then((c) => Promise.all(
+        SHELL.map((u) =>
+          fetch(new Request(u, { cache: "reload" }))
+            .then((res) => (res && res.ok ? c.put(u, res) : null))
+            .catch(() => {})
+        )
+      ))
       .then(() => self.skipWaiting())
   );
 });

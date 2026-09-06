@@ -1458,3 +1458,14 @@
     .modal-overlay{ padding: 10px; }
     .mail-detail, .cal-body-panel, .note-editor{ font-size: 13px; }
   }
+
+  /* バックエンド(Render Free)のコールドスタート中に出す一時トースト */
+  .server-warming-toast{
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    z-index: 130; max-width: calc(100vw - 24px);
+    padding: 9px 16px; border-radius: 999px;
+    background: var(--panel-solid); border: 1px solid var(--panel-border);
+    color: var(--text); font-size: 12.5px; line-height: 1.5;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .server-warming-toast[hidden]{ display: none; }
