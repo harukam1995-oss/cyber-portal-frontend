@@ -18,11 +18,6 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <link rel="stylesheet" href="style.css" />
-
-<!-- スクリプトは head で defer 指定し、HTML パースと並行してダウンロードさせる。
-     defer なので実行順は「app.js → auth.js」で従来どおり、DOM パース完了後。 -->
-<script defer src="app.js"></script>
-<script type="module" src="auth.js"></script>
 </head>
 <body>
 
@@ -258,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.27.4</span>
+      <span>v2.27.5</span>
     </div>
   </footer>
 </div>
@@ -1288,6 +1283,9 @@
     </form>
   </div>
 </div>
+
+<script src="app.js"></script>
+<script type="module" src="auth.js"></script>
 
 </body>
 </html>

@@ -7256,7 +7256,9 @@
     if (b.settings){ applySettings(b.settings); cacheSettings(b.settings); }
     else loadSettings();
 
-    if (b.weather && !b.weather.error) applyWeatherResponse(b.weather);
+    // b.weather に実データ(current)がある時だけ使う。空オブジェクトやエラー印の
+    // 時は必ず /api/weather へフォールバック(集約側で天気が落ちても表示を欠かさない)。
+    if (b.weather && b.weather.current && b.weather.current.temp != null) applyWeatherResponse(b.weather);
     else loadWeather();
 
     var gu = b.gmailUnread;
