@@ -401,7 +401,10 @@
     );
   }
 
-  async function loadWeather(){
+  var weatherRetryTimer = null;
+  var weatherRetriesLeft = 0;
+  async function loadWeather(isRetry){
+    if (!isRetry) weatherRetriesLeft = 4; // 通常呼び出し(ログイン時 / 30分間隔 / 手動)で再試行枠を補充
     try{
       // 設定画面で地点を変更していれば lat/lon を渡す(未設定なら既定=柏市)。
       var qs = "";
@@ -412,8 +415,16 @@
              "&place=" + encodeURIComponent(wp.place || "");
       }
       applyWeatherResponse(await apiFetch("/api/weather" + qs));
+      weatherRetriesLeft = 0;
+      if (weatherRetryTimer){ clearTimeout(weatherRetryTimer); weatherRetryTimer = null; }
     } catch(err){
       paintWeather("柏市 --", null, apiErrorMessage(err, "天気") || "天気を取得できませんでした");
+      // 天気は失敗しても立て直す導線(更新ボタン)が無いので、バックエンドのコールド
+      // スタート等に備えて15秒間隔で数回だけ自動再試行する(その後は30分間隔に任せる)。
+      if (weatherRetriesLeft > 0 && !weatherRetryTimer){
+        weatherRetriesLeft--;
+        weatherRetryTimer = setTimeout(function(){ weatherRetryTimer = null; loadWeather(true); }, 15000);
+      }
     }
   }
   // 30分ごとに更新
