@@ -5193,7 +5193,15 @@
         '<span class="pay-hist-tally">' + escapeHtml(tally) + (sum ? '　計 ' + payYen(sum) : '') + '</span>';
       g.appendChild(gh);
       rows.sort(function(a, b){ return (b.classifiedAt || 0) - (a.classifiedAt || 0); });
-      rows.forEach(function(x){
+      var HIST_ROW_CAP = 60;
+      var shown = rows.slice(0, HIST_ROW_CAP);
+      if (rows.length > HIST_ROW_CAP){
+        var more = document.createElement("div");
+        more.className = "pay-hist-row pay-hist-more";
+        more.textContent = "…ほか " + (rows.length - HIST_ROW_CAP) + " 件";
+        g.appendChild(more);
+      }
+      shown.forEach(function(x){
         var rr = document.createElement("div");
         rr.className = "pay-hist-row";
         rr.innerHTML =
