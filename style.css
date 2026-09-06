@@ -1505,6 +1505,7 @@
   }
   .pv-slack-item.is-open .pv-slack-headline{ color: var(--text); }
   .pv-slack-detail{ padding:2px 10px 10px; display:flex; flex-direction:column; gap:6px; }
+  .pv-slack-detail[hidden]{ display:none; } /* display:flex 指定が UA の [hidden]{display:none} を打ち消すため(このファイルの他所と同じ対応) */
   .pv-slack-channels{ font-family: var(--font-mono); font-size:10px; color: var(--text-dim); }
   .pv-slack-summary{ font-size:12px; color: var(--text); line-height:1.6; white-space:pre-wrap; }
 
