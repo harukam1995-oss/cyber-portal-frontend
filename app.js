@@ -383,6 +383,23 @@
     });
   }
 
+  // 天気ペイロード(/api/weather、または /api/bootstrap/home の weather セクション)を
+  // HOME/プライベートのカードへ反映する。
+  function applyWeatherResponse(w){
+    w = w || {};
+    var c = w.current || {};
+    var t = w.today || {};
+    var notes = [];
+    if (c.feelsLike != null) notes.push("体感 " + c.feelsLike + "°");
+    if (c.humidity != null) notes.push("湿度 " + c.humidity + "%");
+    if (t.pop != null) notes.push("降水 " + t.pop + "%");
+    paintWeather(
+      (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || ""),
+      (t.max != null ? t.max + "° / " + t.min + "°" : "--° / --°"),
+      notes.join(" ・ ") || "Open-Meteo"
+    );
+  }
+
   async function loadWeather(){
     try{
       // 設定画面で地点を変更していれば lat/lon を渡す(未設定なら既定=柏市)。
@@ -393,18 +410,7 @@
              "&lon=" + encodeURIComponent(wp.lon) +
              "&place=" + encodeURIComponent(wp.place || "");
       }
-      var w = await apiFetch("/api/weather" + qs);
-      var c = w.current || {};
-      var t = w.today || {};
-      var notes = [];
-      if (c.feelsLike != null) notes.push("体感 " + c.feelsLike + "°");
-      if (c.humidity != null) notes.push("湿度 " + c.humidity + "%");
-      if (t.pop != null) notes.push("降水 " + t.pop + "%");
-      paintWeather(
-        (w.place || "") + " " + (c.temp != null ? c.temp + "° " : "") + (c.label || ""),
-        (t.max != null ? t.max + "° / " + t.min + "°" : "--° / --°"),
-        notes.join(" ・ ") || "Open-Meteo"
-      );
+      applyWeatherResponse(await apiFetch("/api/weather" + qs));
     } catch(err){
       paintWeather("柏市 --", null, apiErrorMessage(err, "天気") || "天気を取得できませんでした");
     }
@@ -658,6 +664,15 @@
       });
   }
 
+  // カレンダー今日ぶんの取得結果(/api/google/calendar/today、または
+  // /api/bootstrap/home の calendarToday.haruka)をスケジュールカードへ反映する。
+  function applyCalendarToday(events, acct){
+    var label = acct === "syslea" ? "SYSLEA" : "はるか";
+    renderEvents(events || []);
+    schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (' + label + ')';
+    schedUpdated.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(new Date()) + " 時点";
+  }
+
   // ホームの TODAY'S SCHEDULE。バックエンド(/api/google/calendar/today)から取得する。
   // 旧MCPのwatchTool方式は廃止し、読み込み時と更新ボタン押下時に単発フェッチする。
   // initCalendarWatch は authready / タブ表示 / 更新ボタン等 複数箇所から呼ばれるので、
@@ -680,9 +695,7 @@
     try{
       var res = await apiFetch(acctPath("/api/google/calendar/today", acct));
       if (acct !== schedAccount) return;
-      renderEvents(res.events || []);
-      schedSourceLabel.innerHTML = '<span class="live">●</span> Google Calendar 連携中 (' + label + ')';
-      schedUpdated.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(new Date()) + " 時点";
+      applyCalendarToday(res.events || [], acct);
     } catch(err){
       if (acct !== schedAccount) return;
       if (err && err.code === "google_not_connected"){
@@ -4164,6 +4177,13 @@
     var data;
     try { data = await apiFetch("/api/google/status"); }
     catch(e){ return; } // 状態が取れなくてもバナー無しで続行(既存の再連携導線に任せる)
+    applyReauthStatus(data);
+  }
+
+  // /api/google/status(または /api/bootstrap/home の googleStatus)の結果から
+  // 再連携リマインダーバナーの表示/非表示を更新する。
+  function applyReauthStatus(data){
+    if (!reauthBanner) return;
     var accounts = (data && data.accounts) || {};
     var now = Date.now();
     var soonest = null;
@@ -7210,15 +7230,63 @@
     calInitialized = true;
     loadAndRenderCalendar();
   }
-  function warmOnAuthReady(){
-    loadSettings();
-    loadGmailUnreadCount();
-    loadHarukaMail();
-    initCalendarWatch();
-    warmCalendarView();
-    loadWeather();
-    checkReauthReminder();
+
+  // 重い投機的プリフェッチ(メール一覧・カレンダー月グリッド)は HOME 表示に
+  // 必須ではないので、可視データの取得を邪魔しないようアイドル時間へ回す。
+  function scheduleIdle(fn){
+    if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 4000 });
+    else setTimeout(fn, 1200);
+  }
+
+  // /api/bootstrap/home の集約レスポンスを各カードへ配る。セクションが欠けている /
+  // エラー印が付いている場合はそのセクションだけ従来の個別ロードにフォールバックする。
+  function applyHomeBootstrap(b){
+    b = b || {};
+
+    if (b.settings){ applySettings(b.settings); cacheSettings(b.settings); }
+    else loadSettings();
+
+    if (b.weather && !b.weather.error) applyWeatherResponse(b.weather);
+    else loadWeather();
+
+    var gu = b.gmailUnread;
+    if (gu){
+      var h = gu.haruka || {}, s = gu.syslea || {};
+      if (typeof h.unreadCount === "number"){ harukaUnreadCount = h.unreadCount; harukaUnreadError = null; }
+      else { harukaUnreadError = { code: h.error || "upstream_error" }; }
+      if (typeof s.unreadCount === "number"){ sysleaUnreadCount = s.unreadCount; sysleaUnreadError = null; }
+      else { sysleaUnreadError = { code: s.error || "upstream_error" }; }
+      renderHomeInbox();
+    } else {
+      loadGmailUnreadCount();
+    }
+
+    var ct = b.calendarToday && b.calendarToday.haruka;
+    // schedAccount は初期値 "haruka"。applySettings で既定アカウントが syslea に
+    // 変わっている場合は集約の haruka 分は使わず個別取得する。
+    if (schedAccount === "haruka" && ct && ct.events){
+      applyCalendarToday(ct.events, "haruka");
+    } else {
+      initCalendarWatch();
+    }
+
+    if (b.googleStatus) applyReauthStatus(b.googleStatus);
+    else checkReauthReminder();
+  }
+
+  async function warmOnAuthReady(){
     refreshNotifCenter();
+    try {
+      applyHomeBootstrap(await apiFetch("/api/bootstrap/home"));
+    } catch(e){
+      // 集約が失敗したら従来どおり個別ロードにフォールバック(= 変更前の挙動)。
+      loadSettings();
+      loadGmailUnreadCount();
+      initCalendarWatch();
+      loadWeather();
+      checkReauthReminder();
+    }
+    scheduleIdle(function(){ loadHarukaMail(); warmCalendarView(); });
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 未読件数を定期的に取り直す(通知センター/デスクトップ通知のため)。
