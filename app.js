@@ -401,30 +401,81 @@
     );
   }
 
+  // WMO weather interpretation code → 日本語ラベル(表示に必要なぶんだけ)。
+  var WMO_JA = {
+    0:"快晴",1:"晴れ",2:"晴れ時々曇り",3:"曇り",45:"霧",48:"霧氷",
+    51:"弱い霧雨",53:"霧雨",55:"強い霧雨",56:"着氷性の霧雨",57:"着氷性の霧雨",
+    61:"小雨",63:"雨",65:"大雨",66:"着氷性の雨",67:"着氷性の雨",
+    71:"小雪",73:"雪",75:"大雪",77:"霧雪",
+    80:"にわか雨",81:"にわか雨",82:"激しいにわか雨",85:"にわか雪",86:"にわか雪",
+    95:"雷雨",96:"雷雨(ひょう)",99:"激しい雷雨(ひょう)"
+  };
+  // Open-Meteo の生レスポンス → applyWeatherResponse が期待する形。
+  function normalizeOpenMeteo(d, place){
+    var cur = (d && d.current) || {};
+    var dy = (d && d.daily) || {};
+    var hasDaily = Array.isArray(dy.time) && dy.time.length &&
+      Array.isArray(dy.temperature_2m_max) && Array.isArray(dy.temperature_2m_min);
+    return {
+      place: place,
+      current: {
+        temp: cur.temperature_2m != null ? Math.round(cur.temperature_2m) : null,
+        feelsLike: cur.apparent_temperature != null ? Math.round(cur.apparent_temperature) : null,
+        humidity: cur.relative_humidity_2m != null ? Math.round(cur.relative_humidity_2m) : null,
+        label: WMO_JA[cur.weather_code] || ""
+      },
+      today: hasDaily ? {
+        max: Math.round(dy.temperature_2m_max[0]),
+        min: Math.round(dy.temperature_2m_min[0]),
+        pop: (Array.isArray(dy.precipitation_probability_max) && dy.precipitation_probability_max[0] != null)
+          ? dy.precipitation_probability_max[0] : null
+      } : null
+    };
+  }
+
   var weatherRetryTimer = null;
   var weatherRetriesLeft = 0;
   async function loadWeather(isRetry){
     if (!isRetry) weatherRetriesLeft = 4; // 通常呼び出し(ログイン時 / 30分間隔 / 手動)で再試行枠を補充
-    try{
-      // 設定画面で地点を変更していれば lat/lon を渡す(未設定なら既定=柏市)。
-      var qs = "";
-      var wp = settingsState && settingsState.weather;
-      if (wp && wp.lat != null && wp.lon != null){
-        qs = "?lat=" + encodeURIComponent(wp.lat) +
-             "&lon=" + encodeURIComponent(wp.lon) +
-             "&place=" + encodeURIComponent(wp.place || "");
-      }
-      applyWeatherResponse(await apiFetch("/api/weather" + qs));
+    var wp = settingsState && settingsState.weather;
+    var lat = (wp && wp.lat != null) ? wp.lat : 35.8676;   // 既定=柏市
+    var lon = (wp && wp.lon != null) ? wp.lon : 139.9758;
+    var place = (wp && wp.place) ? wp.place : "柏市";
+    var ok = false;
+    // 1) Open-Meteo(キー不要・CORS許可)をブラウザから直接取得する。
+    //    バックエンド(Render)経由だと Render→Open-Meteo が届かず 502 になるため。
+    try {
+      var omUrl = "https://api.open-meteo.com/v1/forecast?latitude=" + encodeURIComponent(lat) +
+        "&longitude=" + encodeURIComponent(lon) +
+        "&current=temperature_2m,weather_code,relative_humidity_2m,apparent_temperature" +
+        "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+        "&forecast_days=2&timezone=Asia%2FTokyo";
+      var r = await fetch(omUrl, { cache: "no-store" });
+      if (!r.ok) throw new Error("open-meteo " + r.status);
+      var d = await r.json();
+      if (!d || !d.current || d.current.temperature_2m == null) throw new Error("open-meteo incomplete");
+      applyWeatherResponse(normalizeOpenMeteo(d, place));
+      ok = true;
+    } catch (omErr) {
+      // 2) フォールバック: バックエンド経由(ブラウザ側が Open-Meteo をブロックされる環境向け)。
+      try {
+        var qs = (wp && wp.lat != null && wp.lon != null)
+          ? "?lat=" + encodeURIComponent(wp.lat) + "&lon=" + encodeURIComponent(wp.lon) + "&place=" + encodeURIComponent(wp.place || "")
+          : "";
+        applyWeatherResponse(await apiFetch("/api/weather" + qs));
+        ok = true;
+      } catch (beErr) { /* 下でエラー表示 */ }
+    }
+    if (ok) {
       weatherRetriesLeft = 0;
       if (weatherRetryTimer){ clearTimeout(weatherRetryTimer); weatherRetryTimer = null; }
-    } catch(err){
-      paintWeather("柏市 --", null, apiErrorMessage(err, "天気") || "天気を取得できませんでした");
-      // 天気は失敗しても立て直す導線(更新ボタン)が無いので、バックエンドのコールド
-      // スタート等に備えて15秒間隔で数回だけ自動再試行する(その後は30分間隔に任せる)。
-      if (weatherRetriesLeft > 0 && !weatherRetryTimer){
-        weatherRetriesLeft--;
-        weatherRetryTimer = setTimeout(function(){ weatherRetryTimer = null; loadWeather(true); }, 15000);
-      }
+      return;
+    }
+    paintWeather(place + " --", null, "天気を取得できませんでした");
+    // 更新ボタンが無いので、15秒間隔で数回だけ自動再試行(その後は30分間隔に任せる)。
+    if (weatherRetriesLeft > 0 && !weatherRetryTimer){
+      weatherRetriesLeft--;
+      weatherRetryTimer = setTimeout(function(){ weatherRetryTimer = null; loadWeather(true); }, 15000);
     }
   }
   // 30分ごとに更新
@@ -7267,10 +7318,9 @@
     if (b.settings){ applySettings(b.settings); cacheSettings(b.settings); }
     else loadSettings();
 
-    // b.weather に実データ(current)がある時だけ使う。空オブジェクトやエラー印の
-    // 時は必ず /api/weather へフォールバック(集約側で天気が落ちても表示を欠かさない)。
-    if (b.weather && b.weather.current && b.weather.current.temp != null) applyWeatherResponse(b.weather);
-    else loadWeather();
+    // 天気は集約レスポンスを使わず、必ず loadWeather()(ブラウザから Open-Meteo 直取得、
+    // 失敗時のみバックエンド経由)に任せる。Render→Open-Meteo が不通でも表示を欠かさない。
+    loadWeather();
 
     var gu = b.gmailUnread;
     if (gu){
