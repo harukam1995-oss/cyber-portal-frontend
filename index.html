@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.25.0</span>
+      <span>v2.26.0</span>
     </div>
   </footer>
 </div>
@@ -677,6 +677,7 @@
       </div>
     </div>
     <div class="cal-toolbar-right">
+      <button type="button" class="mail-sort-btn" id="mail-sort-btn" hidden>⚡ 支払い仕分け</button>
       <div class="mail-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="search" id="mail-search" placeholder="メールを検索" autocomplete="off" maxlength="200">
@@ -694,6 +695,7 @@
     </aside>
     <div class="mail-body-main">
       <ul class="mail-list" id="mail-list"></ul>
+      <div class="mail-sort-panel" id="mail-sort-panel" hidden></div>
       <div class="mail-pager" id="mail-pager" hidden>
         <button class="cal-nav-btn" id="mail-prev" type="button">← 前へ</button>
         <span class="mail-pager-info" id="mail-pager-info"></span>

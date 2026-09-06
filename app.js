@@ -4244,6 +4244,7 @@
         return {
           threadId: m.threadId,
           from: m.from || "(不明な送信者)",
+          fromAddress: m.fromAddress || m.from || "",
           initial: (m.from || "?").charAt(0).toUpperCase(),
           subject: m.subject || "(件名なし)",
           snippet: m.snippet || "",
@@ -4270,6 +4271,8 @@
     mailState.pageIndex = 0;
     mailPageTokens = [null];
     harukaMailNextToken = null;
+    paySortResults = null;
+    paySortRunning = false;
     fetchMailPage();
   }
 
@@ -4420,6 +4423,13 @@
 
   function renderMailList(){
     updateMailHeaderUI();
+    updateMailSortBtn();
+    // 仕分けパネルが開いていない通常表示に戻す
+    if (!paySortRunning && !paySortResults){
+      var sp = document.getElementById("mail-sort-panel");
+      if (sp && !sp.hidden){ sp.hidden = true; }
+      if (mailList.hidden) mailList.hidden = false;
+    }
     mailList.innerHTML = "";
 
     if (harukaMailError){
@@ -4671,6 +4681,328 @@
       btn.addEventListener("click", function(){ runMailAction(btn.getAttribute("data-mail-action")); });
     });
   }
+
+  /* ================= 支払い仕分け(SYSLEA 01.payment 専用) =================
+     01.payment に溜まった請求書メールを、本文＋添付PDFのテキストから
+     銀行振込 / UPSIDER / 口座振替 / その他 に自動分類し、ワンクリックで
+     Gmail のサブラベルへ振り分ける。PDF のテキスト抽出は pdf.js(CDN)。
+     判定はバックエンド /api/payments/classify(ベンダー表＋ルール＋AI)。 */
+  var mailSortBtn = document.getElementById("mail-sort-btn");
+  var mailSortPanel = document.getElementById("mail-sort-panel");
+  var mailPagerEl = document.getElementById("mail-pager");
+  var PAY_METHODS = ["銀行振込", "UPSIDER", "口座振替", "その他"];
+  var PAY_METHOD_LABEL = {
+    "銀行振込": "01.payment/01.銀行振込",
+    "UPSIDER": "01.payment/02.UPSIDER",
+    "口座振替": "01.payment/03.口座振替",
+    "その他": "01.payment/99.その他"
+  };
+  var PDFJS_VER = "4.0.379";
+  var _pdfjs = null;
+  var paySortRunning = false;
+  var paySortResults = null;
+
+  function payInSortableView(){
+    return mailState.account === "syslea" && mailState.labelName === "01.payment";
+  }
+  function updateMailSortBtn(){
+    if (!mailSortBtn) return;
+    var show = payInSortableView();
+    mailSortBtn.hidden = !show;
+    if (show && !paySortRunning){
+      mailSortBtn.disabled = !(harukaMailItems && harukaMailItems.length);
+    }
+  }
+
+  async function ensurePdfJs(){
+    if (_pdfjs) return _pdfjs;
+    var base = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/" + PDFJS_VER + "/";
+    var mod = await import(base + "pdf.min.mjs");
+    var lib = (mod && mod.getDocument) ? mod : (mod && mod.default && mod.default.getDocument ? mod.default : null);
+    if (!lib) throw new Error("pdf.js 読み込み不可");
+    try { lib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.mjs"; } catch (e) {}
+    _pdfjs = lib;
+    return lib;
+  }
+  async function extractPdfText(arrayBuf){
+    var lib = await ensurePdfJs();
+    var doc = await lib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+    var pages = [];
+    var max = Math.min(doc.numPages, 8);
+    for (var p = 1; p <= max; p++){
+      var pg = await doc.getPage(p);
+      var tc = await pg.getTextContent();
+      pages.push(tc.items.map(function(i){ return i.str; }).join(""));
+    }
+    try { doc.destroy(); } catch (e) {}
+    return pages.join("\n");
+  }
+  async function mailAttachBytes(att){
+    var token = await getIdToken();
+    if (!token) throw new Error("未ログインです。");
+    var path = "/api/google/gmail/messages/" + encodeURIComponent(att.messageId) +
+      "/attachments/" + encodeURIComponent(att.attachmentId) +
+      "?name=" + encodeURIComponent(att.filename || "a") +
+      "&mime=" + encodeURIComponent(att.mimeType || "application/pdf");
+    var res = await fetch(API_BASE + acctPath(path, "syslea"), { headers: { "Authorization": "Bearer " + token } });
+    if (!res.ok) throw new Error("添付取得失敗 " + res.status);
+    return res.arrayBuffer();
+  }
+
+  function payMethodClass(m){
+    return m === "銀行振込" ? "is-furikomi" : m === "UPSIDER" ? "is-upsider" : m === "口座振替" ? "is-furikae" : "is-other";
+  }
+  function labelIdByName(name){
+    var hit = (mailLabels || []).filter(function(l){ return l.name === name; })[0];
+    return hit ? hit.id : null;
+  }
+  function openSortPanel(){
+    if (!mailSortPanel) return;
+    mailList.hidden = true;
+    if (mailPagerEl) mailPagerEl.hidden = true;
+    mailSortPanel.hidden = false;
+  }
+  function closeSortPanel(){
+    paySortResults = null;
+    paySortRunning = false;
+    if (mailSortPanel) mailSortPanel.hidden = true;
+    mailList.hidden = false;
+    renderMailList();
+  }
+
+  async function runPaymentSort(){
+    if (paySortRunning || !payInSortableView()) return;
+    var mails = (harukaMailItems || []).slice();
+    if (!mails.length) return;
+    paySortRunning = true;
+    if (mailSortBtn) mailSortBtn.disabled = true;
+    openSortPanel();
+    mailSortPanel.innerHTML =
+      '<div class="pay-sort-head"><strong>支払い仕分け</strong>' +
+      '<button type="button" class="pay-sort-close" id="pay-sort-close0">閉じる</button></div>' +
+      '<div class="pay-sort-progress" id="pay-sort-progress">メールと添付PDFを解析中… 0 / ' + mails.length + '</div>';
+    document.getElementById("pay-sort-close0").addEventListener("click", closeSortPanel);
+    var progEl = document.getElementById("pay-sort-progress");
+
+    var items = [];
+    for (var i = 0; i < mails.length; i++){
+      var mail = mails[i];
+      var pdfText = "";
+      var atts = [];
+      var body = "";
+      try {
+        var thr = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId), "syslea"));
+        body = thr.body || "";
+        atts = thr.attachments || [];
+        var pdfs = atts.filter(function(a){ return /pdf/i.test(a.mimeType || "") || /\.pdf$/i.test(a.filename || ""); }).slice(0, 3);
+        for (var k = 0; k < pdfs.length; k++){
+          try {
+            var buf = await mailAttachBytes(pdfs[k]);
+            pdfText += "\n" + await extractPdfText(buf);
+          } catch (e) { /* パスワード付き・画像PDF等は本文だけで判定 */ }
+          if (pdfText.length > 9000) break;
+        }
+      } catch (e) { /* スレッド取得失敗でも空で分類に回す */ }
+      items.push({
+        threadId: mail.threadId,
+        subject: mail.subject,
+        fromAddress: mail.fromAddress || mail.from,
+        bodyText: body.slice(0, 4000),
+        pdfText: pdfText.slice(0, 9000),
+        attachmentNames: atts.map(function(a){ return a.filename; })
+      });
+      if (progEl) progEl.textContent = "メールと添付PDFを解析中… " + (i + 1) + " / " + mails.length;
+    }
+
+    var res;
+    try {
+      res = await apiFetch("/api/payments/classify", { method: "POST", body: JSON.stringify({ items: items }) });
+    } catch (e) {
+      mailSortPanel.innerHTML =
+        '<div class="pay-sort-head"><strong>支払い仕分け</strong>' +
+        '<button type="button" class="pay-sort-close" id="pay-sort-closeE">閉じる</button></div>' +
+        '<div class="pay-sort-progress">分類に失敗しました: ' + escapeHtml(apiErrorMessage(e, "分類") || e.message || "") + '</div>';
+      document.getElementById("pay-sort-closeE").addEventListener("click", closeSortPanel);
+      paySortRunning = false;
+      if (mailSortBtn) mailSortBtn.disabled = false;
+      return;
+    }
+
+    var byId = {};
+    (res.results || []).forEach(function(r){ byId[r.threadId] = r; });
+    paySortResults = mails.map(function(m){
+      var r = byId[m.threadId] || { method: "その他", confidence: 0, reasons: ["結果なし"], vendorKey: "" };
+      return { mail: m, method: r.method, confidence: r.confidence, reasons: r.reasons || [], vendorKey: r.vendorKey || "", source: r.source, applied: false };
+    });
+    paySortRunning = false;
+    if (mailSortBtn) mailSortBtn.disabled = false;
+    renderSortResults(res.llm);
+  }
+
+  function renderSortResults(llmUsed){
+    if (!mailSortPanel || !paySortResults) return;
+    var pending = paySortResults.filter(function(x){ return !x.applied; });
+
+    var head = document.createElement("div");
+    head.className = "pay-sort-head";
+    head.innerHTML = '<strong>支払い仕分け</strong> <span class="pay-sort-sub">' +
+      pending.length + ' 件' + (llmUsed ? ' ・ AI併用' : ' ・ ルール判定') + '</span>';
+    var right = document.createElement("div");
+    right.className = "pay-sort-head-actions";
+    var bulkBtn = document.createElement("button");
+    bulkBtn.type = "button"; bulkBtn.className = "pay-sort-bulk";
+    bulkBtn.textContent = "高確信(85%+)をまとめて適用";
+    bulkBtn.addEventListener("click", applyHighConfidence);
+    var learnBtn = document.createElement("button");
+    learnBtn.type = "button"; learnBtn.className = "pay-sort-learn";
+    learnBtn.textContent = "既存ラベルから学習";
+    learnBtn.addEventListener("click", function(){ seedVendorMap(learnBtn); });
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button"; closeBtn.className = "pay-sort-close";
+    closeBtn.textContent = "閉じる";
+    closeBtn.addEventListener("click", closeSortPanel);
+    right.appendChild(bulkBtn); right.appendChild(learnBtn); right.appendChild(closeBtn);
+    head.appendChild(right);
+
+    var list = document.createElement("div");
+    list.className = "pay-sort-list";
+    paySortResults.forEach(function(row){ list.appendChild(buildSortRow(row)); });
+
+    mailSortPanel.innerHTML = "";
+    mailSortPanel.appendChild(head);
+    mailSortPanel.appendChild(list);
+  }
+
+  function buildSortRow(row){
+    var el = document.createElement("div");
+    el.className = "pay-sort-row" + (row.applied ? " is-applied" : "");
+    var top = document.createElement("div");
+    top.className = "pay-sort-row-top";
+    var who = document.createElement("div");
+    who.className = "pay-sort-who";
+    who.innerHTML = '<span class="pay-sort-from">' + escapeHtml(row.mail.from) + '</span>' +
+      '<span class="pay-sort-subj">' + escapeHtml(row.mail.subject) + '</span>';
+    top.appendChild(who);
+
+    if (row.applied){
+      var done = document.createElement("span");
+      done.className = "pay-sort-done";
+      done.textContent = "✓ " + row.method;
+      top.appendChild(done);
+      el.appendChild(top);
+      return el;
+    }
+
+    var badge = document.createElement("span");
+    badge.className = "pay-badge " + payMethodClass(row.method);
+    badge.textContent = row.method + " " + Math.round((row.confidence || 0) * 100) + "%";
+    top.appendChild(badge);
+    el.appendChild(top);
+
+    var why = document.createElement("div");
+    why.className = "pay-sort-why";
+    why.textContent = (row.reasons || []).join(" / ");
+    el.appendChild(why);
+
+    var ctrl = document.createElement("div");
+    ctrl.className = "pay-sort-ctrl";
+    var sel = document.createElement("select");
+    sel.className = "pay-sort-select";
+    PAY_METHODS.forEach(function(m){
+      var o = document.createElement("option");
+      o.value = m; o.textContent = m;
+      if (m === row.method) o.selected = true;
+      sel.appendChild(o);
+    });
+    var apply = document.createElement("button");
+    apply.type = "button"; apply.className = "pay-sort-apply"; apply.textContent = "適用";
+    apply.addEventListener("click", function(){
+      apply.disabled = true; sel.disabled = true;
+      applySortRow(row, sel.value, apply, sel);
+    });
+    var open = document.createElement("button");
+    open.type = "button"; open.className = "pay-sort-openmail"; open.textContent = "中身";
+    open.addEventListener("click", function(){ openMailDetail(row.mail); });
+    ctrl.appendChild(sel); ctrl.appendChild(apply); ctrl.appendChild(open);
+    el.appendChild(ctrl);
+    return el;
+  }
+
+  async function applySortRow(row, method, applyBtn, sel){
+    var subName = PAY_METHOD_LABEL[method];
+    var subId = labelIdByName(subName);
+    var parentId = mailState.labelId;
+    if (!subId){
+      alert("ラベル「" + subName + "」が見つかりませんでした。SYSLEA 側で作成してください。");
+      if (applyBtn) applyBtn.disabled = false;
+      if (sel) sel.disabled = false;
+      return;
+    }
+    try {
+      await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(row.mail.threadId) + "/labels", "syslea"), {
+        method: "POST",
+        body: JSON.stringify({ addLabelIds: [subId], removeLabelIds: parentId ? [parentId] : [] })
+      });
+      apiFetch("/api/payments/vendor-map", {
+        method: "PUT",
+        body: JSON.stringify({ pairs: [{ fromAddress: row.mail.fromAddress || row.mail.from, subject: row.mail.subject, method: method }] })
+      }).catch(function(){});
+      row.applied = true; row.method = method;
+      harukaMailItems = (harukaMailItems || []).filter(function(m){ return m.threadId !== row.mail.threadId; });
+      renderSortResults();
+    } catch (e) {
+      if (applyBtn) applyBtn.disabled = false;
+      if (sel) sel.disabled = false;
+      alert("適用に失敗しました: " + (apiErrorMessage(e, "ラベル") || e.message || ""));
+    }
+  }
+
+  async function applyHighConfidence(){
+    var targets = (paySortResults || []).filter(function(x){
+      return !x.applied && (x.confidence || 0) >= 0.85 && x.method !== "その他";
+    });
+    for (var i = 0; i < targets.length; i++){
+      await applySortRow(targets[i], targets[i].method);
+    }
+  }
+
+  async function seedVendorMap(btn){
+    if (btn){ btn.disabled = true; btn.textContent = "学習中…"; }
+    try {
+      var cats = [
+        { re: /^01\.payment\/01\.銀行振込(\/|$)/, method: "銀行振込" },
+        { re: /^01\.payment\/02\.UPSIDER(\/|$)/, method: "UPSIDER" },
+        { re: /^01\.payment\/03\.口座振替(\/|$)/, method: "口座振替" }
+      ];
+      var pairs = [];
+      var labs = (mailLabels || []);
+      for (var c = 0; c < cats.length; c++){
+        var method = cats[c].method;
+        var re = cats[c].re;
+        var catLabels = labs.filter(function(l){ return re.test(l.name); });
+        for (var li = 0; li < catLabels.length; li++){
+          try {
+            var r = await apiFetch(acctPath("/api/google/gmail/messages?maxResults=50&labelId=" + encodeURIComponent(catLabels[li].id), "syslea"));
+            (r.messages || []).forEach(function(m){
+              pairs.push({ fromAddress: m.fromAddress || m.from, subject: m.subject, method: method });
+            });
+          } catch (e) {}
+        }
+      }
+      if (!pairs.length){
+        if (btn){ btn.disabled = false; btn.textContent = "既存ラベルから学習"; }
+        alert("学習できるメールが見つかりませんでした。");
+        return;
+      }
+      var out = await apiFetch("/api/payments/vendor-map", { method: "PUT", body: JSON.stringify({ pairs: pairs }) });
+      if (btn){ btn.disabled = false; btn.textContent = "学習済み (" + (out.count || 0) + "社)"; }
+    } catch (e) {
+      if (btn){ btn.disabled = false; btn.textContent = "既存ラベルから学習"; }
+      alert("学習に失敗しました: " + (apiErrorMessage(e, "学習") || e.message || ""));
+    }
+  }
+
+  if (mailSortBtn) mailSortBtn.addEventListener("click", runPaymentSort);
 
   var mailSearchInput = document.getElementById("mail-search");
 
