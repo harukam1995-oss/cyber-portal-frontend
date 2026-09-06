@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.22.0</span>
+      <span>v2.23.0</span>
     </div>
   </footer>
 </div>
@@ -543,6 +543,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
+    <div class="pb-tabs" id="pb-tabs">
+      <button type="button" class="pb-tab is-active" data-pbtab="list">プロジェクト</button>
+      <button type="button" class="pb-tab" data-pbtab="templates">テンプレ</button>
+    </div>
     <form class="event-form" id="pb-form">
       <div id="pb-list-view">
         <button type="button" class="ev-btn habit-add-row" id="pb-new">＋ 新規作成</button>
@@ -552,6 +556,15 @@
         <button type="button" class="habit-detail-back" id="pb-detail-back">‹ 一覧へ戻る</button>
         <div id="pb-detail-body"></div>
         <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="pb-detail-del">このプロジェクトを削除</button>
+      </div>
+      <div id="pb-tpl-list-view" hidden>
+        <button type="button" class="ev-btn habit-add-row" id="pb-tpl-new">＋ 新規作成</button>
+        <div class="habit-rows" id="pb-tpl-rows"></div>
+      </div>
+      <div id="pb-tpl-detail-view" hidden>
+        <button type="button" class="habit-detail-back" id="pb-tpl-detail-back">‹ 一覧へ戻る</button>
+        <div id="pb-tpl-detail-body"></div>
+        <button type="button" class="ev-btn ev-btn-danger habit-detail-del" id="pb-tpl-detail-del">このテンプレを削除</button>
       </div>
       <div class="event-form-error" id="pb-form-error" hidden></div>
       <div class="event-form-actions">

@@ -2537,8 +2537,13 @@
   var EVENT_KINDS = [{ v: "recurring", label: "周期" }, { v: "oneoff", label: "単発" }];
   var EVENT_STATUSES = ["計画中", "進行中", "完了"];
   var eventTrackersState = [];
-  var eventEditRows = [];
+  var eventTemplatesState = [];
+  var eventEditRows = [];         // 管理モーダルの作業コピー(アクティブ＋アーカイブ 両方持つ)
+  var eventTplRows = [];          // テンプレの作業コピー
   var eventDetailIdx = null;
+  var eventTplDetailIdx = null;
+  var pbView = "list";            // "list" = プロジェクト / "templates" = テンプレ
+  var pbShowArchived = false;
   var eventTrackersWired = false;
   var eventTrackersLoadOk = false;
 
@@ -2555,9 +2560,15 @@
     var items = t.items || [];
     return items.filter(function(it){ return it.done; }).length + "/" + items.length;
   }
+  // 期限切れ項目(dueDate あり・未完了・今日より前)の配列
+  function eventOverdueItems(t){
+    var today = jstDateKey(new Date());
+    return (t.items || []).filter(function(it){ return it.dueDate && !it.done && it.dueDate < today; });
+  }
 
-  function applyEventTrackers(list){
+  function applyEventTrackers(list, templates){
     eventTrackersState = list || [];
+    if (templates !== undefined) eventTemplatesState = templates || [];
     eventTrackersLoadOk = true;
     renderEventTrackers();
     eventSetStatus("");
@@ -2571,23 +2582,27 @@
     var list = document.getElementById("pv-events-list");
     if (!list) return;
     eventSetStatus("読み込み中…");
-    try { applyEventTrackers((await apiFetch("/api/event-trackers")).eventTrackers); }
-    catch (err){ failEventTrackers(err); }
+    try {
+      var res = await apiFetch("/api/event-trackers");
+      applyEventTrackers(res.eventTrackers, res.templates);
+    } catch (err){ failEventTrackers(err); }
   }
 
   function renderEventTrackers(){
     var list = document.getElementById("pv-events-list");
     if (!list) return;
     list.innerHTML = "";
-    if (!eventTrackersState.length){
+    var active = eventTrackersState.filter(function(t){ return !t.archived; });
+    if (!active.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」からプロジェクトを追加してください。</div>';
       return;
     }
     var today = jstDateKey(new Date());
-    eventTrackersState.forEach(function(t){
+    active.forEach(function(t){
       var pct = eventProgress(t);
       var done = t.status === "完了" || pct >= 100;
       var overdue = t.dueDate && t.dueDate < today && !done;
+      var overdueItems = eventOverdueItems(t);
       var row = document.createElement("div");
       row.className = "pv-event-row" + (done ? " is-done" : "") + (overdue ? " is-overdue" : "");
       row.tabIndex = 0;
@@ -2608,6 +2623,12 @@
       head.appendChild(kind);
       if (overdue){
         var od = document.createElement("span"); od.className = "pv-contract-alert is-err"; od.textContent = "⚠ 期限超過"; head.appendChild(od);
+      }
+      if (overdueItems.length){
+        var oi = document.createElement("span"); oi.className = "pv-contract-alert is-err";
+        oi.textContent = "⚠ 項目期限切れ " + overdueItems.length;
+        oi.title = overdueItems.map(function(it){ return it.text; }).join("\n");
+        head.appendChild(oi);
       }
       var st = document.createElement("span");
       st.className = "pv-case-status-badge";
@@ -2674,6 +2695,7 @@
         dueDate: t.dueDate || "",
         status: EVENT_STATUSES.indexOf(t.status) !== -1 ? t.status : "計画中",
         autoIngest: t.autoIngest !== false,
+        archived: t.archived === true,
         confidential: t.confidential === true,
         match: {
           keywords: (m.keywords || []).slice(),
@@ -2682,81 +2704,181 @@
           slackChannels: (m.slackChannels || []).slice()
         },
         items: (t.items || []).map(function(it){
-          return { id: it.id || uid(), text: it.text || "", done: it.done === true, note: it.note || "", source: it.source === "manual" ? "manual" : "auto" };
+          return { id: it.id || uid(), text: it.text || "", done: it.done === true, note: it.note || "",
+            dueDate: it.dueDate || "", source: it.source === "manual" ? "manual" : "auto" };
         }),
         digest: (t.digest || []).slice()
       };
     });
-    eventDetailIdx = null;
+    eventTplRows = (eventTemplatesState || []).map(function(tp){
+      var m = tp.match || {};
+      return {
+        id: tp.id, name: tp.name || "", cadence: tp.cadence === "monthly" ? "monthly" : "manual",
+        match: { keywords: (m.keywords || []).slice(), gmailQuery: m.gmailQuery || "",
+          senders: (m.senders || []).slice(), slackChannels: (m.slackChannels || []).slice() },
+        items: (tp.items || []).map(function(it){ return { id: it.id || uid(), text: it.text || "" }; })
+      };
+    });
+    pbView = "list"; pbShowArchived = false;
+    eventDetailIdx = null; eventTplDetailIdx = null;
     if (targetId){
       for (var i = 0; i < eventEditRows.length; i++){ if (eventEditRows[i].id === targetId){ eventDetailIdx = i; break; } }
     }
     renderEventModal();
     modal.hidden = false;
   }
-  function closeEventModal(){ var m = document.getElementById("pb-modal"); if (m) m.hidden = true; }
-  function eventModalBack(){
-    if (eventDetailIdx != null){ eventDetailIdx = null; renderEventModal(); }
-    else closeEventModal();
+  function closePbModal(){ var m = document.getElementById("pb-modal"); if (m) m.hidden = true; }
+  function pbModalBack(){
+    if (pbView === "templates"){
+      if (eventTplDetailIdx != null){ eventTplDetailIdx = null; renderEventModal(); return; }
+    } else if (eventDetailIdx != null){ eventDetailIdx = null; renderEventModal(); return; }
+    closePbModal();
   }
   function eventNewRow(){
-    return { id: uid(), name: "", kind: "oneoff", period: "", dueDate: "", status: "計画中", autoIngest: true, confidential: false,
+    return { id: uid(), name: "", kind: "oneoff", period: "", dueDate: "", status: "計画中",
+      autoIngest: true, archived: false, confidential: false,
       match: { keywords: [], gmailQuery: "", senders: [], slackChannels: [] }, items: [], digest: [] };
+  }
+  function pbTemplateNewRow(){
+    return { id: uid(), name: "", cadence: "manual",
+      match: { keywords: [], gmailQuery: "", senders: [], slackChannels: [] }, items: [] };
+  }
+  function pbTemplateHint(r){
+    return (r.cadence === "monthly" ? "毎月自動" : "手動") + " ・ " + (r.items || []).length + " 項目";
+  }
+  // テンプレから新規プロジェクト作業行を1件つくって詳細を開く
+  function pbCreateFromTemplate(tpl){
+    var name = tpl.name || "";
+    if (tpl.cadence === "monthly"){
+      var p = keyParts(jstDateKey(new Date()));
+      name = p.y + "年" + p.m + "月度_" + name;
+    }
+    var row = {
+      id: uid(), name: name, kind: tpl.cadence === "monthly" ? "recurring" : "oneoff",
+      period: tpl.cadence === "monthly" ? (function(){ var p = keyParts(jstDateKey(new Date())); return p.y + "-" + String(p.m).padStart(2, "0"); })() : "",
+      dueDate: "", status: "計画中", autoIngest: true, archived: false, confidential: false,
+      match: {
+        keywords: (tpl.match.keywords || []).slice(), gmailQuery: tpl.match.gmailQuery || "",
+        senders: (tpl.match.senders || []).slice(), slackChannels: (tpl.match.slackChannels || []).slice()
+      },
+      items: (tpl.items || []).map(function(it){ return { id: uid(), text: it.text || "", done: false, note: "", dueDate: "", source: "auto" }; }),
+      digest: []
+    };
+    eventEditRows.push(row);
+    pbView = "list";
+    eventDetailIdx = eventEditRows.length - 1;
+    eventTplDetailIdx = null;
+    renderEventModal();
   }
   function eventHint(r){
     var n = (r.items || []).length;
     var d = (r.items || []).filter(function(it){ return it.done; }).length;
     return (r.status || "計画中") + " ・ " + d + "/" + n + " 完了" + (r.autoIngest === false ? " ・ 自動オフ" : "") + (r.confidential ? " ・ 🔒機密" : "");
   }
+  function renderPbTabs(){
+    var bar = document.getElementById("pb-tabs");
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll("[data-pbtab]"), function(b){
+      b.classList.toggle("is-active", b.getAttribute("data-pbtab") === pbView);
+    });
+  }
   function renderEventModal(){
+    renderPbTabs();
     var listView = document.getElementById("pb-list-view");
     var detailView = document.getElementById("pb-detail-view");
+    var tplListView = document.getElementById("pb-tpl-list-view");
+    var tplDetailView = document.getElementById("pb-tpl-detail-view");
     var title = document.getElementById("pb-modal-title");
-    var inDetail = eventDetailIdx != null && !!eventEditRows[eventDetailIdx];
-    if (!inDetail) eventDetailIdx = null;
-    if (listView) listView.hidden = inDetail;
-    if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "プロジェクトの設定" : "プロジェクトボードの管理";
-    if (inDetail) renderEventDetailView(eventDetailIdx);
+
+    var isTpl = pbView === "templates";
+    var inTrkDetail = !isTpl && eventDetailIdx != null && !!eventEditRows[eventDetailIdx];
+    var inTplDetail = isTpl && eventTplDetailIdx != null && !!eventTplRows[eventTplDetailIdx];
+    if (!inTrkDetail) eventDetailIdx = null;
+    if (!inTplDetail) eventTplDetailIdx = null;
+
+    if (listView) listView.hidden = isTpl || inTrkDetail;
+    if (detailView) detailView.hidden = isTpl || !inTrkDetail;
+    if (tplListView) tplListView.hidden = !isTpl || inTplDetail;
+    if (tplDetailView) tplDetailView.hidden = !isTpl || !inTplDetail;
+
+    if (title) title.textContent =
+      inTrkDetail ? "プロジェクトの設定" :
+      inTplDetail ? "テンプレの設定" :
+      isTpl ? "テンプレの管理" : "プロジェクトボードの管理";
+
+    if (inTrkDetail) renderEventDetailView(eventDetailIdx);
+    else if (isTpl && !inTplDetail) renderPbTplList();
+    else if (inTplDetail) renderPbTplDetail(eventTplDetailIdx);
     else renderEventListView();
+  }
+  function pbListRow(r, globalIdx, activeSiblings){
+    var row = document.createElement("div");
+    row.className = "habit-list-row" + (r.archived ? " is-dim" : "");
+    row.tabIndex = 0; row.setAttribute("role", "button");
+    var txt = document.createElement("div"); txt.className = "habit-list-txt";
+    var nm = document.createElement("div"); nm.className = "habit-list-name";
+    nm.textContent = (r.name || "").trim() || "（名称未設定）";
+    var hint = document.createElement("div"); hint.className = "habit-list-hint";
+    hint.textContent = eventHint(r);
+    txt.appendChild(nm); txt.appendChild(hint);
+    var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
+    // 並べ替えはアクティブ行のみ(アーカイブ行は順序を持たない扱い)
+    if (!r.archived && activeSiblings && activeSiblings.length > 1){
+      var myPos = activeSiblings.indexOf(r);
+      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
+        e.stopPropagation();
+        if (myPos > 0){ swapRows(r, activeSiblings[myPos - 1]); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
+        e.stopPropagation();
+        if (myPos < activeSiblings.length - 1){ swapRows(r, activeSiblings[myPos + 1]); }
+      });
+      up.disabled = myPos === 0;
+      down.disabled = myPos === activeSiblings.length - 1;
+      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
+    } else {
+      row.appendChild(txt); row.appendChild(chev);
+    }
+    function open(){ eventDetailIdx = eventEditRows.indexOf(r); renderEventModal(); }
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+    return row;
+  }
+  function swapRows(a, b){
+    var ia = eventEditRows.indexOf(a), ib = eventEditRows.indexOf(b);
+    if (ia < 0 || ib < 0) return;
+    eventEditRows[ia] = b; eventEditRows[ib] = a;
+    renderEventListView();
   }
   function renderEventListView(){
     var wrap = document.getElementById("pb-rows");
     if (!wrap) return;
     wrap.innerHTML = "";
-    if (!eventEditRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">プロジェクトがありません。「＋ 新規作成」から追加してください。</div>';
-      return;
+    var activeRows = eventEditRows.filter(function(r){ return !r.archived; });
+    var archivedRows = eventEditRows.filter(function(r){ return r.archived; });
+
+    if (!activeRows.length){
+      var e = document.createElement("div");
+      e.className = "habit-edit-empty";
+      e.textContent = "プロジェクトがありません。「＋ 新規作成」から追加してください。";
+      wrap.appendChild(e);
+    } else {
+      activeRows.forEach(function(r, idx){ wrap.appendChild(pbListRow(r, idx, activeRows)); });
     }
-    var single = eventEditRows.length <= 1;
-    eventEditRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row";
-      row.tabIndex = 0; row.setAttribute("role", "button");
-      var txt = document.createElement("div"); txt.className = "habit-list-txt";
-      var nm = document.createElement("div"); nm.className = "habit-list-name";
-      nm.textContent = (r.name || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div"); hint.className = "habit-list-hint";
-      hint.textContent = eventHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = eventEditRows[idx - 1]; eventEditRows[idx - 1] = r; eventEditRows[idx] = t; renderEventListView(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < eventEditRows.length - 1){ var t = eventEditRows[idx + 1]; eventEditRows[idx + 1] = r; eventEditRows[idx] = t; renderEventListView(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === eventEditRows.length - 1;
-      var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
-      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ eventDetailIdx = idx; renderEventModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
+
+    if (archivedRows.length){
+      var toggle = document.createElement("button");
+      toggle.type = "button"; toggle.className = "pb-archived-toggle";
+      toggle.textContent = (pbShowArchived ? "▾ " : "▸ ") + "アーカイブ済み (" + archivedRows.length + ")";
+      toggle.addEventListener("click", function(){ pbShowArchived = !pbShowArchived; renderEventListView(); });
+      wrap.appendChild(toggle);
+      if (pbShowArchived){
+        var box = document.createElement("div");
+        box.className = "pb-archived-list";
+        archivedRows.forEach(function(r){ box.appendChild(pbListRow(r, -1, null)); });
+        wrap.appendChild(box);
+      }
+    }
   }
   function renderEventDetailView(idx){
     var body = document.getElementById("pb-detail-body");
@@ -2810,6 +2932,7 @@
     var itemsWrap = document.createElement("div");
     itemsWrap.className = "pv-event-items";
     body.appendChild(itemsWrap);
+    var today = jstDateKey(new Date());
     function renderItems(){
       itemsWrap.innerHTML = "";
       r.items.forEach(function(it, i){
@@ -2818,33 +2941,48 @@
         var cb = document.createElement("input");
         cb.type = "checkbox"; cb.checked = it.done === true;
         cb.setAttribute("aria-label", "完了");
-        cb.addEventListener("change", function(){ it.done = cb.checked; it.source = "manual"; });
+        cb.addEventListener("change", function(){ it.done = cb.checked; it.source = "manual"; renderItems(); });
         var tx = document.createElement("input");
         tx.type = "text"; tx.className = "plan-tpl-text"; tx.maxLength = 200;
         tx.placeholder = "やること"; tx.value = it.text || "";
         tx.addEventListener("input", function(){ it.text = tx.value; it.source = "manual"; });
+        var dd = document.createElement("input");
+        dd.type = "date"; dd.className = "pv-event-item-due"; dd.value = it.dueDate || "";
+        dd.setAttribute("aria-label", "項目の期限（任意）");
+        if (it.dueDate && !it.done && it.dueDate < today) dd.classList.add("is-overdue");
+        dd.addEventListener("input", function(){
+          it.dueDate = dd.value; it.source = "manual";
+          dd.classList.toggle("is-overdue", !!(it.dueDate && !it.done && it.dueDate < today));
+        });
         var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
         line.appendChild(cb); line.appendChild(tx); line.appendChild(del);
+        var sub = document.createElement("div");
+        sub.className = "pv-event-item-sub";
         var note = document.createElement("input");
         note.type = "text"; note.className = "pv-event-item-note"; note.maxLength = 400;
         note.placeholder = "メモ（任意）"; note.value = it.note || "";
         note.addEventListener("input", function(){ it.note = note.value; it.source = "manual"; });
+        sub.appendChild(dd); sub.appendChild(note);
         itemsWrap.appendChild(line);
-        itemsWrap.appendChild(note);
+        itemsWrap.appendChild(sub);
       });
       var add = document.createElement("button");
       add.type = "button"; add.className = "ev-btn plan-tpl-additem";
       add.textContent = "＋ 項目を追加";
-      add.addEventListener("click", function(){ r.items.push({ id: uid(), text: "", done: false, note: "", source: "auto" }); renderItems(); });
+      add.addEventListener("click", function(){ r.items.push({ id: uid(), text: "", done: false, note: "", dueDate: "", source: "auto" }); renderItems(); });
       itemsWrap.appendChild(add);
     }
     renderItems();
 
-    // --- match ---
-    var matchHead = document.createElement("div");
-    matchHead.className = "pv-event-field-label";
-    matchHead.textContent = "自動反映の照合条件（メール／Slack）";
-    body.appendChild(matchHead);
+    // --- match (折りたたみ) ---
+    var matchDetails = document.createElement("details");
+    matchDetails.className = "pb-match-details";
+    var matchSummary = document.createElement("summary");
+    matchSummary.textContent = "自動反映の照合条件（メール／Slack）";
+    matchDetails.appendChild(matchSummary);
+    var hasMatch = (r.match.keywords || []).length || (r.match.slackChannels || []).length ||
+      (r.match.senders || []).length || (r.match.gmailQuery || "");
+    if (hasMatch) matchDetails.open = true;
     [
       { key: "keywords", label: "キーワード（カンマ区切り）", arr: true },
       { key: "slackChannels", label: "Slackチャンネル（カンマ区切り、# なし）", arr: true },
@@ -2865,8 +3003,9 @@
           : inp.value;
       });
       line.appendChild(lbl); line.appendChild(inp);
-      body.appendChild(line);
+      matchDetails.appendChild(line);
     });
+    body.appendChild(matchDetails);
 
     var lineFlags = document.createElement("div");
     lineFlags.className = "habit-block-line";
@@ -2891,6 +3030,18 @@
     conf.appendChild(document.createTextNode(" 機密（🔒表示・エージェント経由では非展開）"));
     lineConf.appendChild(conf);
     body.appendChild(lineConf);
+
+    // --- アーカイブ ---
+    var archBtn = document.createElement("button");
+    archBtn.type = "button";
+    archBtn.className = "ev-btn pb-archive-btn";
+    archBtn.textContent = r.archived ? "アーカイブから戻す" : "このプロジェクトをアーカイブ";
+    archBtn.addEventListener("click", function(){
+      r.archived = !r.archived;
+      eventDetailIdx = null;
+      renderEventModal();
+    });
+    body.appendChild(archBtn);
 
     if (r.digest && r.digest.length){
       var dgHead = document.createElement("div");
@@ -2924,14 +3075,15 @@
       var kind = r.kind === "recurring" ? "recurring" : "oneoff";
       var items = (r.items || []).map(function(it){
         return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200), done: it.done === true,
-          note: String(it.note || "").trim().slice(0, 400), source: it.source === "manual" ? "manual" : "auto" };
+          note: String(it.note || "").trim().slice(0, 400), dueDate: it.dueDate || "",
+          source: it.source === "manual" ? "manual" : "auto" };
       }).filter(function(it){ return it.text; });
       cleaned.push({
         id: r.id, name: nm.slice(0, 120), kind: kind,
         period: kind === "recurring" ? String(r.period || "").trim().slice(0, 7) : "",
         dueDate: r.dueDate || "",
         status: EVENT_STATUSES.indexOf(r.status) !== -1 ? r.status : "計画中",
-        autoIngest: r.autoIngest !== false, confidential: r.confidential === true,
+        autoIngest: r.autoIngest !== false, archived: r.archived === true, confidential: r.confidential === true,
         match: {
           keywords: (r.match.keywords || []).slice(0, 30),
           gmailQuery: String(r.match.gmailQuery || "").trim().slice(0, 200),
@@ -2948,7 +3100,157 @@
         headers: { "X-Allow-Empty": "1" },
         body: JSON.stringify({ eventTrackers: cleaned })
       });
-      closeEventModal();
+      closePbModal();
+      loadEventTrackers();
+    } catch (err){
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
+    } finally {
+      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    }
+  }
+
+  /* ---- テンプレ (繰り返しプロジェクトの雛形) ---- */
+  function renderPbTplList(){
+    var wrap = document.getElementById("pb-tpl-rows");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!eventTplRows.length){
+      wrap.innerHTML = '<div class="habit-edit-empty">テンプレがありません。「＋ 新規作成」から追加してください。<br>周期=毎月自動 にすると毎月「YYYY年M月度_名前」が自動生成されます。</div>';
+      return;
+    }
+    var single = eventTplRows.length <= 1;
+    eventTplRows.forEach(function(r, idx){
+      var row = document.createElement("div");
+      row.className = "habit-list-row";
+      row.tabIndex = 0; row.setAttribute("role", "button");
+      var txt = document.createElement("div"); txt.className = "habit-list-txt";
+      var nm = document.createElement("div"); nm.className = "habit-list-name";
+      nm.textContent = (r.name || "").trim() || "（名称未設定）";
+      var hint = document.createElement("div"); hint.className = "habit-list-hint";
+      hint.textContent = pbTemplateHint(r);
+      txt.appendChild(nm); txt.appendChild(hint);
+      var mk = mkHabitIconBtn("＋", "このテンプレから作成", "", function(e){ e.stopPropagation(); pbCreateFromTemplate(r); });
+      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
+        e.stopPropagation();
+        if (idx > 0){ var t = eventTplRows[idx - 1]; eventTplRows[idx - 1] = r; eventTplRows[idx] = t; renderPbTplList(); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
+        e.stopPropagation();
+        if (idx < eventTplRows.length - 1){ var t = eventTplRows[idx + 1]; eventTplRows[idx + 1] = r; eventTplRows[idx] = t; renderPbTplList(); }
+      });
+      up.hidden = down.hidden = single;
+      up.disabled = idx === 0;
+      down.disabled = idx === eventTplRows.length - 1;
+      var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
+      row.appendChild(txt); row.appendChild(mk); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
+      function open(){ eventTplDetailIdx = idx; renderEventModal(); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      wrap.appendChild(row);
+    });
+  }
+  function renderPbTplDetail(idx){
+    var body = document.getElementById("pb-tpl-detail-body");
+    var r = eventTplRows[idx];
+    if (!body || !r) return;
+    body.innerHTML = "";
+
+    var name = document.createElement("input");
+    name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 120;
+    name.placeholder = "テンプレ名（例：月次決算）"; name.value = r.name || "";
+    name.addEventListener("input", function(){ r.name = name.value; });
+    body.appendChild(name);
+
+    var lineCad = document.createElement("div");
+    lineCad.className = "habit-block-line";
+    var cad = document.createElement("select");
+    cad.className = "habit-edit-cadence case-edit-status";
+    cad.innerHTML = '<option value="manual">手動（ボタンで作成）</option><option value="monthly">毎月自動（YYYY年M月度_名前）</option>';
+    cad.value = r.cadence;
+    cad.addEventListener("change", function(){ r.cadence = cad.value; });
+    lineCad.appendChild(cad);
+    body.appendChild(lineCad);
+
+    var itemsHead = document.createElement("div");
+    itemsHead.className = "pv-event-field-label"; itemsHead.textContent = "チェックリスト（雛形）";
+    body.appendChild(itemsHead);
+    var itemsWrap = document.createElement("div"); itemsWrap.className = "pv-event-items";
+    body.appendChild(itemsWrap);
+    function renderItems(){
+      itemsWrap.innerHTML = "";
+      r.items.forEach(function(it, i){
+        var line = document.createElement("div"); line.className = "plan-tpl-line";
+        var tx = document.createElement("input");
+        tx.type = "text"; tx.className = "plan-tpl-text"; tx.maxLength = 200;
+        tx.placeholder = "やること"; tx.value = it.text || "";
+        tx.addEventListener("input", function(){ it.text = tx.value; });
+        var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
+        line.appendChild(tx); line.appendChild(del);
+        itemsWrap.appendChild(line);
+      });
+      var add = document.createElement("button");
+      add.type = "button"; add.className = "ev-btn plan-tpl-additem"; add.textContent = "＋ 項目を追加";
+      add.addEventListener("click", function(){ r.items.push({ id: uid(), text: "" }); renderItems(); });
+      itemsWrap.appendChild(add);
+    }
+    renderItems();
+
+    var matchDetails = document.createElement("details");
+    matchDetails.className = "pb-match-details";
+    var matchSummary = document.createElement("summary");
+    matchSummary.textContent = "自動反映の照合条件（生成先に引き継ぐ）";
+    matchDetails.appendChild(matchSummary);
+    [
+      { key: "keywords", label: "キーワード（カンマ区切り）", arr: true },
+      { key: "slackChannels", label: "Slackチャンネル（# なし）", arr: true },
+      { key: "senders", label: "差出人", arr: true },
+      { key: "gmailQuery", label: "Gmail 検索クエリ", arr: false }
+    ].forEach(function(f){
+      var line = document.createElement("div"); line.className = "habit-block-line";
+      var lbl = document.createElement("span"); lbl.className = "pv-contract-field-label"; lbl.textContent = f.label;
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.className = "plan-tpl-text"; inp.maxLength = 300;
+      inp.value = f.arr ? (r.match[f.key] || []).join(", ") : (r.match[f.key] || "");
+      inp.addEventListener("input", function(){
+        r.match[f.key] = f.arr ? inp.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean) : inp.value;
+      });
+      line.appendChild(lbl); line.appendChild(inp);
+      matchDetails.appendChild(line);
+    });
+    body.appendChild(matchDetails);
+
+    var mkNow = document.createElement("button");
+    mkNow.type = "button"; mkNow.className = "ev-btn ev-btn-primary pb-tpl-create";
+    mkNow.textContent = "このテンプレからプロジェクトを作成";
+    mkNow.addEventListener("click", function(){ pbCreateFromTemplate(r); });
+    body.appendChild(mkNow);
+  }
+  async function onPbTemplateSubmit(){
+    var errEl = document.getElementById("pb-form-error");
+    var saveBtn = document.getElementById("pb-save");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    var cleaned = [];
+    for (var i = 0; i < eventTplRows.length; i++){
+      var r = eventTplRows[i];
+      var nm = (r.name || "").trim();
+      if (!nm){ eventTplDetailIdx = i; renderEventModal(); if (errEl){ errEl.textContent = "テンプレ名を入力してください。"; errEl.hidden = false; } return; }
+      var items = (r.items || []).map(function(it){ return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200) }; })
+        .filter(function(it){ return it.text; });
+      cleaned.push({
+        id: r.id, name: nm.slice(0, 120), cadence: r.cadence === "monthly" ? "monthly" : "manual",
+        items: items,
+        match: {
+          keywords: (r.match.keywords || []).slice(0, 30),
+          gmailQuery: String(r.match.gmailQuery || "").trim().slice(0, 200),
+          senders: (r.match.senders || []).slice(0, 20),
+          slackChannels: (r.match.slackChannels || []).slice(0, 20)
+        }
+      });
+    }
+    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/event-trackers/templates", { method: "PUT", body: JSON.stringify({ templates: cleaned }) });
+      closePbModal();
       loadEventTrackers();
     } catch (err){
       if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
@@ -2965,13 +3267,24 @@
     var modal = document.getElementById("pb-modal");
     var closeBtn = document.getElementById("pb-modal-close");
     var cancelBtn = document.getElementById("pb-cancel");
+    var form = document.getElementById("pb-form");
+    if (closeBtn) closeBtn.addEventListener("click", closePbModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closePbModal);
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closePbModal(); });
+
+    var tabs = document.getElementById("pb-tabs");
+    if (tabs) tabs.addEventListener("click", function(e){
+      var b = e.target.closest("[data-pbtab]");
+      if (!b) return;
+      pbView = b.getAttribute("data-pbtab") === "templates" ? "templates" : "list";
+      eventDetailIdx = null; eventTplDetailIdx = null;
+      renderEventModal();
+    });
+
+    // プロジェクト側
     var newBtn = document.getElementById("pb-new");
     var backBtn = document.getElementById("pb-detail-back");
     var delBtn = document.getElementById("pb-detail-del");
-    var form = document.getElementById("pb-form");
-    if (closeBtn) closeBtn.addEventListener("click", closeEventModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closeEventModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeEventModal(); });
     if (newBtn) newBtn.addEventListener("click", function(){
       eventEditRows.push(eventNewRow());
       eventDetailIdx = eventEditRows.length - 1;
@@ -2986,7 +3299,31 @@
       eventDetailIdx = null;
       renderEventModal();
     });
-    if (form) form.addEventListener("submit", onEventModalSubmit);
+
+    // テンプレ側
+    var tplNewBtn = document.getElementById("pb-tpl-new");
+    var tplBackBtn = document.getElementById("pb-tpl-detail-back");
+    var tplDelBtn = document.getElementById("pb-tpl-detail-del");
+    if (tplNewBtn) tplNewBtn.addEventListener("click", function(){
+      eventTplRows.push(pbTemplateNewRow());
+      eventTplDetailIdx = eventTplRows.length - 1;
+      renderEventModal();
+    });
+    if (tplBackBtn) tplBackBtn.addEventListener("click", function(){ eventTplDetailIdx = null; renderEventModal(); });
+    if (tplDelBtn) tplDelBtn.addEventListener("click", async function(){
+      if (eventTplDetailIdx == null) return;
+      var r = eventTplRows[eventTplDetailIdx];
+      if (r && (r.name || "").trim() && !(await askConfirm('テンプレ「' + r.name + '」を削除しますか?'))) return;
+      eventTplRows.splice(eventTplDetailIdx, 1);
+      eventTplDetailIdx = null;
+      renderEventModal();
+    });
+
+    if (form) form.addEventListener("submit", function(e){
+      e.preventDefault();
+      if (pbView === "templates") onPbTemplateSubmit();
+      else onEventModalSubmit(e);
+    });
   }
 
   /* ================= ビジネス: Slackダイジェスト(フェーズB) =================
@@ -3035,7 +3372,7 @@
     try {
       var res = await apiFetch("/api/bootstrap/business");
       applyContracts(res.contracts);
-      applyEventTrackers(res.eventTrackers);
+      applyEventTrackers(res.eventTrackers, res.eventTemplates);
       renderSlackDigest(res.digests || []);
       slackDigestSetStatus("");
     } catch (err){
@@ -5302,7 +5639,7 @@
         else if (finModal && !finModal.hidden) closeFinanceModal();
         else if (habModal && !habModal.hidden) habitModalBack();
         else if (planModal && !planModal.hidden) planModalBack();
-        else if (pbModal && !pbModal.hidden) eventModalBack();
+        else if (pbModal && !pbModal.hidden) pbModalBack();
         else if (contractModal && !contractModal.hidden) contractModalBack();
         else if (habPop && !habPop.hidden) closeHabitCountPop(false);
       }

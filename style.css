@@ -1270,10 +1270,32 @@
   .pv-event-item-line{ display:flex; align-items:center; gap:7px; }
   .pv-event-item-line input[type="checkbox"]{ flex:none; }
   .pv-event-item-line .plan-tpl-text{ flex:1 1 auto; min-width:0; }
-  .pv-event-item-note{ width:100%; font-size:11.5px; padding:4px 8px; color-scheme: dark;
+  .pv-event-item-sub{ display:flex; gap:7px; margin:-2px 0 6px 24px; }
+  .pv-event-item-due{ flex:none; width:126px; font-size:11.5px; padding:4px 6px; color-scheme: dark;
+    background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text); }
+  .pv-event-item-due.is-overdue{ border:1px solid var(--err); color: var(--err); background: rgba(255,90,90,0.08); }
+  .pv-event-item-note{ flex:1 1 auto; min-width:0; font-size:11.5px; padding:4px 8px; color-scheme: dark;
     background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:6px; color: var(--text-dim);
-    margin:-2px 0 4px 24px; box-sizing:border-box; }
+    box-sizing:border-box; }
   .pv-event-digest-list{ margin:0; padding-left:18px; font-size:11.5px; color: var(--text-dim); line-height:1.6; }
+
+  /* プロジェクトボード管理モーダル: タブ / アーカイブ / 照合条件の折りたたみ */
+  .pb-tabs{ display:flex; gap:2px; margin:2px 0 10px; border-bottom:1px solid var(--panel-border); }
+  .pb-tab{ font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; cursor:pointer;
+    color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent;
+    padding:6px 12px; transition: color .15s, border-color .15s; }
+  .pb-tab:hover{ color: var(--text); }
+  .pb-tab.is-active{ color: var(--cyan); border-bottom-color: var(--cyan); }
+  .habit-list-row.is-dim{ opacity:.55; }
+  .pb-archived-toggle{ margin:8px 0 4px; font-size:11.5px; color: var(--text-dim); background:transparent;
+    border:none; cursor:pointer; padding:4px 2px; }
+  .pb-archived-toggle:hover{ color: var(--text); }
+  .pb-archived-list{ display:flex; flex-direction:column; gap:6px; border-top:1px dashed var(--panel-border); padding-top:6px; }
+  .pb-match-details{ margin:12px 0 4px; border:1px solid var(--panel-border); border-radius:8px; padding:6px 10px; }
+  .pb-match-details > summary{ cursor:pointer; font-size:11.5px; color: var(--text-faint); letter-spacing:.3px; list-style:revert; }
+  .pb-match-details[open] > summary{ margin-bottom:6px; color: var(--text-dim); }
+  .pb-archive-btn{ display:block; width:100%; margin-top:12px; font-size:12px; }
+  .pb-tpl-create{ display:block; width:100%; margin-top:14px; }
 
   /* ---------- ビジネス: Slackダイジェスト(フェーズB) ---------- */
   .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
