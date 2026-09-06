@@ -2,7 +2,7 @@
   // firebaseConfigのapiKeyは公開情報として扱って問題ない値(アクセス制御はFirestore
   // セキュリティルール側で行う)。
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
     from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
   const firebaseConfig = {
@@ -23,19 +23,45 @@
   const signinBtn = document.getElementById("auth-gate-signin-btn");
   const statusEl = document.getElementById("auth-gate-status");
 
-  // GitHub Pagesが付与するCross-Origin-Opener-Policyヘッダーの影響で、
-  // ポップアップ方式(signInWithPopup)は別ウィンドウの開閉を検知できずフリーズするため、
-  // 同じタブでGoogleのログイン画面へ遷移するリダイレクト方式を使う。
+  // ログイン方式:
+  //  - まず signInWithPopup(ポップアップ)。GitHub Pages は COOP ヘッダを付けない
+  //    ので opener と通信でき、これが最も確実。
+  //  - signInWithRedirect は authDomain(*.firebaseapp.com)とアプリのドメイン
+  //    (github.io)が別なため、モバイルブラウザのストレージ分割でリダイレクト
+  //    往復中の認証状態を読み戻せず「ログイン画面から進まない」ことがある。
+  //    ポップアップが使えない環境(ブロック等)のときだけフォールバックで使う。
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
   console.log("[auth] init: authDomain=", firebaseConfig.authDomain, "current URL=", location.href);
 
+  let signingIn = false;
   signinBtn.addEventListener("click", async () => {
-    statusEl.textContent = "Googleのログイン画面へ移動します…";
-    console.log("[auth] signInWithRedirect: calling...");
+    if (signingIn) return;
+    signingIn = true;
+    statusEl.textContent = "ログイン中…";
     try {
-      await signInWithRedirect(auth, new GoogleAuthProvider());
+      console.log("[auth] signInWithPopup: calling...");
+      await signInWithPopup(auth, provider);
+      // 成功時は onAuthStateChanged がゲートを閉じる。
     } catch (err) {
-      console.error("[auth] signInWithRedirect failed:", err);
-      statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
+      console.warn("[auth] signInWithPopup failed:", err && err.code, err && err.message);
+      const code = (err && err.code) || "";
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        // ユーザーが閉じた/連打しただけ。何もしないで再操作を待つ。
+        statusEl.textContent = "";
+      } else {
+        // ポップアップがブロック/未対応の環境 → リダイレクト方式にフォールバック。
+        statusEl.textContent = "Googleのログイン画面へ移動します…";
+        try {
+          console.log("[auth] falling back to signInWithRedirect...");
+          await signInWithRedirect(auth, provider);
+        } catch (err2) {
+          console.error("[auth] signInWithRedirect failed:", err2);
+          statusEl.textContent = "ログインに失敗しました(" + (err2.code || err2.message) + ")。もう一度お試しください。";
+        }
+      }
+    } finally {
+      signingIn = false;
     }
   });
 
