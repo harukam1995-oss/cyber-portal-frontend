@@ -1617,7 +1617,15 @@
     .brand-mark{ width: 30px; height: 30px; }
     .brand-text .name{ font-size: 14px; letter-spacing: 1px; }
     .brand-text .tag{ display: none; }
-    .nav{ display: none; }
+    /* モバイルでも HOME/プライベート/ビジネス を切り替えられるように、ナビを
+       ヘッダー最下段へ回して全幅表示する(以前は display:none で隠していた)。 */
+    .nav{
+      display: flex; order: 1; width: 100%;
+      justify-content: center; gap: 22px;
+      padding-top: 8px; margin-top: 2px;
+      border-top: 1px solid var(--hairline);
+    }
+    .nav a{ font-size: 12px; }
     .top-actions{ gap: 10px; }
     .profile-meta{ display: none; }
 
