@@ -1172,7 +1172,7 @@
   .plan-apply-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
 
   /* ---------- ビジネス: プロジェクトボード(案件管理, v1) ---------- */
-  .pv-cases-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
+  .pv-cases-list{ display:flex; flex-direction:column; gap:12px; max-height:120px; overflow-y:auto; }
   .pv-cases-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-cases-status.is-err{ color: var(--err); }
   .pv-case-row{ display:flex; flex-direction:column; gap:5px; padding-bottom:2px; }
@@ -1226,7 +1226,7 @@
   }
   /* ネイティブのドロップダウン(option リスト)が白くならないよう、周りに合わせた暗色を明示 */
   .pv-contracts-requester option{ background: var(--panel-solid); color: var(--text); }
-  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:200px; overflow-y:auto; }
+  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:185px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-contracts-status.is-err{ color: var(--err); }
   .pv-contract-row{
@@ -1265,8 +1265,37 @@
   .pv-contract-chip:hover{ color: var(--text); border-color: var(--cyan); }
   .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.10); }
 
+  /* ---------- ビジネス: イベント／月次トラッカー ---------- */
+  .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:130px; overflow-y:auto; }
+  .pv-events-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
+  .pv-events-status.is-err{ color: var(--err); }
+  .pv-event-row{
+    display:flex; flex-direction:column; gap:5px; padding:8px 10px 9px;
+    border:1px solid var(--panel-border); border-left:3px solid var(--cyan); border-radius:8px;
+    cursor:pointer; transition: background .15s, border-color .15s;
+  }
+  .pv-event-row:hover{ background: rgba(255,255,255,0.03); }
+  .pv-event-row.is-done{ border-left-color: var(--ok); opacity:.8; }
+  .pv-event-row.is-overdue{ border-left-color: var(--err); background: rgba(255,90,90,0.05); }
+  .pv-event-kind{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:.4px; color: var(--text-dim);
+    border:1px solid var(--panel-border); border-radius:4px; padding:1px 5px; flex:none; }
+  .pv-event-autooff{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint);
+    border:1px dashed var(--panel-border); border-radius:4px; padding:1px 5px; flex:none; }
+  .pv-event-progress{ height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
+  .pv-event-progress-fill{ height:100%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); border-radius:3px; transition: width .25s; }
+  .pv-event-digest{ font-size:11px; color: var(--text-dim); line-height:1.55; }
+  .pv-event-field-label{ font-size:11px; letter-spacing:.4px; color: var(--text-faint); margin:12px 0 4px; }
+  .pv-event-items{ display:flex; flex-direction:column; gap:6px; }
+  .pv-event-item-line{ display:flex; align-items:center; gap:7px; }
+  .pv-event-item-line input[type="checkbox"]{ flex:none; }
+  .pv-event-item-line .plan-tpl-text{ flex:1 1 auto; min-width:0; }
+  .pv-event-item-note{ width:100%; font-size:11.5px; padding:4px 8px; color-scheme: dark;
+    background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:6px; color: var(--text-dim);
+    margin:-2px 0 4px 24px; box-sizing:border-box; }
+  .pv-event-digest-list{ margin:0; padding-left:18px; font-size:11.5px; color: var(--text-dim); line-height:1.6; }
+
   /* ---------- ビジネス: Slackダイジェスト(フェーズB) ---------- */
-  .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
+  .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:120px; overflow-y:auto; }
   .pv-slack-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-slack-status.is-err{ color: var(--err); }
   .pv-slack-item{

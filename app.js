@@ -2849,6 +2849,461 @@
     if (form) form.addEventListener("submit", onContractModalSubmit);
   }
 
+  /* ================= ビジネス: イベント／月次トラッカー =================
+     事前定義したプロジェクト(月次決算・オフィス引っ越し等)のチェックリスト。
+     定期タスク event-digest がメール＋Slackから進捗を自動入力する(契約書トラッカーと同型)。
+     手動編集した項目は自動反映が上書きしない。 */
+  var EVENT_KINDS = [{ v: "recurring", label: "周期" }, { v: "oneoff", label: "単発" }];
+  var EVENT_STATUSES = ["計画中", "進行中", "完了"];
+  var eventTrackersState = [];
+  var eventEditRows = [];
+  var eventDetailIdx = null;
+  var eventTrackersWired = false;
+  var eventTrackersLoadOk = false;
+
+  var eventSetStatus = makeStatusSetter("pv-events-status");
+
+  function eventKindLabel(k){ var f = EVENT_KINDS.filter(function(e){ return e.v === k; })[0]; return f ? f.label : "単発"; }
+  function eventProgress(t){
+    var items = t.items || [];
+    if (typeof t.progress === "number" && !items.length) return t.progress;
+    if (!items.length) return 0;
+    return Math.round(items.filter(function(it){ return it.done; }).length / items.length * 100);
+  }
+  function eventDoneCount(t){
+    var items = t.items || [];
+    return items.filter(function(it){ return it.done; }).length + "/" + items.length;
+  }
+
+  function applyEventTrackers(list){
+    eventTrackersState = list || [];
+    eventTrackersLoadOk = true;
+    renderEventTrackers();
+    eventSetStatus("");
+  }
+  function failEventTrackers(err){
+    eventTrackersState = [];
+    renderEventTrackers();
+    eventSetStatus(apiErrorMessage(err, "イベントトラッカー"), true);
+  }
+  async function loadEventTrackers(){
+    var list = document.getElementById("pv-events-list");
+    if (!list) return;
+    eventSetStatus("読み込み中…");
+    try { applyEventTrackers((await apiFetch("/api/event-trackers")).eventTrackers); }
+    catch (err){ failEventTrackers(err); }
+  }
+
+  function renderEventTrackers(){
+    var list = document.getElementById("pv-events-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!eventTrackersState.length){
+      list.innerHTML = '<div class="pv-habit-empty">「管理」からイベント／月次トラッカーを追加してください。</div>';
+      return;
+    }
+    var today = jstDateKey(new Date());
+    eventTrackersState.forEach(function(t){
+      var pct = eventProgress(t);
+      var done = t.status === "完了" || pct >= 100;
+      var overdue = t.dueDate && t.dueDate < today && !done;
+      var row = document.createElement("div");
+      row.className = "pv-event-row" + (done ? " is-done" : "") + (overdue ? " is-overdue" : "");
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+
+      var head = document.createElement("div");
+      head.className = "pv-case-head";
+      var name = document.createElement("span");
+      name.className = "pv-case-name";
+      name.textContent = t.name || "（名称未設定）";
+      head.appendChild(name);
+      if (t.confidential){
+        var lk = document.createElement("span"); lk.className = "pv-case-lock"; lk.textContent = "🔒"; lk.title = "機密"; head.appendChild(lk);
+      }
+      var kind = document.createElement("span");
+      kind.className = "pv-event-kind";
+      kind.textContent = eventKindLabel(t.kind);
+      head.appendChild(kind);
+      if (overdue){
+        var od = document.createElement("span"); od.className = "pv-contract-alert is-err"; od.textContent = "⚠ 期限超過"; head.appendChild(od);
+      }
+      var st = document.createElement("span");
+      st.className = "pv-case-status-badge";
+      st.textContent = t.status;
+      head.appendChild(st);
+      if (t.autoIngest === false){
+        var ao = document.createElement("span"); ao.className = "pv-event-autooff"; ao.textContent = "自動オフ"; ao.title = "event-digest の対象外"; head.appendChild(ao);
+      } else if (t.digest && t.digest.length){
+        var ab = document.createElement("span"); ab.className = "pv-contract-slack-badge"; ab.textContent = "自動反映"; ab.title = "メール／Slackから自動入力された進捗があります"; head.appendChild(ab);
+      }
+      row.appendChild(head);
+
+      var bar = document.createElement("div");
+      bar.className = "pv-event-progress";
+      var fill = document.createElement("div");
+      fill.className = "pv-event-progress-fill";
+      fill.style.width = pct + "%";
+      bar.appendChild(fill);
+      row.appendChild(bar);
+
+      var meta = [];
+      meta.push(eventDoneCount(t) + " 完了 (" + pct + "%)");
+      if (t.kind === "recurring" && t.period) meta.push(t.period);
+      if (t.dueDate) meta.push("期限 " + mdLabel(t.dueDate));
+      var m = document.createElement("div");
+      m.className = "pv-case-client";
+      m.textContent = meta.join(" ・ ");
+      row.appendChild(m);
+
+      if (t.digest && t.digest[0]){
+        var dg = document.createElement("div");
+        dg.className = "pv-event-digest";
+        dg.textContent = "💬 " + t.digest[0];
+        row.appendChild(dg);
+      }
+
+      (function(id){
+        function open(){ openEventModal(id); }
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      })(t.id);
+      list.appendChild(row);
+    });
+  }
+
+  /* ---- イベントトラッカー管理モーダル (cases/contracts と同じ master-detail) ---- */
+  function openEventModal(targetId){
+    var modal = document.getElementById("event-modal");
+    if (!modal) return;
+    if (!eventTrackersLoadOk){
+      eventSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      loadEventTrackers();
+      return;
+    }
+    var errEl = document.getElementById("event-form-error");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    eventEditRows = eventTrackersState.map(function(t){
+      var m = t.match || {};
+      return {
+        id: t.id,
+        name: t.name || "",
+        kind: EVENT_KINDS.some(function(e){ return e.v === t.kind; }) ? t.kind : "oneoff",
+        period: t.period || "",
+        dueDate: t.dueDate || "",
+        status: EVENT_STATUSES.indexOf(t.status) !== -1 ? t.status : "計画中",
+        autoIngest: t.autoIngest !== false,
+        confidential: t.confidential === true,
+        match: {
+          keywords: (m.keywords || []).slice(),
+          gmailQuery: m.gmailQuery || "",
+          senders: (m.senders || []).slice(),
+          slackChannels: (m.slackChannels || []).slice()
+        },
+        items: (t.items || []).map(function(it){
+          return { id: it.id || uid(), text: it.text || "", done: it.done === true, note: it.note || "", source: it.source === "manual" ? "manual" : "auto" };
+        }),
+        digest: (t.digest || []).slice()
+      };
+    });
+    eventDetailIdx = null;
+    if (targetId){
+      for (var i = 0; i < eventEditRows.length; i++){ if (eventEditRows[i].id === targetId){ eventDetailIdx = i; break; } }
+    }
+    renderEventModal();
+    modal.hidden = false;
+  }
+  function closeEventModal(){ var m = document.getElementById("event-modal"); if (m) m.hidden = true; }
+  function eventNewRow(){
+    return { id: uid(), name: "", kind: "oneoff", period: "", dueDate: "", status: "計画中", autoIngest: true, confidential: false,
+      match: { keywords: [], gmailQuery: "", senders: [], slackChannels: [] }, items: [], digest: [] };
+  }
+  function eventHint(r){
+    var n = (r.items || []).length;
+    var d = (r.items || []).filter(function(it){ return it.done; }).length;
+    return (r.status || "計画中") + " ・ " + d + "/" + n + " 完了" + (r.autoIngest === false ? " ・ 自動オフ" : "") + (r.confidential ? " ・ 🔒機密" : "");
+  }
+  function renderEventModal(){
+    var listView = document.getElementById("event-list-view");
+    var detailView = document.getElementById("event-detail-view");
+    var title = document.getElementById("event-modal-title");
+    var inDetail = eventDetailIdx != null && !!eventEditRows[eventDetailIdx];
+    if (!inDetail) eventDetailIdx = null;
+    if (listView) listView.hidden = inDetail;
+    if (detailView) detailView.hidden = !inDetail;
+    if (title) title.textContent = inDetail ? "トラッカーの設定" : "イベント／月次トラッカーの管理";
+    if (inDetail) renderEventDetailView(eventDetailIdx);
+    else renderEventListView();
+  }
+  function renderEventListView(){
+    var wrap = document.getElementById("event-rows");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (!eventEditRows.length){
+      wrap.innerHTML = '<div class="habit-edit-empty">トラッカーがありません。「＋ 新規作成」から追加してください。</div>';
+      return;
+    }
+    var single = eventEditRows.length <= 1;
+    eventEditRows.forEach(function(r, idx){
+      var row = document.createElement("div");
+      row.className = "habit-list-row";
+      row.tabIndex = 0; row.setAttribute("role", "button");
+      var txt = document.createElement("div"); txt.className = "habit-list-txt";
+      var nm = document.createElement("div"); nm.className = "habit-list-name";
+      nm.textContent = (r.name || "").trim() || "（名称未設定）";
+      var hint = document.createElement("div"); hint.className = "habit-list-hint";
+      hint.textContent = eventHint(r);
+      txt.appendChild(nm); txt.appendChild(hint);
+      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
+        e.stopPropagation();
+        if (idx > 0){ var t = eventEditRows[idx - 1]; eventEditRows[idx - 1] = r; eventEditRows[idx] = t; renderEventListView(); }
+      });
+      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
+        e.stopPropagation();
+        if (idx < eventEditRows.length - 1){ var t = eventEditRows[idx + 1]; eventEditRows[idx + 1] = r; eventEditRows[idx] = t; renderEventListView(); }
+      });
+      up.hidden = down.hidden = single;
+      up.disabled = idx === 0;
+      down.disabled = idx === eventEditRows.length - 1;
+      var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
+      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
+      function open(){ eventDetailIdx = idx; renderEventModal(); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      wrap.appendChild(row);
+    });
+  }
+  function renderEventDetailView(idx){
+    var body = document.getElementById("event-detail-body");
+    var r = eventEditRows[idx];
+    if (!body || !r) return;
+    body.innerHTML = "";
+
+    var name = document.createElement("input");
+    name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 120;
+    name.placeholder = "トラッカー名（例：2026年9月度_月次決算）"; name.value = r.name || "";
+    name.addEventListener("input", function(){ r.name = name.value; });
+    body.appendChild(name);
+
+    var lineKind = document.createElement("div");
+    lineKind.className = "habit-block-line";
+    var kind = document.createElement("select");
+    kind.className = "habit-edit-cadence case-edit-status";
+    kind.innerHTML = EVENT_KINDS.map(function(e){ return '<option value="' + e.v + '">' + e.label + "</option>"; }).join("");
+    kind.value = r.kind;
+    var period = document.createElement("input");
+    period.type = "text"; period.className = "case-edit-due"; period.maxLength = 7;
+    period.placeholder = "YYYY-MM"; period.value = r.period || "";
+    period.setAttribute("aria-label", "対象月（周期のみ）");
+    period.addEventListener("input", function(){ r.period = period.value; });
+    function syncKind(){ period.hidden = r.kind !== "recurring"; }
+    kind.addEventListener("change", function(){ r.kind = kind.value; syncKind(); });
+    syncKind();
+    lineKind.appendChild(kind); lineKind.appendChild(period);
+    body.appendChild(lineKind);
+
+    var lineStatus = document.createElement("div");
+    lineStatus.className = "habit-block-line";
+    var status = document.createElement("select");
+    status.className = "habit-edit-cadence case-edit-status";
+    status.innerHTML = EVENT_STATUSES.map(function(s){ return '<option value="' + s + '">' + s + "</option>"; }).join("");
+    status.value = r.status;
+    status.addEventListener("change", function(){ r.status = status.value; });
+    var due = document.createElement("input");
+    due.type = "date"; due.className = "case-edit-due";
+    due.value = r.dueDate || "";
+    due.setAttribute("aria-label", "期限（任意）");
+    due.addEventListener("input", function(){ r.dueDate = due.value; });
+    lineStatus.appendChild(status); lineStatus.appendChild(due);
+    body.appendChild(lineStatus);
+
+    // --- items ---
+    var itemsHead = document.createElement("div");
+    itemsHead.className = "pv-event-field-label";
+    itemsHead.textContent = "チェックリスト";
+    body.appendChild(itemsHead);
+    var itemsWrap = document.createElement("div");
+    itemsWrap.className = "pv-event-items";
+    body.appendChild(itemsWrap);
+    function renderItems(){
+      itemsWrap.innerHTML = "";
+      r.items.forEach(function(it, i){
+        var line = document.createElement("div");
+        line.className = "pv-event-item-line";
+        var cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = it.done === true;
+        cb.setAttribute("aria-label", "完了");
+        cb.addEventListener("change", function(){ it.done = cb.checked; it.source = "manual"; });
+        var tx = document.createElement("input");
+        tx.type = "text"; tx.className = "plan-tpl-text"; tx.maxLength = 200;
+        tx.placeholder = "やること"; tx.value = it.text || "";
+        tx.addEventListener("input", function(){ it.text = tx.value; it.source = "manual"; });
+        var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
+        line.appendChild(cb); line.appendChild(tx); line.appendChild(del);
+        var note = document.createElement("input");
+        note.type = "text"; note.className = "pv-event-item-note"; note.maxLength = 400;
+        note.placeholder = "メモ（任意）"; note.value = it.note || "";
+        note.addEventListener("input", function(){ it.note = note.value; it.source = "manual"; });
+        itemsWrap.appendChild(line);
+        itemsWrap.appendChild(note);
+      });
+      var add = document.createElement("button");
+      add.type = "button"; add.className = "ev-btn plan-tpl-additem";
+      add.textContent = "＋ 項目を追加";
+      add.addEventListener("click", function(){ r.items.push({ id: uid(), text: "", done: false, note: "", source: "auto" }); renderItems(); });
+      itemsWrap.appendChild(add);
+    }
+    renderItems();
+
+    // --- match ---
+    var matchHead = document.createElement("div");
+    matchHead.className = "pv-event-field-label";
+    matchHead.textContent = "自動反映の照合条件（メール／Slack）";
+    body.appendChild(matchHead);
+    [
+      { key: "keywords", label: "キーワード（カンマ区切り）", arr: true },
+      { key: "slackChannels", label: "Slackチャンネル（カンマ区切り、# なし）", arr: true },
+      { key: "senders", label: "差出人（カンマ区切り）", arr: true },
+      { key: "gmailQuery", label: "Gmail 検索クエリ（任意・上級）", arr: false }
+    ].forEach(function(f){
+      var line = document.createElement("div");
+      line.className = "habit-block-line";
+      var lbl = document.createElement("span");
+      lbl.className = "pv-contract-field-label";
+      lbl.textContent = f.label;
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.className = "plan-tpl-text"; inp.maxLength = 300;
+      inp.value = f.arr ? (r.match[f.key] || []).join(", ") : (r.match[f.key] || "");
+      inp.addEventListener("input", function(){
+        r.match[f.key] = f.arr
+          ? inp.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean)
+          : inp.value;
+      });
+      line.appendChild(lbl); line.appendChild(inp);
+      body.appendChild(line);
+    });
+
+    var lineFlags = document.createElement("div");
+    lineFlags.className = "habit-block-line";
+    var auto = document.createElement("label");
+    auto.className = "habit-pause";
+    var acb = document.createElement("input");
+    acb.type = "checkbox"; acb.checked = r.autoIngest !== false;
+    acb.addEventListener("change", function(){ r.autoIngest = acb.checked; });
+    auto.appendChild(acb);
+    auto.appendChild(document.createTextNode(" 自動反映を有効にする（event-digest の対象）"));
+    lineFlags.appendChild(auto);
+    body.appendChild(lineFlags);
+
+    var lineConf = document.createElement("div");
+    lineConf.className = "habit-block-line";
+    var conf = document.createElement("label");
+    conf.className = "habit-pause";
+    var ccb = document.createElement("input");
+    ccb.type = "checkbox"; ccb.checked = r.confidential === true;
+    ccb.addEventListener("change", function(){ r.confidential = ccb.checked; });
+    conf.appendChild(ccb);
+    conf.appendChild(document.createTextNode(" 機密（🔒表示・エージェント経由では非展開）"));
+    lineConf.appendChild(conf);
+    body.appendChild(lineConf);
+
+    if (r.digest && r.digest.length){
+      var dgHead = document.createElement("div");
+      dgHead.className = "pv-event-field-label";
+      dgHead.textContent = "自動反映メモ（最新）";
+      body.appendChild(dgHead);
+      var dgList = document.createElement("ul");
+      dgList.className = "pv-event-digest-list";
+      r.digest.forEach(function(d){
+        var li = document.createElement("li");
+        li.textContent = d;
+        dgList.appendChild(li);
+      });
+      body.appendChild(dgList);
+    }
+  }
+
+  async function onEventModalSubmit(e){
+    e.preventDefault();
+    var errEl = document.getElementById("event-form-error");
+    var saveBtn = document.getElementById("event-save");
+    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
+    function failAt(i, msg){ eventDetailIdx = i; renderEventModal(); showErr(msg); }
+    if (!eventTrackersLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
+    var cleaned = [];
+    for (var i = 0; i < eventEditRows.length; i++){
+      var r = eventEditRows[i];
+      var nm = (r.name || "").trim();
+      if (!nm){ failAt(i, "トラッカー名を入力してください。"); return; }
+      var kind = r.kind === "recurring" ? "recurring" : "oneoff";
+      var items = (r.items || []).map(function(it){
+        return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200), done: it.done === true,
+          note: String(it.note || "").trim().slice(0, 400), source: it.source === "manual" ? "manual" : "auto" };
+      }).filter(function(it){ return it.text; });
+      cleaned.push({
+        id: r.id, name: nm.slice(0, 120), kind: kind,
+        period: kind === "recurring" ? String(r.period || "").trim().slice(0, 7) : "",
+        dueDate: r.dueDate || "",
+        status: EVENT_STATUSES.indexOf(r.status) !== -1 ? r.status : "計画中",
+        autoIngest: r.autoIngest !== false, confidential: r.confidential === true,
+        match: {
+          keywords: (r.match.keywords || []).slice(0, 30),
+          gmailQuery: String(r.match.gmailQuery || "").trim().slice(0, 200),
+          senders: (r.match.senders || []).slice(0, 20),
+          slackChannels: (r.match.slackChannels || []).slice(0, 20)
+        },
+        items: items, digest: (r.digest || []).slice(0, 3)
+      });
+    }
+    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/event-trackers/bulk", {
+        method: "PUT",
+        headers: { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ eventTrackers: cleaned })
+      });
+      closeEventModal();
+      loadEventTrackers();
+    } catch (err){
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "イベントトラッカー"); errEl.hidden = false; }
+    } finally {
+      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    }
+  }
+
+  function wireEventTrackers(){
+    if (eventTrackersWired) return;
+    eventTrackersWired = true;
+    var manageBtn = document.getElementById("pv-events-manage");
+    if (manageBtn) manageBtn.addEventListener("click", function(){ openEventModal(); });
+    var modal = document.getElementById("event-modal");
+    var closeBtn = document.getElementById("event-modal-close");
+    var cancelBtn = document.getElementById("event-cancel");
+    var newBtn = document.getElementById("event-new");
+    var backBtn = document.getElementById("event-detail-back");
+    var delBtn = document.getElementById("event-detail-del");
+    var form = document.getElementById("event-form");
+    if (closeBtn) closeBtn.addEventListener("click", closeEventModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeEventModal);
+    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeEventModal(); });
+    if (newBtn) newBtn.addEventListener("click", function(){
+      eventEditRows.push(eventNewRow());
+      eventDetailIdx = eventEditRows.length - 1;
+      renderEventModal();
+    });
+    if (backBtn) backBtn.addEventListener("click", function(){ eventDetailIdx = null; renderEventModal(); });
+    if (delBtn) delBtn.addEventListener("click", async function(){
+      if (eventDetailIdx == null) return;
+      var r = eventEditRows[eventDetailIdx];
+      if (r && (r.name || "").trim() && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
+      eventEditRows.splice(eventDetailIdx, 1);
+      eventDetailIdx = null;
+      renderEventModal();
+    });
+    if (form) form.addEventListener("submit", onEventModalSubmit);
+  }
+
   /* ================= ビジネス: Slackダイジェスト(フェーズB) =================
      読み取り専用。Claudeの定期実行タスクが /api/slack-digest へ書き込み、
      このカードはその最新10件を表示するだけ(手動の作成/編集/削除はない)。 */
@@ -2891,16 +3346,19 @@
   async function loadBusinessBootstrap(){
     caseSetStatus("読み込み中…");
     contractSetStatus("読み込み中…");
+    eventSetStatus("読み込み中…");
     slackDigestSetStatus("読み込み中…");
     try {
       var res = await apiFetch("/api/bootstrap/business");
       applyCases(res.cases);
       applyContracts(res.contracts);
+      applyEventTrackers(res.eventTrackers);
       renderSlackDigest(res.digests || []);
       slackDigestSetStatus("");
     } catch (err){
       failCases(err);
       failContracts(err);
+      failEventTrackers(err);
       var sl = document.getElementById("pv-slack-list");
       if (sl) sl.innerHTML = "";
       slackDigestSetStatus(apiErrorMessage(err, "Slackダイジェスト"), true);
@@ -2917,6 +3375,7 @@
     }
     wireCases();
     wireContracts();
+    wireEventTrackers();
     loadBusinessBootstrap();
     var noteNewBtn = document.getElementById("biz-note-new");
     if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote("syslea"); });
