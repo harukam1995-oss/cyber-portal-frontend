@@ -2281,7 +2281,9 @@
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
     }
-    filtered.forEach(function(c){
+    // カードは2件まで。残りは「…ほか N件」で示し、全件は「管理」モーダルで見る。
+    var CONTRACTS_CARD_MAX = 2;
+    filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){
       var alerts = contractAlertLabels(c);
       var pending = c.status !== "締結済み" && c.status !== "報告済み";
       var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
@@ -2363,6 +2365,14 @@
 
       list.appendChild(row);
     });
+    if (filtered.length > CONTRACTS_CARD_MAX){
+      var more = document.createElement("button");
+      more.type = "button";
+      more.className = "pv-list-more";
+      more.textContent = "…ほか " + (filtered.length - CONTRACTS_CARD_MAX) + " 件（「管理」で全件）";
+      more.addEventListener("click", function(){ openContractModal(); });
+      list.appendChild(more);
+    }
   }
 
   /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
@@ -3476,7 +3486,8 @@
       list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクの設定後、9/13/16/18時に届きます。</div>';
       return;
     }
-    digests.forEach(function(d){
+    var SLACK_CARD_MAX = 3; // カードは最新3件まで
+    digests.slice(0, SLACK_CARD_MAX).forEach(function(d){
       var item = document.createElement("div");
       item.className = "pv-slack-item";
 
@@ -3520,6 +3531,12 @@
 
       list.appendChild(item);
     });
+    if (digests.length > SLACK_CARD_MAX){
+      var more = document.createElement("div");
+      more.className = "pv-list-more is-static";
+      more.textContent = "…ほか " + (digests.length - SLACK_CARD_MAX) + " 件";
+      list.appendChild(more);
+    }
   }
 
   // ビジネスタブ初期化: プロジェクトボード(event_trackers) / contracts / slack_digest を1回で取得。
@@ -3561,6 +3578,14 @@
       initNotes();
     } else {
       renderBizNotes();
+    }
+    var taskNewBtn = document.getElementById("biz-task-new");
+    if (taskNewBtn) taskNewBtn.addEventListener("click", function(){ openNewTask("syslea"); });
+    if (!tasksInitialized){
+      tasksInitialized = true;
+      initTasks();
+    } else {
+      renderBizTasks();
     }
   }
 
@@ -6178,6 +6203,7 @@
   }
 
   function renderTasks(){
+    renderBizTasks(); // ビジネス画面の「最近のタスク」ミニリストも同時に更新
     taskList.innerHTML = "";
     var items = tasksState.filter(function(t){ return taskFilterTag === "all" || t.tag === taskFilterTag; });
     if (items.length === 0){
@@ -6223,7 +6249,7 @@
       btn.classList.toggle("active", taskFormRepeatDays.indexOf(Number(btn.getAttribute("data-day"))) !== -1);
     });
   }
-  function openNewTask(){
+  function openNewTask(defaultTag){
     editingTaskId = null;
     taskModalTitle.textContent = "新規タスク";
     taskTitleInput.value = "";
@@ -6234,8 +6260,8 @@
     updateRepeatDetailVisibility();
     taskUrlInput.value = "";
     taskRemarksInput.value = "";
-    taskFormTag = "haruka";
-    setActiveTab("task-tag-tabs", "haruka");
+    taskFormTag = defaultTag === "syslea" ? "syslea" : "haruka";
+    setActiveTab("task-tag-tabs", taskFormTag);
     taskFormError.hidden = true;
     taskDeleteBtn.hidden = true;
     taskModal.hidden = false;
@@ -6409,6 +6435,34 @@
       var ti = document.createElement("span"); ti.className = "pv-up-title"; ti.textContent = note.title || "(無題)";
       li.appendChild(dot); li.appendChild(dt); li.appendChild(ti);
       li.addEventListener("click", function(){ openEditNote(note); });
+      list.appendChild(li);
+    });
+  }
+
+  // ビジネス画面の「最近のタスク」ミニリスト(SYSLEA タグ・未完了、期限が近い順に最新5件)。
+  // tasksState を直接見るので、タスクページ側のフィルタとは独立に常に同期する。
+  function renderBizTasks(){
+    var list = document.getElementById("biz-task-list");
+    if (!list) return;
+    var items = tasksState
+      .filter(function(t){ return t.tag === "syslea" && !t.done; })
+      .slice()
+      .sort(function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); })
+      .slice(0, 5);
+    if (!items.length){
+      list.innerHTML = '<li class="sched-empty">SYSLEA の未完了タスクはありません。</li>';
+      return;
+    }
+    list.innerHTML = "";
+    items.forEach(function(task){
+      var li = document.createElement("li");
+      li.className = "pv-up-item";
+      var dot = document.createElement("span"); dot.className = "pv-up-dot";
+      var dt = document.createElement("span"); dt.className = "pv-up-date";
+      dt.textContent = task.due ? mdLabel(task.due) : "期限なし";
+      var ti = document.createElement("span"); ti.className = "pv-up-title"; ti.textContent = task.text || "(無題)";
+      li.appendChild(dot); li.appendChild(dt); li.appendChild(ti);
+      li.addEventListener("click", function(){ openEditTask(task); });
       list.appendChild(li);
     });
   }
