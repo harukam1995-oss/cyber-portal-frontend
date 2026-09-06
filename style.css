@@ -1131,6 +1131,8 @@
   }
   .pv-habit-dowhead span{ text-align:center; font-size:12px; font-weight:600; letter-spacing:.5px; color: var(--text-dim); }
   .pv-habit-list{ display:flex; flex-direction:column; gap:12px; max-height:176px; overflow-y:auto; }
+  /* 週切り替え中は既存行を残したまま薄く見せるだけ(高さを変えない) */
+  .pv-habit-list.is-loading, .pv-plan-list.is-loading{ opacity:.45; transition: opacity .12s ease; }
   .pv-habit-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
   .pv-habit-row{ display:flex; flex-direction:column; gap:5px; }
   .pv-habit-name{
@@ -1259,8 +1261,27 @@
     border-radius:5px; padding:3px 9px; cursor:pointer;
   }
   .pv-plan-tpl-btn:hover{ border-color: var(--cyan); }
-  .pv-plan-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .pv-plan-date{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; letter-spacing:.5px; }
+  .pv-plan-head{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .pv-plan-date{
+    font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint);
+    flex:none; letter-spacing:.5px; min-width:92px; text-align:center;
+  }
+  .pv-plan-date.is-other{ color: var(--warn); }
+  .pv-plan-nav-btn{
+    flex:none; width:22px; height:22px; border-radius:5px; border:1px solid var(--panel-border);
+    background: rgba(255,255,255,0.02); color: var(--text-dim); cursor:pointer; line-height:1;
+    font-size:14px; display:flex; align-items:center; justify-content:center;
+  }
+  .pv-plan-nav-btn:hover{ border-color: var(--cyan); color: var(--text); }
+  .pv-plan-nav-btn:disabled{ opacity:.3; cursor:default; }
+  .pv-plan-nav-btn:disabled:hover{ border-color: var(--panel-border); color: var(--text-dim); }
+  .pv-plan-today{
+    flex:none; font-family: var(--font-body); font-size:10.5px; letter-spacing:.3px;
+    color: var(--cyan); background: rgba(44,227,255,0.06);
+    border:1px solid var(--panel-border); border-radius:5px; padding:2px 8px; cursor:pointer;
+  }
+  .pv-plan-today:hover{ border-color: var(--cyan); }
+  .pv-plan-today[hidden]{ display:none; }
   .pv-plan-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
   .pv-plan-bar span{ display:block; height:100%; border-radius:3px; background: linear-gradient(90deg, var(--violet), var(--cyan)); box-shadow: 0 0 6px rgba(139,92,246,0.5); transition: width .2s ease; }
   .pv-plan-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }

@@ -1187,7 +1187,10 @@
   async function loadHabits(){
     var list = document.getElementById("pv-habit-list");
     if (!list) return;
-    setHabitStatus("読み込み中…");
+    // 週を切り替えるたびに「読み込み中…」テキストを出すとカード高が伸縮し、
+    // 右列(ひいてはページ全体)の高さがガタつく。既存の行は残したまま薄く
+    // ディム表示するだけにして、レイアウトを動かさない。
+    list.classList.add("is-loading");
     try {
       var res = await apiFetch("/api/habits?week=" + encodeURIComponent(habitWeekKey));
       habitsState = (res.habits || []).slice();
@@ -1200,6 +1203,8 @@
       habitsState = []; habitLog = {};
       renderHabits();
       setHabitStatus(apiErrorMessage(err, "習慣トラッカー"), true);
+    } finally {
+      list.classList.remove("is-loading");
     }
   }
 
@@ -1726,7 +1731,9 @@
   async function loadPlan(){
     var list = document.getElementById("pv-plan-list");
     if (!list) return;
-    planSetStatus("読み込み中…");
+    // 習慣トラッカーと同じ理由でローディングテキストは出さない(日付を送るたびに
+    // カード高が伸縮するのを防ぐ)。既存行を残して薄くディムするだけにする。
+    list.classList.add("is-loading");
     try {
       var res = await apiFetch("/api/plan?date=" + encodeURIComponent(planDateKey));
       planItems = (res.items || []).slice();
@@ -1738,6 +1745,8 @@
       planItems = []; planTemplates = [];
       renderPlan();
       planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true);
+    } finally {
+      list.classList.remove("is-loading");
     }
   }
 
@@ -1746,6 +1755,16 @@
     if (!list) return;
     var dateEl = document.getElementById("pv-plan-date");
     if (dateEl) dateEl.textContent = planDateLabel(planDateKey);
+
+    // 日付ナビの状態。今日以外を見ているときは「今日へ」を出し、日付を強調。
+    // 未来には進めない(過去の記録を見返す用途なので next は今日で頭打ち)。
+    var todayKey = jstDateKey(new Date());
+    var isToday = planDateKey === todayKey;
+    if (dateEl) dateEl.classList.toggle("is-other", !isToday);
+    var todayBtn = document.getElementById("pv-plan-today");
+    if (todayBtn) todayBtn.hidden = isToday;
+    var nextBtn = document.getElementById("pv-plan-next");
+    if (nextBtn) nextBtn.disabled = planDateKey >= todayKey;
 
     planItems = sortPlanItems(planItems);
     var total = planItems.length;
@@ -2105,6 +2124,21 @@
     if (planWired) return;
     planWired = true;
     wirePlanAdd();
+
+    // 日付ナビ(前日 / 翌日 / 今日へ)。過去の TODAY'S PLAN を見返せるようにする。
+    var prevDay = document.getElementById("pv-plan-prev");
+    var nextDay = document.getElementById("pv-plan-next");
+    var todayDay = document.getElementById("pv-plan-today");
+    if (prevDay) prevDay.addEventListener("click", function(){
+      planDateKey = addDaysKey(planDateKey, -1); loadPlan();
+    });
+    if (nextDay) nextDay.addEventListener("click", function(){
+      if (planDateKey >= jstDateKey(new Date())) return;
+      planDateKey = addDaysKey(planDateKey, 1); loadPlan();
+    });
+    if (todayDay) todayDay.addEventListener("click", function(){
+      planDateKey = jstDateKey(new Date()); loadPlan();
+    });
 
     var tplBtn = document.getElementById("pv-plan-templates");
     if (tplBtn) tplBtn.addEventListener("click", openPlanModal);
