@@ -1562,16 +1562,19 @@
     border:1px solid var(--panel-border); border-radius:8px; background: rgba(255,255,255,0.02);
   }
   .subs-row-line{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-  .subs-in{
+  /* .event-form input[...] の width:100% を上書きするため個別幅は !important
+     (このファイルの .plan-tpl-time 等と同じ対応) */
+  .subs-row .subs-in{
     background: rgba(255,255,255,0.05); border:1px solid var(--panel-border); border-radius:6px;
-    color: var(--text); font: inherit; font-size:12px; padding:6px 8px;
+    color: var(--text); font-size:12px !important; padding:6px 8px !important;
   }
-  .subs-in:focus{ outline:none; border-color: var(--cyan); }
-  .subs-in-name{ flex:1; min-width:120px; }
-  .subs-in-amt{ width:92px; }
-  .subs-in-cyc{ width:72px; color-scheme: dark; }
-  .subs-in-cyc option{ background: var(--panel-solid); color: var(--text); }
-  .subs-in-mo, .subs-in-dy{ width:56px; }
+  .subs-row .subs-in:focus{ outline:none; border-color: var(--cyan); box-shadow:none; }
+  .subs-row .subs-in-name{ flex:1 1 120px !important; width:auto !important; min-width:100px; }
+  .subs-row .subs-in-amt{ flex:none !important; width:96px !important; }
+  .subs-row .subs-in-cyc{ flex:none !important; width:76px !important; }
+  .subs-row .subs-in-cyc option{ background: var(--panel-solid); color: var(--text); }
+  .subs-row .subs-in-mo,
+  .subs-row .subs-in-dy{ flex:none !important; width:52px !important; }
   .subs-row-active{ display:flex; align-items:center; gap:4px; font-size:11px; color: var(--text-dim); margin-left:auto; }
   .subs-row-del{
     flex:none; width:26px; height:26px; border:1px solid var(--panel-border); border-radius:6px;
