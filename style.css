@@ -368,6 +368,41 @@
   .placeholder-tag{ font-size:9.5px; letter-spacing:1px; color: var(--text-faint); border:1px solid var(--hairline); border-radius:4px; padding:1px 5px; margin-left:6px; vertical-align: 1px; }
 
   /* ---------- mail page ---------- */
+  .mail-body{ display:flex; align-items:flex-start; gap:0; padding:0; }
+  .mail-sidebar{
+    width:172px; flex:none; align-self:stretch; box-sizing:border-box;
+    border-right:1px solid var(--panel-border); padding:10px 4px 12px 12px;
+    position:sticky; top:8px; max-height:78vh; overflow-y:auto;
+  }
+  .mail-sidebar-head{ font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); padding:2px 6px 8px; }
+  .mail-label-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px; }
+  .mail-label-loading{ font-size:11px; color: var(--text-faint); padding:8px 6px; }
+  .mail-label-item{
+    display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:6px; cursor:pointer;
+    font-size:12px; color: var(--text-dim); transition: background .12s, color .12s;
+  }
+  .mail-label-item:hover{ background: rgba(255,255,255,0.04); color: var(--text); }
+  .mail-label-item.is-active{ background: rgba(44,227,255,0.12); color: var(--cyan); }
+  .mail-label-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mail-label-badge{
+    flex:none; font-family: var(--font-mono); font-size:10px; color: var(--text-faint);
+    background: rgba(255,255,255,0.07); border-radius:9px; padding:1px 6px;
+  }
+  .mail-label-item.is-active .mail-label-badge{ color: var(--cyan); background: rgba(44,227,255,0.18); }
+  .mail-body-main{ flex:1 1 auto; min-width:0; padding:8px 8px 14px; }
+  @media (max-width: 760px){
+    .mail-body{ flex-direction:column; }
+    .mail-sidebar{
+      width:auto; align-self:auto; position:static; max-height:none;
+      border-right:none; border-bottom:1px solid var(--panel-border); padding:8px 10px;
+    }
+    .mail-sidebar-head{ display:none; }
+    .mail-label-list{ flex-direction:row; flex-wrap:wrap; gap:4px; }
+    .mail-label-item{ padding:5px 9px; }
+    .mail-label-name{ overflow:visible; }
+    .mail-body-main{ padding:10px 6px 14px; }
+  }
+
   .mail-list{ list-style:none; margin:0; padding:4px 4px 8px; display:flex; flex-direction:column; }
   .mail-item{
     display:flex; align-items:flex-start; gap:14px; padding:14px 10px; border-radius:10px; cursor:pointer;

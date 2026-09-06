@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.23.0</span>
+      <span>v2.24.0</span>
     </div>
   </footer>
 </div>
@@ -687,12 +687,18 @@
 
   <section class="panel cal-status-bar" id="mail-status-bar">接続確認中…</section>
 
-  <section class="panel cal-body-panel">
-    <ul class="mail-list" id="mail-list"></ul>
-    <div class="mail-pager" id="mail-pager" hidden>
-      <button class="cal-nav-btn" id="mail-prev" type="button">← 前へ</button>
-      <span class="mail-pager-info" id="mail-pager-info"></span>
-      <button class="cal-nav-btn" id="mail-next" type="button">次へ →</button>
+  <section class="panel cal-body-panel mail-body">
+    <aside class="mail-sidebar" id="mail-sidebar">
+      <div class="mail-sidebar-head">ラベル</div>
+      <ul class="mail-label-list" id="mail-label-list"><li class="mail-label-loading">読み込み中…</li></ul>
+    </aside>
+    <div class="mail-body-main">
+      <ul class="mail-list" id="mail-list"></ul>
+      <div class="mail-pager" id="mail-pager" hidden>
+        <button class="cal-nav-btn" id="mail-prev" type="button">← 前へ</button>
+        <span class="mail-pager-info" id="mail-pager-info"></span>
+        <button class="cal-nav-btn" id="mail-next" type="button">次へ →</button>
+      </div>
     </div>
   </section>
 </div>

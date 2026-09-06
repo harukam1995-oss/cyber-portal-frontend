@@ -785,6 +785,7 @@
     if (name === "mail" && !mailInitialized){
       mailInitialized = true;
       loadHarukaMail();
+      loadMailLabels();
     }
     if (name === "tasks" && !tasksInitialized){
       tasksInitialized = true;
@@ -4042,9 +4043,12 @@
      一覧の日時・件名はスレッド内の最も古いメッセージ基準(Gmail連携ツールの仕様上の制約)。
      返信で伸びたスレッドは表示上わずかに古い時刻になることがあるが、詳細を開くと
      get_thread でスレッド全体を取得するのでそちらは正確。 */
-  var mailState = { account: "haruka", filter: "all", pageIndex: 0, query: "" };
+  var mailState = { account: "haruka", filter: "all", pageIndex: 0, query: "", labelId: "INBOX", labelName: "受信トレイ" };
   var MAIL_PAGE_SIZE = 20;
+  var mailLabels = null;          // 現在アカウントのラベル一覧(null = 未取得)
+  var mailLabelsLoading = false;
   var mailList = document.getElementById("mail-list");
+  var mailLabelListEl = document.getElementById("mail-label-list");
   var mailPager = document.getElementById("mail-pager");
   var mailPagerInfo = document.getElementById("mail-pager-info");
   var mailPrevBtn = document.getElementById("mail-prev");
@@ -4230,6 +4234,7 @@
     var tok = mailPageTokens[mailState.pageIndex];
     if (tok) params += "&pageToken=" + encodeURIComponent(tok);
     if (mailState.filter === "unread") params += "&unreadOnly=1";
+    if (mailState.labelId && mailState.labelId !== "INBOX") params += "&labelId=" + encodeURIComponent(mailState.labelId);
     if (mailState.query) params += "&q=" + encodeURIComponent(mailState.query);
     apiFetch(acctPath("/api/google/gmail/messages" + params, mailState.account)).then(function(res){
       var messages = res.messages || [];
@@ -4272,6 +4277,62 @@
     reloadMailFromFirstPage();
   }
 
+  /* ---- ラベルサイドバー(受信トレイ以外も見られるように) ---- */
+  function renderMailLabels(){
+    if (!mailLabelListEl) return;
+    mailLabelListEl.innerHTML = "";
+    if (mailLabelsLoading && !mailLabels){
+      mailLabelListEl.innerHTML = '<li class="mail-label-loading">読み込み中…</li>';
+      return;
+    }
+    if (!mailLabels || !mailLabels.length){
+      // 取得失敗時も最低限「受信トレイ」だけは選べるように
+      mailLabels = [{ id: "INBOX", name: "受信トレイ", unread: 0 }];
+    }
+    mailLabels.forEach(function(lb){
+      var li = document.createElement("li");
+      li.className = "mail-label-item" + (lb.id === mailState.labelId ? " is-active" : "");
+      li.tabIndex = 0; li.setAttribute("role", "button");
+      var nm = document.createElement("span");
+      nm.className = "mail-label-name";
+      nm.textContent = lb.name;
+      li.appendChild(nm);
+      if (lb.unread){
+        var bd = document.createElement("span");
+        bd.className = "mail-label-badge";
+        bd.textContent = lb.unread > 999 ? "999+" : lb.unread;
+        li.appendChild(bd);
+      }
+      function pick(){
+        if (lb.id === mailState.labelId) return;
+        mailState.labelId = lb.id;
+        mailState.labelName = lb.name;
+        renderMailLabels();
+        reloadMailFromFirstPage();
+      }
+      li.addEventListener("click", pick);
+      li.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); pick(); } });
+      mailLabelListEl.appendChild(li);
+    });
+  }
+  function loadMailLabels(){
+    if (!mailLabelListEl || mailLabelsLoading) return;
+    mailLabelsLoading = true;
+    renderMailLabels();
+    apiFetch(acctPath("/api/google/gmail/labels", mailState.account)).then(function(res){
+      mailLabels = res.labels || [];
+      // 選択中ラベルがこのアカウントに無ければ受信トレイへ戻す
+      if (!mailLabels.some(function(l){ return l.id === mailState.labelId; })){
+        mailState.labelId = "INBOX"; mailState.labelName = "受信トレイ";
+      }
+    }).catch(function(){
+      mailLabels = null; // renderMailLabels がフォールバックで INBOX のみ出す
+    }).then(function(){
+      mailLabelsLoading = false;
+      renderMailLabels();
+    });
+  }
+
   function setMailStatus(html, cls){
     mailStatusBar.innerHTML = html;
     mailStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
@@ -4292,7 +4353,8 @@
     } else if (!harukaMailItems){
       setMailStatus("接続確認中…", "");
     } else {
-      setMailStatus('<span class="live">●</span> Gmail 連携中(' + escapeHtml(label) + ')', "");
+      var lbl = mailState.labelId === "INBOX" ? "" : " / " + escapeHtml(mailState.labelName || "");
+      setMailStatus('<span class="live">●</span> Gmail 連携中(' + escapeHtml(label) + ')' + lbl, "");
     }
   }
 
@@ -4373,9 +4435,10 @@
       return;
     }
     if (!harukaMailItems.length){
+      var where = mailState.labelId === "INBOX" ? "" : "「" + (mailState.labelName || "このラベル") + "」に";
       var emptyMsg = mailState.query
         ? "「" + mailState.query + "」に一致するメールはありません"
-        : (mailState.filter === "unread" ? "未読メールはありません" : "メールはありません");
+        : (mailState.filter === "unread" ? where + "未読メールはありません" : where + "メールはありません");
       mailList.innerHTML = '<li class="sched-empty">' + escapeHtml(emptyMsg) + '</li>';
       updateMailPager();
       return;
@@ -4490,11 +4553,15 @@
     mailState.account = acct;
     mailState.filter = "all";
     mailState.query = "";
+    mailState.labelId = "INBOX";
+    mailState.labelName = "受信トレイ";
+    mailLabels = null;
     if (mailSearchInput) mailSearchInput.value = "";
     document.querySelectorAll("#mail-filter-tabs .acct-tab").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-filter") === "all");
     });
     reloadMailFromFirstPage();
+    loadMailLabels();
   });
 
   // すべて / 未読 タブ。はるか側はサーバーで絞り込むため1ページ目から取り直す。
