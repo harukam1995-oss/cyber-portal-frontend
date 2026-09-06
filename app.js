@@ -3451,6 +3451,23 @@
      このカードはその最新10件を表示するだけ(手動の作成/編集/削除はない)。 */
   var slackDigestSetStatus = makeStatusSetter("pv-slack-status");
 
+  // ダイジェスト本文から一覧用の見出し1行を作る。
+  // 「■Claudeからの一言」直下の実文を優先。無ければ含まれるセクション名を並べる。
+  function digestHeadline(summary){
+    var lines = String(summary || "").split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean);
+    for (var i = 0; i < lines.length; i++){
+      if (lines[i].indexOf("■Claudeからの一言") === 0){
+        if (lines[i + 1] && lines[i + 1].charAt(0) !== "■") return lines[i + 1];
+        break;
+      }
+    }
+    var heads = lines
+      .filter(function(l){ return l.charAt(0) === "■" && l.indexOf("Claudeからの一言") === -1; })
+      .map(function(l){ return l.replace(/^■/, "").replace(/の動き$/, ""); });
+    if (heads.length) return heads.join("・");
+    return lines[0] || "ダイジェスト";
+  }
+
   function renderSlackDigest(digests){
     var list = document.getElementById("pv-slack-list");
     if (!list) return;
@@ -3462,23 +3479,45 @@
     digests.forEach(function(d){
       var item = document.createElement("div");
       item.className = "pv-slack-item";
-      var meta = document.createElement("div");
-      meta.className = "pv-slack-meta";
+
+      // 見出し行(クリックで詳細を開閉)
+      var head = document.createElement("button");
+      head.type = "button";
+      head.className = "pv-slack-head";
+      head.setAttribute("aria-expanded", "false");
       var time = document.createElement("span");
       time.className = "pv-slack-time";
       time.textContent = d.createdAt ? fmtSavedAt(d.createdAt) : "";
-      meta.appendChild(time);
+      var headline = document.createElement("span");
+      headline.className = "pv-slack-headline";
+      headline.textContent = digestHeadline(d.summary);
+      head.appendChild(time);
+      head.appendChild(headline);
+      item.appendChild(head);
+
+      // 詳細(既定は閉じている)
+      var detail = document.createElement("div");
+      detail.className = "pv-slack-detail";
+      detail.hidden = true;
       if (d.channels && d.channels.length){
-        var chans = document.createElement("span");
+        var chans = document.createElement("div");
         chans.className = "pv-slack-channels";
         chans.textContent = d.channels.map(function(c){ return "#" + c; }).join(" ");
-        meta.appendChild(chans);
+        detail.appendChild(chans);
       }
-      item.appendChild(meta);
       var body = document.createElement("div");
       body.className = "pv-slack-summary";
       body.textContent = d.summary || "";
-      item.appendChild(body);
+      detail.appendChild(body);
+      item.appendChild(detail);
+
+      head.addEventListener("click", function(){
+        var open = detail.hidden;
+        detail.hidden = !open;
+        head.setAttribute("aria-expanded", open ? "true" : "false");
+        item.classList.toggle("is-open", open);
+      });
+
       list.appendChild(item);
     });
   }

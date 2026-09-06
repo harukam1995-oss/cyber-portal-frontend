@@ -1477,15 +1477,33 @@
   .pb-tpl-create{ display:block; width:100%; margin-top:14px; }
 
   /* ---------- ビジネス: Slackダイジェスト(フェーズB) ---------- */
-  .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
+  /* 一覧は見出し(時刻＋一言)のみ。クリックで詳細を開閉する。 */
+  .pv-slack-list{ display:flex; flex-direction:column; gap:8px; max-height:210px; overflow-y:auto; }
   .pv-slack-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-slack-status.is-err{ color: var(--err); }
   .pv-slack-item{
-    display:flex; flex-direction:column; gap:5px; padding:8px 10px 9px;
     border:1px solid var(--panel-border); border-left:3px solid var(--violet); border-radius:8px;
+    overflow:hidden;
   }
-  .pv-slack-meta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pv-slack-head{
+    width:100%; display:flex; align-items:center; gap:8px;
+    padding:7px 26px 7px 10px; position:relative;
+    background:transparent; border:0; text-align:left; cursor:pointer; color:inherit; font:inherit;
+  }
+  .pv-slack-head:hover{ background: rgba(255,255,255,0.03); }
+  .pv-slack-head::after{
+    content:""; position:absolute; right:10px; top:50%;
+    width:6px; height:6px; border-right:1.5px solid var(--text-faint); border-bottom:1.5px solid var(--text-faint);
+    transform:translateY(-70%) rotate(45deg); transition:transform .15s;
+  }
+  .pv-slack-item.is-open .pv-slack-head::after{ transform:translateY(-30%) rotate(225deg); }
   .pv-slack-time{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; }
+  .pv-slack-headline{
+    font-size:12px; color: var(--text-dim); min-width:0; flex:1;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pv-slack-item.is-open .pv-slack-headline{ color: var(--text); }
+  .pv-slack-detail{ padding:2px 10px 10px; display:flex; flex-direction:column; gap:6px; }
   .pv-slack-channels{ font-family: var(--font-mono); font-size:10px; color: var(--text-dim); }
   .pv-slack-summary{ font-size:12px; color: var(--text); line-height:1.6; white-space:pre-wrap; }
 
