@@ -4726,6 +4726,8 @@
   }
   async function extractPdfText(arrayBuf){
     var lib = await ensurePdfJs();
+    // doc.destroy() は共有ワーカーを巻き込んで壊し、直後の getDocument を失敗させる
+    // (連続処理で2件目以降が空になる)。破棄せず GC に任せる。
     var doc = await lib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
     var pages = [];
     var max = Math.min(doc.numPages, 8);
@@ -4734,7 +4736,6 @@
       var tc = await pg.getTextContent();
       pages.push(tc.items.map(function(i){ return i.str; }).join(""));
     }
-    try { doc.destroy(); } catch (e) {}
     return pages.join("\n");
   }
   async function mailAttachBytes(att){
