@@ -600,6 +600,26 @@
   .mail-detail .from-meta .addr{ font-size:11.5px; color: var(--text-faint); }
   .mail-detail .body{ font-size:14px; line-height:1.8; color: var(--text-dim); white-space:pre-wrap; border-top:1px solid var(--hairline); padding-top:14px; }
 
+  /* 添付ファイル */
+  .mail-attachments{ margin-top:16px; border-top:1px solid var(--hairline); padding-top:12px; }
+  .mail-attachments-head{ font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color: var(--text-faint); margin-bottom:10px; }
+  .mail-attach-item{ padding:10px 0; border-bottom:1px solid var(--hairline); }
+  .mail-attach-item:last-child{ border-bottom:none; }
+  .mail-attach-meta{ display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }
+  .mail-attach-name{ font-size:13px; color: var(--text); word-break:break-all; }
+  .mail-attach-size{ font-size:11px; color: var(--text-faint); white-space:nowrap; }
+  .mail-attach-img{ display:block; max-width:100%; border:1px solid var(--panel-border); border-radius:6px; background: var(--bg-deep); }
+  .mail-attach-btns{ display:flex; gap:8px; }
+  .mail-attach-btn{
+    font-family: var(--font-body); font-size:12px; letter-spacing:.04em;
+    padding:5px 14px; border-radius:5px; cursor:pointer;
+    background: var(--panel-solid); color: var(--text-dim);
+    border:1px solid var(--panel-border); transition:border-color .15s, color .15s;
+  }
+  .mail-attach-btn:hover:not(:disabled){ border-color: var(--cyan); color: var(--cyan); }
+  .mail-attach-btn:disabled{ opacity:.5; cursor:default; }
+  .mail-attach-err{ margin-top:6px; font-size:11.5px; color: var(--err); }
+
   /* footer bar */
   .statusbar{
     display:flex; align-items:center; justify-content:space-between;

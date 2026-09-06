@@ -4056,6 +4056,8 @@
   var mailModal = document.getElementById("mail-modal");
   var mailModalTitle = document.getElementById("mail-modal-title");
   var mailDetailBody = document.getElementById("mail-detail-body");
+  var mailObjectUrls = [];        // モーダルを閉じるときに revoke する添付の blob URL
+  var MAIL_INLINE_IMG_MAX = 12 * 1024 * 1024;  // これ以上の画像はインライン展開せずボタンのみ
   var mailActionsEl = document.getElementById("mail-actions");
   var mailActMsg = document.getElementById("mail-act-msg");
   var currentMailThread = null;
@@ -4491,6 +4493,7 @@
       try{
         var res = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId), mailState.account));
         bodyEl.textContent = res.body || mail.snippet || "(本文がありません)";
+        renderMailAttachments(res.attachments || []);
       } catch(err){
         bodyEl.textContent = apiErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
       }
@@ -4507,9 +4510,129 @@
     document.body.style.overflow = "hidden";
     renderMailList(); // refresh unread dot state
   }
+  function mailFormatBytes(n){
+    n = Number(n) || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  // 添付1件を取得して blob URL を返す。revoke はモーダルを閉じるときにまとめて行う。
+  async function mailAttachFetch(att){
+    var token = await getIdToken();
+    if (!token) throw new Error("未ログインです。");
+    var path = "/api/google/gmail/messages/" + encodeURIComponent(att.messageId) +
+      "/attachments/" + encodeURIComponent(att.attachmentId) +
+      "?name=" + encodeURIComponent(att.filename || "attachment") +
+      "&mime=" + encodeURIComponent(att.mimeType || "application/octet-stream");
+    var res = await fetch(API_BASE + acctPath(path, mailState.account), {
+      headers: { "Authorization": "Bearer " + token },
+    });
+    if (!res.ok) throw new Error("添付の取得に失敗しました (" + res.status + ")");
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    mailObjectUrls.push(url);
+    return url;
+  }
+
+  // スレッドの添付ファイル一覧を本文の下に描画する。
+  // 画像はインライン展開、それ以外は「開く / 保存」ボタンのみ。
+  function renderMailAttachments(atts){
+    if (!Array.isArray(atts) || !atts.length) return;
+    var wrap = document.createElement("div");
+    wrap.className = "mail-attachments";
+    var head = document.createElement("div");
+    head.className = "mail-attachments-head";
+    head.textContent = "添付ファイル (" + atts.length + ")";
+    wrap.appendChild(head);
+
+    atts.forEach(function(att){
+      var row = document.createElement("div");
+      row.className = "mail-attach-item";
+
+      var meta = document.createElement("div");
+      meta.className = "mail-attach-meta";
+      var nameEl = document.createElement("span");
+      nameEl.className = "mail-attach-name";
+      nameEl.textContent = att.filename || "(名称なし)";
+      var sizeEl = document.createElement("span");
+      sizeEl.className = "mail-attach-size";
+      sizeEl.textContent = mailFormatBytes(att.size);
+      meta.appendChild(nameEl);
+      meta.appendChild(sizeEl);
+      row.appendChild(meta);
+
+      var isImg = (att.mimeType || "").indexOf("image/") === 0;
+      if (isImg && (Number(att.size) || 0) <= MAIL_INLINE_IMG_MAX){
+        var img = document.createElement("img");
+        img.className = "mail-attach-img";
+        img.alt = att.filename || "";
+        img.textContent = "";
+        row.appendChild(img);
+        mailAttachFetch(att).then(function(url){
+          img.src = url;
+        }).catch(function(err){
+          var e = document.createElement("div");
+          e.className = "mail-attach-err";
+          e.textContent = (err && err.message) || "画像の読み込みに失敗しました。";
+          row.appendChild(e);
+        });
+      } else {
+        var btns = document.createElement("div");
+        btns.className = "mail-attach-btns";
+        var openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.className = "mail-attach-btn";
+        openBtn.textContent = "開く";
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "mail-attach-btn";
+        saveBtn.textContent = "保存";
+        var errEl = document.createElement("div");
+        errEl.className = "mail-attach-err";
+        errEl.hidden = true;
+
+        function withFetch(fn){
+          openBtn.disabled = true; saveBtn.disabled = true;
+          errEl.hidden = true;
+          mailAttachFetch(att).then(function(url){
+            fn(url);
+          }).catch(function(err){
+            errEl.textContent = (err && err.message) || "取得に失敗しました。";
+            errEl.hidden = false;
+          }).then(function(){
+            openBtn.disabled = false; saveBtn.disabled = false;
+          });
+        }
+        openBtn.addEventListener("click", function(){
+          withFetch(function(url){ window.open(url, "_blank", "noopener"); });
+        });
+        saveBtn.addEventListener("click", function(){
+          withFetch(function(url){
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = att.filename || "attachment";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          });
+        });
+        btns.appendChild(openBtn);
+        btns.appendChild(saveBtn);
+        row.appendChild(btns);
+        row.appendChild(errEl);
+      }
+      wrap.appendChild(row);
+    });
+
+    mailDetailBody.appendChild(wrap);
+  }
+
   function closeMailModal(){
     mailModal.hidden = true;
     document.body.style.overflow = "";
+    mailObjectUrls.forEach(function(u){ try { URL.revokeObjectURL(u); } catch(e){} });
+    mailObjectUrls = [];
     // 未読タブでメールを開くと既読になるので、現在ページを取り直して一覧から消す。
     if (mailState.filter === "unread" && !harukaMailLoading && !harukaMailError){
       fetchMailPage();
@@ -4533,6 +4656,8 @@
       // 一覧から取り除く / 未読を反映するため現在ページを取り直してからモーダルを閉じる。
       mailModal.hidden = true;
       document.body.style.overflow = "";
+      mailObjectUrls.forEach(function(u){ try { URL.revokeObjectURL(u); } catch(e){} });
+      mailObjectUrls = [];
       currentMailThread = null;
       fetchMailPage();
       loadGmailUnreadCount();
