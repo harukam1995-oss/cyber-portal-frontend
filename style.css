@@ -1172,7 +1172,7 @@
   .plan-apply-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
 
   /* ---------- ビジネス: プロジェクトボード(案件管理, v1) ---------- */
-  .pv-cases-list{ display:flex; flex-direction:column; gap:12px; max-height:420px; overflow-y:auto; }
+  .pv-cases-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
   .pv-cases-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-cases-status.is-err{ color: var(--err); }
   .pv-case-row{ display:flex; flex-direction:column; gap:5px; padding-bottom:2px; }
@@ -1224,7 +1224,9 @@
     flex:none; font-size:11px; padding:5px 6px; color-scheme: dark;
     background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
   }
-  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:300px; overflow-y:auto; }
+  /* ネイティブのドロップダウン(option リスト)が白くならないよう、周りに合わせた暗色を明示 */
+  .pv-contracts-requester option{ background: var(--panel-solid); color: var(--text); }
+  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:200px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-contracts-status.is-err{ color: var(--err); }
   .pv-contract-row{
@@ -1264,7 +1266,7 @@
   .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.10); }
 
   /* ---------- ビジネス: Slackダイジェスト(フェーズB) ---------- */
-  .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:280px; overflow-y:auto; }
+  .pv-slack-list{ display:flex; flex-direction:column; gap:12px; max-height:150px; overflow-y:auto; }
   .pv-slack-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-slack-status.is-err{ color: var(--err); }
   .pv-slack-item{
@@ -1277,7 +1279,7 @@
   .pv-slack-summary{ font-size:12px; color: var(--text); line-height:1.6; white-space:pre-wrap; }
 
   /* ---------- ビジネス: 最近のメモ(SYSLEA タグ) ---------- */
-  .biz-note-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .biz-note-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; max-height:150px; overflow-y:auto; }
   .biz-note-list .pv-up-item{ cursor:pointer; }
   .biz-note-list .pv-up-item:hover .pv-up-title{ color: var(--cyan); }
 
