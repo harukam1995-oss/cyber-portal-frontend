@@ -4272,6 +4272,7 @@
     mailPageTokens = [null];
     harukaMailNextToken = null;
     paySortResults = null;
+    payHistCache = null;
     paySortRunning = false;
     fetchMailPage();
   }
@@ -4425,7 +4426,7 @@
     updateMailHeaderUI();
     updateMailSortBtn();
     // 仕分けパネルが開いていない通常表示に戻す
-    if (!paySortRunning && !paySortResults){
+    if (!paySortRunning && !paySortResults && !payHistCache){
       var sp = document.getElementById("mail-sort-panel");
       if (sp && !sp.hidden){ sp.hidden = true; }
       if (mailList.hidden) mailList.hidden = false;
@@ -4701,6 +4702,7 @@
   var _pdfjs = null;
   var paySortRunning = false;
   var paySortResults = null;
+  var payHistCache = null;   // GET /list の結果(履歴表示用、パネルを閉じるまで保持)
 
   function payInSortableView(){
     return mailState.account === "syslea" && mailState.labelName === "01.payment";
@@ -4709,9 +4711,55 @@
     if (!mailSortBtn) return;
     var show = payInSortableView();
     mailSortBtn.hidden = !show;
-    if (show && !paySortRunning){
-      mailSortBtn.disabled = !(harukaMailItems && harukaMailItems.length);
+    // 未仕分けが 0 でも履歴は見られるので、01.payment 表示中は常に押せる
+    if (show && !paySortRunning) mailSortBtn.disabled = false;
+  }
+
+  // PDF/本文テキストから請求金額を推定(取れなければ null)。
+  function payParseAmount(text){
+    if (!text) return null;
+    var t = String(text).replace(/[，]/g, ",");
+    var pats = [
+      /(?:ご請求金額|ご請求額|請求金額|お支払金額|お支払い金額|お振込金額|合計金額|請求合計|合計|総額|Amount\s*(?:paid|due)?)[^\d¥￥$]{0,10}[¥￥$]?\s*([0-9][0-9,]{2,})/,
+      /[¥￥]\s*([0-9]{1,3}(?:,[0-9]{3})+)/
+    ];
+    for (var i = 0; i < pats.length; i++){
+      var m = t.match(pats[i]);
+      if (m){ var n = Number(m[1].replace(/,/g, "")); if (n >= 100 && n < 1e9) return n; }
     }
+    return null;
+  }
+  // 件名/本文から請求対象月(YYYY-MM)を推定。
+  function payParsePeriodMonth(subject, body){
+    var s = (subject || "") + " " + String(body || "").slice(0, 300);
+    var m = s.match(/(20\d{2})\s*[年\/\-.]\s*(1[0-2]|0?[1-9])\s*月?/);
+    if (m) return m[1] + "-" + ("0" + m[2]).slice(-2);
+    m = s.match(/(1[0-2]|0?[1-9])\s*月分/);
+    if (m){
+      var now = new Date(); var mm = Number(m[1]);
+      var y = (now.getMonth() + 1) >= mm ? now.getFullYear() : now.getFullYear() - 1;
+      return y + "-" + ("0" + mm).slice(-2);
+    }
+    return null;
+  }
+  // 済_2026/09 のようなラベル名から請求月を取り出す。
+  function payMonthFromLabel(name){
+    var m = String(name || "").match(/(20\d{2})[\/年-](1[0-2]|0[1-9])/);
+    return m ? m[1] + "-" + m[2] : null;
+  }
+  function payYmFromMs(ms){
+    if (!ms) return null;
+    var d = new Date(ms);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2);
+  }
+  function payYen(n){
+    return (n == null) ? "" : "¥" + Number(n).toLocaleString("ja-JP");
+  }
+  // 分類/仕分け結果を台帳(users/{uid}/payments)へ保存。失敗しても致命的でない。
+  function paySaveRecords(records){
+    if (!records || !records.length) return Promise.resolve();
+    return apiFetch("/api/payments/records", { method: "POST", body: JSON.stringify({ records: records }) })
+      .catch(function(){});
   }
 
   async function ensurePdfJs(){
@@ -4765,6 +4813,7 @@
   }
   function closeSortPanel(){
     paySortResults = null;
+    payHistCache = null;
     paySortRunning = false;
     if (mailSortPanel) mailSortPanel.hidden = true;
     mailList.hidden = false;
@@ -4774,20 +4823,39 @@
   async function runPaymentSort(){
     if (paySortRunning || !payInSortableView()) return;
     var mails = (harukaMailItems || []).slice();
-    if (!mails.length) return;
     paySortRunning = true;
     if (mailSortBtn) mailSortBtn.disabled = true;
     openSortPanel();
+
+    // 未仕分けメールが無ければ、そのまま履歴表示へ
+    if (!mails.length){
+      paySortRunning = false;
+      if (mailSortBtn) mailSortBtn.disabled = false;
+      renderPayHistory();
+      return;
+    }
+
     mailSortPanel.innerHTML =
       '<div class="pay-sort-head"><strong>支払い仕分け</strong>' +
       '<button type="button" class="pay-sort-close" id="pay-sort-close0">閉じる</button></div>' +
-      '<div class="pay-sort-progress" id="pay-sort-progress">メールと添付PDFを解析中… 0 / ' + mails.length + '</div>';
+      '<div class="pay-sort-progress" id="pay-sort-progress">台帳を確認中…</div>';
     document.getElementById("pay-sort-close0").addEventListener("click", closeSortPanel);
     var progEl = document.getElementById("pay-sort-progress");
 
+    // 1. 台帳に既にあるものは再取得・再分類しない
+    var known = {};
+    try {
+      var kr = await apiFetch("/api/payments/known", {
+        method: "POST", body: JSON.stringify({ threadIds: mails.map(function(m){ return m.threadId; }) })
+      });
+      known = (kr && kr.known) || {};
+    } catch (e) { /* 台帳照会に失敗しても新規扱いで続行 */ }
+
+    var todo = mails.filter(function(m){ return !known[m.threadId]; });
+    var meta = {};   // threadId -> { amount, periodMonth, attachmentNames }
     var items = [];
-    for (var i = 0; i < mails.length; i++){
-      var mail = mails[i];
+    for (var i = 0; i < todo.length; i++){
+      var mail = todo[i];
       var pdfText = "";
       var atts = [];
       var body = "";
@@ -4804,37 +4872,75 @@
           if (pdfText.length > 9000) break;
         }
       } catch (e) { /* スレッド取得失敗でも空で分類に回す */ }
+      meta[mail.threadId] = {
+        amount: payParseAmount(pdfText + "\n" + body),
+        periodMonth: payParsePeriodMonth(mail.subject, body),
+        attachmentNames: atts.map(function(a){ return a.filename; })
+      };
       items.push({
         threadId: mail.threadId,
         subject: mail.subject,
         fromAddress: mail.fromAddress || mail.from,
         bodyText: body.slice(0, 4000),
         pdfText: pdfText.slice(0, 9000),
-        attachmentNames: atts.map(function(a){ return a.filename; })
+        attachmentNames: meta[mail.threadId].attachmentNames
       });
-      if (progEl) progEl.textContent = "メールと添付PDFを解析中… " + (i + 1) + " / " + mails.length;
+      if (progEl) progEl.textContent = "メールと添付PDFを解析中… " + (i + 1) + " / " + todo.length;
     }
 
-    var res;
-    try {
-      res = await apiFetch("/api/payments/classify", { method: "POST", body: JSON.stringify({ items: items }) });
-    } catch (e) {
-      mailSortPanel.innerHTML =
-        '<div class="pay-sort-head"><strong>支払い仕分け</strong>' +
-        '<button type="button" class="pay-sort-close" id="pay-sort-closeE">閉じる</button></div>' +
-        '<div class="pay-sort-progress">分類に失敗しました: ' + escapeHtml(apiErrorMessage(e, "分類") || e.message || "") + '</div>';
-      document.getElementById("pay-sort-closeE").addEventListener("click", closeSortPanel);
-      paySortRunning = false;
-      if (mailSortBtn) mailSortBtn.disabled = false;
-      return;
+    var res = { results: [], llm: false };
+    if (items.length){
+      try {
+        res = await apiFetch("/api/payments/classify", { method: "POST", body: JSON.stringify({ items: items }) });
+      } catch (e) {
+        mailSortPanel.innerHTML =
+          '<div class="pay-sort-head"><strong>支払い仕分け</strong>' +
+          '<button type="button" class="pay-sort-close" id="pay-sort-closeE">閉じる</button></div>' +
+          '<div class="pay-sort-progress">分類に失敗しました: ' + escapeHtml(apiErrorMessage(e, "分類") || e.message || "") + '</div>';
+        document.getElementById("pay-sort-closeE").addEventListener("click", closeSortPanel);
+        paySortRunning = false;
+        if (mailSortBtn) mailSortBtn.disabled = false;
+        return;
+      }
     }
 
     var byId = {};
     (res.results || []).forEach(function(r){ byId[r.threadId] = r; });
+
+    var now = Date.now();
     paySortResults = mails.map(function(m){
+      var k = known[m.threadId];
+      if (k){
+        return {
+          mail: m, method: k.method, confidence: k.confidence, reasons: k.reasons || [],
+          vendorKey: "", source: k.source, amount: k.amount, periodMonth: k.periodMonth,
+          attachmentNames: [], cached: true, savedStatus: k.status, applied: false
+        };
+      }
       var r = byId[m.threadId] || { method: "その他", confidence: 0, reasons: ["結果なし"], vendorKey: "" };
-      return { mail: m, method: r.method, confidence: r.confidence, reasons: r.reasons || [], vendorKey: r.vendorKey || "", source: r.source, applied: false };
+      var mt = meta[m.threadId] || {};
+      return {
+        mail: m, method: r.method, confidence: r.confidence, reasons: r.reasons || [],
+        vendorKey: r.vendorKey || "", source: r.source, amount: mt.amount, periodMonth: mt.periodMonth,
+        attachmentNames: mt.attachmentNames || [], cached: false, savedStatus: "classified", applied: false
+      };
     });
+
+    // 2. 新規分類分は台帳へ即保存(status: classified) — 次に開いたとき再計算しない
+    var fresh = paySortResults.filter(function(x){ return !x.cached; });
+    if (fresh.length){
+      paySaveRecords(fresh.map(function(x){
+        return {
+          threadId: x.mail.threadId, subject: x.mail.subject, from: x.mail.from,
+          fromAddress: x.mail.fromAddress || x.mail.from, vendorKey: x.vendorKey,
+          method: x.method, confidence: x.confidence, reasons: x.reasons,
+          source: "auto", status: "classified", amount: x.amount || null,
+          periodMonth: x.periodMonth || null, attachmentNames: x.attachmentNames || [],
+          classifiedAt: now
+        };
+      }));
+    }
+
     paySortRunning = false;
     if (mailSortBtn) mailSortBtn.disabled = false;
     renderSortResults(res.llm);
@@ -4843,26 +4949,32 @@
   function renderSortResults(llmUsed){
     if (!mailSortPanel || !paySortResults) return;
     var pending = paySortResults.filter(function(x){ return !x.applied; });
+    var cachedN = pending.filter(function(x){ return x.cached; }).length;
 
     var head = document.createElement("div");
     head.className = "pay-sort-head";
     head.innerHTML = '<strong>支払い仕分け</strong> <span class="pay-sort-sub">' +
-      pending.length + ' 件' + (llmUsed ? ' ・ AI併用' : ' ・ ルール判定') + '</span>';
+      pending.length + ' 件' + (cachedN ? '（うち保存済 ' + cachedN + '）' : '') +
+      (llmUsed ? ' ・ AI併用' : ' ・ ルール判定') + '</span>';
     var right = document.createElement("div");
     right.className = "pay-sort-head-actions";
     var bulkBtn = document.createElement("button");
     bulkBtn.type = "button"; bulkBtn.className = "pay-sort-bulk";
     bulkBtn.textContent = "高確信(85%+)をまとめて適用";
     bulkBtn.addEventListener("click", applyHighConfidence);
+    var histBtn = document.createElement("button");
+    histBtn.type = "button"; histBtn.className = "pay-sort-learn";
+    histBtn.textContent = "履歴";
+    histBtn.addEventListener("click", function(){ renderPayHistory(); });
     var learnBtn = document.createElement("button");
     learnBtn.type = "button"; learnBtn.className = "pay-sort-learn";
-    learnBtn.textContent = "既存ラベルから学習";
+    learnBtn.textContent = "既存ラベルを取り込む";
     learnBtn.addEventListener("click", function(){ seedVendorMap(learnBtn); });
     var closeBtn = document.createElement("button");
     closeBtn.type = "button"; closeBtn.className = "pay-sort-close";
     closeBtn.textContent = "閉じる";
     closeBtn.addEventListener("click", closeSortPanel);
-    right.appendChild(bulkBtn); right.appendChild(learnBtn); right.appendChild(closeBtn);
+    right.appendChild(bulkBtn); right.appendChild(histBtn); right.appendChild(learnBtn); right.appendChild(closeBtn);
     head.appendChild(right);
 
     var list = document.createElement("div");
@@ -4898,11 +5010,20 @@
     badge.className = "pay-badge " + payMethodClass(row.method);
     badge.textContent = row.method + " " + Math.round((row.confidence || 0) * 100) + "%";
     top.appendChild(badge);
+    if (row.cached){
+      var cb = document.createElement("span");
+      cb.className = "pay-cached-tag";
+      cb.textContent = row.savedStatus === "applied" ? "仕分け済" : "保存済";
+      top.appendChild(cb);
+    }
     el.appendChild(top);
 
+    var meta = [];
+    if (row.amount != null) meta.push(payYen(row.amount));
+    if (row.periodMonth) meta.push(row.periodMonth.replace("-", "/") + " 分");
     var why = document.createElement("div");
     why.className = "pay-sort-why";
-    why.textContent = (row.reasons || []).join(" / ");
+    why.textContent = (meta.length ? meta.join(" ・ ") + "  —  " : "") + (row.reasons || []).join(" / ");
     el.appendChild(why);
 
     var ctrl = document.createElement("div");
@@ -4948,6 +5069,17 @@
         method: "PUT",
         body: JSON.stringify({ pairs: [{ fromAddress: row.mail.fromAddress || row.mail.from, subject: row.mail.subject, method: method }] })
       }).catch(function(){});
+      // 台帳へ「仕分け済み」で保存(方式を変えていれば source=manual)
+      var now = Date.now();
+      paySaveRecords([{
+        threadId: row.mail.threadId, subject: row.mail.subject, from: row.mail.from,
+        fromAddress: row.mail.fromAddress || row.mail.from, vendorKey: row.vendorKey || "",
+        method: method, confidence: row.confidence, reasons: row.reasons || [],
+        source: (method === row.method ? "auto" : "manual"), status: "applied",
+        amount: row.amount || null, periodMonth: row.periodMonth || null,
+        attachmentNames: row.attachmentNames || [],
+        classifiedAt: now, appliedAt: now
+      }]);
       row.applied = true; row.method = method;
       harukaMailItems = (harukaMailItems || []).filter(function(m){ return m.threadId !== row.mail.threadId; });
       renderSortResults();
@@ -4960,46 +5092,192 @@
 
   async function applyHighConfidence(){
     var targets = (paySortResults || []).filter(function(x){
-      return !x.applied && (x.confidence || 0) >= 0.85 && x.method !== "その他";
+      return !x.applied && !x.cached && (x.confidence || 0) >= 0.85 && x.method !== "その他";
     });
     for (var i = 0; i < targets.length; i++){
       await applySortRow(targets[i], targets[i].method);
     }
   }
 
+  /* ---- 支払い履歴(台帳の蓄積を月別に表示) ---- */
+  var payHistMethodFilter = "";
+
+  async function renderPayHistory(){
+    if (!mailSortPanel) return;
+    openSortPanel();
+    if (!payHistCache){
+      mailSortPanel.innerHTML =
+        '<div class="pay-sort-head"><strong>支払い履歴</strong>' +
+        '<button type="button" class="pay-sort-close" id="pay-hist-close0">閉じる</button></div>' +
+        '<div class="pay-sort-progress">読み込み中…</div>';
+      document.getElementById("pay-hist-close0").addEventListener("click", closeSortPanel);
+      try {
+        var r = await apiFetch("/api/payments/list?limit=1500");
+        payHistCache = (r && r.records) || [];
+      } catch (e) {
+        mailSortPanel.innerHTML =
+          '<div class="pay-sort-head"><strong>支払い履歴</strong>' +
+          '<button type="button" class="pay-sort-close" id="pay-hist-closeE">閉じる</button></div>' +
+          '<div class="pay-sort-progress">履歴の取得に失敗しました: ' + escapeHtml(apiErrorMessage(e, "履歴") || e.message || "") + '</div>';
+        document.getElementById("pay-hist-closeE").addEventListener("click", closeSortPanel);
+        return;
+      }
+    }
+
+    var all = payHistCache.slice();
+    var recs = payHistMethodFilter ? all.filter(function(x){ return x.method === payHistMethodFilter; }) : all;
+
+    // 月キーでグループ化(periodMonth 優先、無ければ分類日時の月)
+    var groups = {};
+    recs.forEach(function(x){
+      var key = x.periodMonth || payYmFromMs(x.classifiedAt) || "不明";
+      (groups[key] = groups[key] || []).push(x);
+    });
+    var monthKeys = Object.keys(groups).sort(function(a, b){ return a < b ? 1 : a > b ? -1 : 0; });
+
+    var head = document.createElement("div");
+    head.className = "pay-sort-head";
+    head.innerHTML = '<strong>支払い履歴</strong> <span class="pay-sort-sub">' + all.length + ' 件</span>';
+    var right = document.createElement("div");
+    right.className = "pay-sort-head-actions";
+    if (paySortResults){
+      var backBtn = document.createElement("button");
+      backBtn.type = "button"; backBtn.className = "pay-sort-learn";
+      backBtn.textContent = "仕分けに戻る";
+      backBtn.addEventListener("click", function(){ renderSortResults(false); });
+      right.appendChild(backBtn);
+    }
+    var refreshBtn = document.createElement("button");
+    refreshBtn.type = "button"; refreshBtn.className = "pay-sort-learn";
+    refreshBtn.textContent = "再読込";
+    refreshBtn.addEventListener("click", function(){ payHistCache = null; renderPayHistory(); });
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button"; closeBtn.className = "pay-sort-close";
+    closeBtn.textContent = "閉じる";
+    closeBtn.addEventListener("click", closeSortPanel);
+    right.appendChild(refreshBtn); right.appendChild(closeBtn);
+    head.appendChild(right);
+
+    // 方式フィルタのチップ
+    var chips = document.createElement("div");
+    chips.className = "pay-hist-chips";
+    [["", "すべて"]].concat(PAY_METHODS.map(function(m){ return [m, m]; })).forEach(function(pair){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "pay-hist-chip" + (payHistMethodFilter === pair[0] ? " is-on" : "");
+      b.textContent = pair[1];
+      b.addEventListener("click", function(){ payHistMethodFilter = pair[0]; renderPayHistory(); });
+      chips.appendChild(b);
+    });
+
+    var body = document.createElement("div");
+    body.className = "pay-hist-body";
+    if (!recs.length){
+      body.innerHTML = '<div class="pay-sort-progress">まだ記録がありません。「支払い仕分け」で仕分けるか「既存ラベルを取り込む」で過去分を取り込めます。</div>';
+    }
+    monthKeys.forEach(function(mk){
+      var rows = groups[mk];
+      var byM = {};
+      var sum = 0;
+      rows.forEach(function(x){
+        byM[x.method] = (byM[x.method] || 0) + 1;
+        if (x.amount) sum += x.amount;
+      });
+      var g = document.createElement("div");
+      g.className = "pay-hist-group";
+      var gh = document.createElement("div");
+      gh.className = "pay-hist-month";
+      var tally = PAY_METHODS.filter(function(m){ return byM[m]; })
+        .map(function(m){ return m + " " + byM[m]; }).join(" ・ ");
+      gh.innerHTML = '<span class="pay-hist-mk">' + escapeHtml(mk === "不明" ? "月不明" : mk) + '</span>' +
+        '<span class="pay-hist-tally">' + escapeHtml(tally) + (sum ? '　計 ' + payYen(sum) : '') + '</span>';
+      g.appendChild(gh);
+      rows.sort(function(a, b){ return (b.classifiedAt || 0) - (a.classifiedAt || 0); });
+      rows.forEach(function(x){
+        var rr = document.createElement("div");
+        rr.className = "pay-hist-row";
+        rr.innerHTML =
+          '<span class="pay-badge ' + payMethodClass(x.method) + '">' + escapeHtml(x.method) + '</span>' +
+          '<span class="pay-hist-subj">' + escapeHtml(x.subject || "(件名なし)") + '</span>' +
+          '<span class="pay-hist-amt">' + (x.amount != null ? payYen(x.amount) : "") + '</span>' +
+          '<span class="pay-hist-src">' + escapeHtml(x.status === "applied" ? "仕分け済" : "分類") +
+          (x.source === "backfill" ? "・取込" : x.source === "manual" ? "・手動" : "") + '</span>';
+        g.appendChild(rr);
+      });
+      body.appendChild(g);
+    });
+
+    mailSortPanel.innerHTML = "";
+    mailSortPanel.appendChild(head);
+    mailSortPanel.appendChild(chips);
+    mailSortPanel.appendChild(body);
+  }
+
   async function seedVendorMap(btn){
-    if (btn){ btn.disabled = true; btn.textContent = "学習中…"; }
+    if (btn){ btn.disabled = true; btn.textContent = "取り込み中…"; }
     try {
       var cats = [
         { re: /^01\.payment\/01\.銀行振込(\/|$)/, method: "銀行振込" },
         { re: /^01\.payment\/02\.UPSIDER(\/|$)/, method: "UPSIDER" },
-        { re: /^01\.payment\/03\.口座振替(\/|$)/, method: "口座振替" }
+        { re: /^01\.payment\/03\.口座振替(\/|$)/, method: "口座振替" },
+        { re: /^01\.payment\/99\.その他(\/|$)/, method: "その他" }
       ];
       var pairs = [];
+      var records = [];
+      var seen = {};
+      var now = Date.now();
       var labs = (mailLabels || []);
       for (var c = 0; c < cats.length; c++){
         var method = cats[c].method;
         var re = cats[c].re;
         var catLabels = labs.filter(function(l){ return re.test(l.name); });
         for (var li = 0; li < catLabels.length; li++){
+          var lblName = catLabels[li].name;
+          var lblMonth = payMonthFromLabel(lblName);
           try {
             var r = await apiFetch(acctPath("/api/google/gmail/messages?maxResults=50&labelId=" + encodeURIComponent(catLabels[li].id), "syslea"));
             (r.messages || []).forEach(function(m){
-              pairs.push({ fromAddress: m.fromAddress || m.from, subject: m.subject, method: method });
+              // その他 はベンダー表には入れない(方式が定まらないため)。台帳には残す。
+              if (method !== "その他"){
+                pairs.push({ fromAddress: m.fromAddress || m.from, subject: m.subject, method: method });
+              }
+              if (seen[m.threadId]) return;
+              seen[m.threadId] = 1;
+              records.push({
+                threadId: m.threadId, subject: m.subject, from: m.from,
+                fromAddress: m.fromAddress || m.from, vendorKey: "",
+                method: method, confidence: 1, reasons: ["既存ラベル取込"],
+                source: "backfill", status: "applied",
+                periodMonth: lblMonth || payParsePeriodMonth(m.subject, ""),
+                amount: null,
+                classifiedAt: m.date ? (Date.parse(m.date) || now) : now,
+                appliedAt: now
+              });
             });
           } catch (e) {}
         }
       }
-      if (!pairs.length){
-        if (btn){ btn.disabled = false; btn.textContent = "既存ラベルから学習"; }
-        alert("学習できるメールが見つかりませんでした。");
+      if (!records.length){
+        if (btn){ btn.disabled = false; btn.textContent = "既存ラベルを取り込む"; }
+        alert("取り込めるメールが見つかりませんでした。");
         return;
       }
-      var out = await apiFetch("/api/payments/vendor-map", { method: "PUT", body: JSON.stringify({ pairs: pairs }) });
-      if (btn){ btn.disabled = false; btn.textContent = "学習済み (" + (out.count || 0) + "社)"; }
+      var vres = pairs.length
+        ? await apiFetch("/api/payments/vendor-map", { method: "PUT", body: JSON.stringify({ pairs: pairs }) })
+        : { count: 0 };
+      // 台帳へ(400件ずつ)
+      var saved = 0;
+      for (var s = 0; s < records.length; s += 400){
+        try {
+          var pr = await apiFetch("/api/payments/records", { method: "POST", body: JSON.stringify({ records: records.slice(s, s + 400) }) });
+          saved += (pr && pr.count) || 0;
+        } catch (e) {}
+      }
+      payHistCache = null; // 次に履歴を開いたら取り込み分が出る
+      if (btn){ btn.disabled = false; btn.textContent = "取込済 (" + (vres.count || 0) + "社 / " + saved + "件)"; }
     } catch (e) {
-      if (btn){ btn.disabled = false; btn.textContent = "既存ラベルから学習"; }
-      alert("学習に失敗しました: " + (apiErrorMessage(e, "学習") || e.message || ""));
+      if (btn){ btn.disabled = false; btn.textContent = "既存ラベルを取り込む"; }
+      alert("取り込みに失敗しました: " + (apiErrorMessage(e, "取込") || e.message || ""));
     }
   }
 
