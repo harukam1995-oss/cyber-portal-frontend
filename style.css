@@ -1599,16 +1599,28 @@
   /* アイデア帳: 新規ノートモーダルの本文 */
   .idea-body-input{ min-height:220px; }
 
-  /* ヒーロー画像はタブの「章の区切り」程度に薄い帯へ。縦書きの格言は撤去。 */
-  .pv-hero{ position:relative; overflow:hidden; min-height:92px; border-radius:3px; }
-  .pv-hero-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.42; }
+  /* 中央列のヒーロー。左右のカード列の高さに合わせて伸びる(align-items:stretch)。
+     画像はアンバー寄りのデュオトーンにして B/アンバーの世界に馴染ませる。
+     走査線・ビネット・縦書きの格言は撤去済み。 */
+  .pv-hero{ position:relative; overflow:hidden; min-height:340px; border-radius:3px; }
+  .pv-hero-img{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.92;
+    filter: grayscale(1) sepia(.55) saturate(1.45) hue-rotate(-6deg) brightness(.58) contrast(1.05);
+  }
   .pv-hero .scanlines, .pv-hero .vignette{ display:none; }
   .pv-hero-vtext{ display:none; }
+  /* 下端を地色へフェード + ごく薄いアンバーの被せ */
+  .pv-hero::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(7,9,12,0) 45%, rgba(7,9,12,.62) 100%),
+      linear-gradient(180deg, rgba(255,143,63,.10), rgba(255,143,63,0) 40%);
+  }
 
   @media (max-width: 1080px){
     .pv-grid{ grid-template-columns: 1fr; }
     .pv-bottom{ grid-template-columns: 1fr; }
-    .pv-hero{ min-height:72px; }
+    .pv-hero{ min-height:150px; }
   }
 
   /* ---------- アイデア帳(Obsidian vault ビューア) ---------- */
