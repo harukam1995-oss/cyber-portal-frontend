@@ -1,0 +1,10 @@
+{
+  "name": "cyber-portal-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cyber Portal frontend (static, served from GitHub Pages). No build step. This package.json exists only so `node --test` can run the tests/ suite.",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\""
+  }
+}
