@@ -78,40 +78,6 @@
     });
   }
 
-  var mcpPromise = null;
-  function getMcp(){
-    if (!mcpPromise){
-      mcpPromise = (window.claude && typeof window.claude.use === "function")
-        ? window.claude.use("mcp")
-        : Promise.resolve(null);
-    }
-    return mcpPromise;
-  }
-
-  /* {service} はどのコネクタのエラーかで置き換える(下の mcpErrorMessage 第2引数)。
-     4つのコネクタ(Google Calendar / Google Drive / Gmail / AccuWeather)すべてで
-     このメッセージ集を共用しているため、コネクタ名を埋め込まない汎用文言にしてある。 */
-  var MCP_ERROR_MESSAGES = {
-    needs_reauth: "{service}の認証が切れています。claude.aiの設定 → コネクタ から再接続してください。",
-    server_not_connected: "{service}が接続されていません。claude.aiの設定 → コネクタ から追加してください。",
-    not_granted: "この画面では{service}へのアクセスが許可されていません。",
-    capability_disabled: "この環境では{service}連携を利用できません。",
-    capability_removed: "この環境では{service}連携を利用できません。",
-    blocked_by_policy: "組織のポリシーにより{service}へのアクセスがブロックされています。",
-    approval_required: "この操作には承認が必要です。",
-    server_unavailable: "{service}サーバーに接続できません。しばらくしてから再度お試しください。",
-    selection_required: "複数の{service}接続があります。claude.aiで使用する接続を選択してください。",
-    server_not_found: "接続先が見つかりませんでした。",
-    upstream_error: "予期しないエラーが発生しました。"
-  };
-  function mcpErrorMessage(err, service){
-    var code = err && err.code;
-    var label = service || "連携先";
-    var tmpl = MCP_ERROR_MESSAGES[code];
-    if (tmpl) return tmpl.replace(/\{service\}/g, label);
-    return (err && err.message) || "情報を取得できませんでした";
-  }
-
   // ---- バックエンドAPI(Render) + Firebase Authentication ----
   var API_BASE = "https://cyber-portal-backend.onrender.com";
 
@@ -5883,346 +5849,6 @@
   confirmModalCancel.addEventListener("click", function(){ closeConfirmModal(false); });
   confirmModal.addEventListener("click", function(e){ if (e.target === confirmModal) closeConfirmModal(false); });
 
-  /* ================= scheduled question check-in (spreadsheet-driven, saves to Obsidian via Google Drive) =================
-     Question definitions live in a Google Sheet ("ポータル質問表", Vault② direct child,
-     2 tabs: 質問マスタ / 選択肢マスタ) — NOT in this code. To add, change, or disable a
-     question, edit that spreadsheet; this code only needs to change if the column
-     layout itself changes. The two tabs are told apart by their header row content
-     (質問文 vs 選択肢文), not by tab order or tab name, so reordering/renaming tabs
-     in the sheet is safe.
-     Each enabled question with a 表示時刻 is shown once its time has passed (JST),
-     once per day, in the order it appears in the sheet. A choice's 動作 can be
-     即保存/類似の文言 (save immediately), スヌーズを含む文言 (ask again after N
-     minutes), or 追加入力して保存 (ask a follow-up before saving) — matched loosely
-     by substring since it's free text she types into the sheet. That follow-up's
-     追加質問ID is looked up against 質問マスタ: if it matches an existing question
-     id the conversation chains into that question (so multi-step flows work without
-     any code change — just add rows to the sheet), otherwise the text itself is used
-     as a one-off follow-up prompt. Chain depth is capped (see QUESTION_CHAIN_DEPTH_LIMIT)
-     so a mistaken circular 追加質問ID in the sheet can't hang the conversation.
-     Whether "today" is already answered is checked against Google Drive itself
-     (search_files for today's file in that question's own vault folder) so
-     answering on one device is recognised on another; localStorage is only a
-     same-device fast path plus per-device snooze memory. */
-  var QUESTION_SHEET_ID = "1Hfc97Uo_nzW8N5yZ9lvoBb40ywhSVNci9I_IhwyImKA"; // Vault② ▸ ポータル質問表
-  var QUESTION_FOLDERS = {
-    "デイリー": "1k0_AMImmv5ex-E9SkrRywTMU-qZecTqK",
-    "プライベート": "1HK5EjNXT9pSVB_oPKemYiaI_8nYw0irA",
-    "仕事": "1-H0tm8g1TS7zHklXJOINOi7TDzVkRxl1",
-    "ナレッジ": "1UoL-ZMCZJjU-Z20ma7wSUG71j_JAxxgB"
-  };
-  var QUESTION_CHAIN_DEPTH_LIMIT = 5;
-
-  var lunchModal = document.getElementById("lunch-modal");
-  var heroScene = document.getElementById("hero-scene");
-  var lunchTitle = document.getElementById("lunch-modal-title");
-  var lunchChat = document.getElementById("lunch-chat");
-  var lunchQuickReplies = document.getElementById("lunch-quick-replies");
-  var lunchInputRow = document.getElementById("lunch-input-row");
-  var lunchWhatInput = document.getElementById("lunch-what-input");
-  var lunchCloseBtn = document.getElementById("lunch-modal-close");
-  var lunchPending = false; // true while waiting on a choice click or an in-flight save
-
-  // read_file_content returns one markdown table per sheet tab, blank-line separated.
-  // Each table's own first data-ish row is treated as its header row (Drive's
-  // conversion doesn't mark a header specially — it may also emit an extra blank
-  // "|  |  | ..." row and an alignment "| :-: | :-: | ..." row before it, both
-  // filtered out here as "structural" rows).
-  function parseMarkdownTables(text){
-    var blocks = String(text || "").split(/\n\s*\n/).map(function(b){ return b.trim(); }).filter(Boolean);
-    var tables = [];
-    blocks.forEach(function(block){
-      var rows = [];
-      block.split("\n").forEach(function(line){
-        line = line.trim();
-        if (!line) return;
-        var cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(function(c){ return c.trim(); });
-        var isStructural = cells.every(function(c){ return c === "" || /^:?-+:?$/.test(c); });
-        if (!isStructural) rows.push(cells);
-      });
-      if (!rows.length) return;
-      var headers = rows[0];
-      var dataRows = rows.slice(1).map(function(cells){
-        var obj = {};
-        headers.forEach(function(h, i){ obj[h] = cells[i] !== undefined ? cells[i] : ""; });
-        return obj;
-      });
-      tables.push({ headers: headers, rows: dataRows });
-    });
-    return tables;
-  }
-
-  var questionTableCache = null; // cached for this page load only
-  async function loadQuestionTable(){
-    if (questionTableCache) return questionTableCache;
-    var mcp = await getMcp();
-    if (!mcp) return null;
-    var res;
-    try{
-      res = await mcp.callTool("Google Drive", "read_file_content", { fileId: QUESTION_SHEET_ID });
-    } catch(e){
-      return null; // sheet unreachable — fail open, just don't ask anything this load
-    }
-    var text = res && res.payload && res.payload.fileContent;
-    if (!text) return null;
-    var tables = parseMarkdownTables(text);
-    var qTable = tables.filter(function(t){ return t.headers.indexOf("質問文") !== -1; })[0];
-    var cTable = tables.filter(function(t){ return t.headers.indexOf("選択肢文") !== -1; })[0];
-    var questions = {};
-    var errors = [];
-    (qTable ? qTable.rows : []).forEach(function(r){
-      var id = (r["質問ID"] || "").trim();
-      if (!id) return;
-      questions[id] = {
-        id: id,
-        text: (r["質問文"] || "").trim(),
-        time: (r["表示時刻"] || "").trim(), // 空欄＝チェーン専用、この質問だけでは自動出題しない
-        folder: (r["保存先"] || "").trim(),
-        enabled: /^true$/i.test((r["有効"] || "").trim()),
-        choices: []
-      };
-    });
-    (cTable ? cTable.rows : []).forEach(function(r){
-      var qid = (r["質問ID"] || "").trim();
-      if (!questions[qid]){
-        errors.push("選択肢マスタの質問ID「" + qid + "」が質問マスタに見つかりません。この選択肢は無視されます。");
-        return;
-      }
-      var action = (r["動作"] || "").trim();
-      var type = "save";
-      if (action.indexOf("スヌーズ") !== -1) type = "snooze";
-      else if (action.indexOf("追加入力") !== -1) type = "followup";
-      var snoozeMinutes = parseInt(r["スヌーズ分数"], 10);
-      questions[qid].choices.push({
-        label: (r["選択肢文"] || "").trim(),
-        type: type,
-        nextRef: (r["追加質問ID"] || "").trim(), // 質問マスタの既存IDならチェーン、それ以外は追加質問の文言として使う
-        snoozeMinutes: isFinite(snoozeMinutes) && snoozeMinutes > 0 ? snoozeMinutes : 60
-      });
-    });
-    questionTableCache = { questions: questions, errors: errors };
-    return questionTableCache;
-  }
-
-  function questionStateKey(qid){ return "cyberportal_q_" + qid; }
-  function readQuestionState(qid){
-    try{
-      var raw = localStorage.getItem(questionStateKey(qid));
-      return raw ? JSON.parse(raw) : {};
-    } catch(e){ return {}; }
-  }
-  function writeQuestionState(qid, state){
-    try{ localStorage.setItem(questionStateKey(qid), JSON.stringify(state)); } catch(e){}
-  }
-
-  // Cross-device "already answered today" check: looks for today's file
-  // (title pattern "{date} {質問ID}.md") inside the question's own vault folder.
-  async function questionAlreadyAnsweredToday(question, todayKey){
-    var mcp = await getMcp();
-    if (!mcp) return false; // can't check — fail open and just show the prompt
-    var folderId = QUESTION_FOLDERS[question.folder];
-    if (!folderId) return false;
-    try{
-      var res = await mcp.callTool("Google Drive", "search_files", {
-        query: "parentId = '" + folderId + "' and title contains '" + todayKey + "' and title contains '" + question.id + "'",
-        pageSize: 1
-      });
-      return !!(res && res.payload && res.payload.files && res.payload.files.length);
-    } catch(e){
-      return false; // fail open rather than silently never asking
-    }
-  }
-
-  async function saveQuestionRecord(rootQuestion, answerLog){
-    var now = new Date();
-    var todayKey = jstDateKey(now);
-    var timeLabel = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
-    var folderId = QUESTION_FOLDERS[rootQuestion.folder];
-    if (!folderId) throw { message: "保存先「" + rootQuestion.folder + "」がフォルダ設定に見つかりません。" };
-    var lines = ["# " + rootQuestion.text + " " + todayKey, ""];
-    answerLog.forEach(function(step){
-      lines.push("- " + step.label + (step.extra ? "：" + step.extra : ""));
-    });
-    lines.push("- 記録時刻: " + timeLabel);
-    var mcp = await getMcp();
-    if (!mcp) throw { code: "not_granted" };
-    await mcp.callTool("Google Drive", "create_file", {
-      title: todayKey + " " + rootQuestion.id + ".md",
-      textContent: lines.join("\n") + "\n",
-      contentMimeType: "text/markdown",
-      disableConversionToGoogleType: true,
-      parentId: folderId
-    });
-    writeQuestionState(rootQuestion.id, { date: todayKey, answered: true });
-  }
-
-  function lunchAppend(from, text){
-    var msg = document.createElement("div");
-    msg.className = "lunch-msg " + from;
-    msg.textContent = text;
-    lunchChat.appendChild(msg);
-    lunchChat.scrollTop = lunchChat.scrollHeight;
-    return msg;
-  }
-  function closeLunchModal(){
-    lunchModal.hidden = true;
-    heroScene.setAttribute("aria-hidden", "true"); // restore decorative state for the skyline/illustration
-  }
-
-  // --- conversation driver: asks each queued top-level question in turn, following
-  //     a 追加質問ID chain within a question before moving to the next queued one ---
-  var questionRunner = null;
-
-  function renderChoices(question){
-    lunchQuickReplies.innerHTML = "";
-    if (!question.choices.length){
-      // no choices defined (chain-only sub-question) — free text only
-      lunchQuickReplies.hidden = true;
-      lunchInputRow.hidden = false;
-      questionRunner.awaitingFreeText = false;
-      lunchWhatInput.value = "";
-      lunchWhatInput.focus();
-      return;
-    }
-    lunchInputRow.hidden = true;
-    lunchQuickReplies.hidden = false;
-    question.choices.forEach(function(choice, i){
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "lunch-reply-btn";
-      btn.textContent = choice.label;
-      btn.setAttribute("data-choice-index", String(i));
-      lunchQuickReplies.appendChild(btn);
-    });
-  }
-
-  function askQuestion(qid){
-    var question = questionRunner.questions[qid];
-    if (!question){ advanceQueue(); return; } // dangling chain reference — skip, don't get stuck
-    questionRunner.currentQuestion = question;
-    lunchTitle.textContent = questionRunner.rootQuestion.text;
-    lunchAppend("bot", question.text);
-    renderChoices(question);
-    lunchPending = false;
-  }
-
-  function advanceQueue(){
-    questionRunner.queueIndex += 1;
-    if (questionRunner.queueIndex >= questionRunner.queue.length){
-      closeLunchModal();
-      return;
-    }
-    startTopLevelQuestion(questionRunner.queue[questionRunner.queueIndex]);
-  }
-
-  function finishWithSave(){
-    saveQuestionRecord(questionRunner.rootQuestion, questionRunner.answerLog)
-      .then(function(){ lunchAppend("bot", "保存したよ！"); advanceQueue(); })
-      .catch(function(err){ lunchAppend("err", mcpErrorMessage(err, "Google Drive") || "保存に失敗しました。"); lunchPending = false; });
-  }
-
-  function startTopLevelQuestion(qid){
-    questionRunner.rootQuestion = questionRunner.questions[qid];
-    questionRunner.answerLog = [];
-    questionRunner.depth = 0;
-    askQuestion(qid);
-  }
-
-  lunchQuickReplies.addEventListener("click", function(e){
-    var btn = e.target.closest(".lunch-reply-btn");
-    if (!btn || lunchPending || !questionRunner) return;
-    var choice = questionRunner.currentQuestion.choices[Number(btn.getAttribute("data-choice-index"))];
-    if (!choice) return;
-    lunchPending = true;
-    lunchAppend("user", choice.label);
-    lunchQuickReplies.hidden = true;
-
-    if (choice.type === "snooze"){
-      var todayKey = jstDateKey(new Date());
-      writeQuestionState(questionRunner.rootQuestion.id, { date: todayKey, snoozeUntil: Date.now() + choice.snoozeMinutes * 60 * 1000 });
-      lunchAppend("bot", choice.snoozeMinutes + "分後にまた聞くね。");
-      advanceQueue();
-      return;
-    }
-    if (choice.type === "followup"){
-      questionRunner.answerLog.push({ label: choice.label, extra: "" });
-      var nextQuestion = questionRunner.questions[choice.nextRef];
-      if (nextQuestion && questionRunner.depth < QUESTION_CHAIN_DEPTH_LIMIT){
-        questionRunner.depth += 1;
-        askQuestion(choice.nextRef);
-        return;
-      }
-      // 追加質問IDが質問マスタの既存IDと一致しない → そのまま追加質問の文言として使う
-      lunchAppend("bot", choice.nextRef || "詳しく教えて");
-      questionRunner.awaitingFreeText = true;
-      lunchInputRow.hidden = false;
-      lunchWhatInput.value = "";
-      lunchWhatInput.focus();
-      lunchPending = false;
-      return;
-    }
-    // "save" (即保存など) — 追加入力なしで確定保存
-    questionRunner.answerLog.push({ label: choice.label, extra: "" });
-    finishWithSave();
-  });
-
-  lunchInputRow.addEventListener("submit", function(e){
-    e.preventDefault();
-    if (!questionRunner) return;
-    var text = lunchWhatInput.value.trim();
-    if (!text) return;
-    lunchAppend("user", text);
-    lunchInputRow.hidden = true;
-    lunchPending = true;
-    if (questionRunner.awaitingFreeText && questionRunner.answerLog.length){
-      questionRunner.answerLog[questionRunner.answerLog.length - 1].extra = text;
-    } else {
-      questionRunner.answerLog.push({ label: questionRunner.currentQuestion.text, extra: text });
-    }
-    finishWithSave();
-  });
-
-  async function maybeShowQuestionPrompts(){
-    var table = await loadQuestionTable();
-    if (!table) return;
-    if (table.errors.length && window.console){
-      table.errors.forEach(function(msg){ console.warn("[質問表]", msg); });
-    }
-
-    var todayKey = jstDateKey(new Date());
-    var nowHHMM = Number(new Intl.DateTimeFormat("en-GB", { timeZone: JP_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()).replace(":", ""));
-    var queue = [];
-    var ids = Object.keys(table.questions);
-    for (var i = 0; i < ids.length; i++){
-      var q = table.questions[ids[i]];
-      if (!q.enabled || !q.time) continue; // 表示時刻が空欄＝チェーン専用、自動出題しない
-      var timeParts = q.time.split(":");
-      var qHHMM = Number((timeParts[0] || "0").padStart(2, "0") + (timeParts[1] || "0").padStart(2, "0"));
-      if (isNaN(qHHMM) || nowHHMM < qHHMM) continue;
-
-      var state = readQuestionState(q.id);
-      if (state.date !== todayKey) state = { date: todayKey };
-      if (state.answered) continue; // same-device fast path, skips the Drive call
-      if (state.snoozeUntil && Date.now() < state.snoozeUntil) continue;
-      if (await questionAlreadyAnsweredToday(q, todayKey)){
-        writeQuestionState(q.id, { date: todayKey, answered: true });
-        continue;
-      }
-      queue.push(q.id);
-    }
-    if (!queue.length) return;
-
-    questionRunner = { questions: table.questions, queue: queue, queueIndex: 0, currentQuestion: null, rootQuestion: null, answerLog: [], depth: 0, awaitingFreeText: false };
-    lunchChat.innerHTML = "";
-    lunchModal.hidden = false;
-    heroScene.setAttribute("aria-hidden", "false"); // it's a real interactive dialogue now, not decorative art
-    startTopLevelQuestion(queue[0]);
-  }
-
-  lunchCloseBtn.addEventListener("click", closeLunchModal);
-
-  maybeShowQuestionPrompts();
-
   function setActiveTab(containerId, value){
     document.querySelectorAll("#" + containerId + " .acct-tab").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-account") === value);
@@ -6913,33 +6539,32 @@
     scheduleNotesSave();
   });
 
+  // Esc で「いちばん手前のモーダル」を1つだけ閉じる。上から順に評価し、最初に
+  // 開いているものを閉じて打ち切る。以前は if/else の二段チェーンだったが、
+  // モーダルを増やすたびに追記が必要で漏れやすかったため配列1本にした
+  // (並び順＝優先順位。標準モーダルは生成済みの変数、管理モーダルは都度 getElementById)。
   document.addEventListener("keydown", function(e){
-    if (e.key === "Escape"){
-      if (!eventModal.hidden) closeEventModal();
-      else if (!mailModal.hidden) closeMailModal();
-      else if (!noteModal.hidden) closeNoteModal();
-      else if (!taskModal.hidden) closeTaskModal();
-      else if (ideaModal && !ideaModal.hidden) closeIdeaModal();
-      else if (!confirmModal.hidden) closeConfirmModal(false);
-      else if (settingsModal && !settingsModal.hidden) closeSettings();
-      else {
-        var finModal = document.getElementById("finance-modal");
-        var habModal = document.getElementById("habit-modal");
-        var habPop = document.getElementById("habit-count-pop");
-        var planModal = document.getElementById("plan-modal");
-        var planApply = document.getElementById("plan-apply-modal");
-        var pbModal = document.getElementById("pb-modal");
-        var contractModal = document.getElementById("contract-modal");
-        var subsModal = document.getElementById("subs-modal");
-        if (planApply && !planApply.hidden) closePlanApply("cancel");
-        else if (finModal && !finModal.hidden) closeFinanceModal();
-        else if (habModal && !habModal.hidden) habitModalBack();
-        else if (planModal && !planModal.hidden) planModalBack();
-        else if (pbModal && !pbModal.hidden) pbModalBack();
-        else if (contractModal && !contractModal.hidden) contractModalBack();
-        else if (subsModal && !subsModal.hidden) closeSubsModal();
-        else if (habPop && !habPop.hidden) closeHabitCountPop(false);
-      }
+    if (e.key !== "Escape") return;
+    var byId = function(id){ return document.getElementById(id); };
+    var stack = [
+      { el: eventModal,    close: closeEventModal },
+      { el: mailModal,     close: closeMailModal },
+      { el: noteModal,     close: closeNoteModal },
+      { el: taskModal,     close: closeTaskModal },
+      { el: ideaModal,     close: closeIdeaModal },
+      { el: confirmModal,  close: function(){ closeConfirmModal(false); } },
+      { el: settingsModal, close: closeSettings },
+      { el: byId("plan-apply-modal"), close: function(){ closePlanApply("cancel"); } },
+      { el: byId("finance-modal"),    close: closeFinanceModal },
+      { el: byId("habit-modal"),      close: habitModalBack },
+      { el: byId("plan-modal"),       close: planModalBack },
+      { el: byId("pb-modal"),         close: pbModalBack },
+      { el: byId("contract-modal"),   close: contractModalBack },
+      { el: byId("subs-modal"),       close: closeSubsModal },
+      { el: byId("habit-count-pop"),  close: function(){ closeHabitCountPop(false); } }
+    ];
+    for (var i = 0; i < stack.length; i++){
+      if (stack[i].el && !stack[i].el.hidden){ stack[i].close(); return; }
     }
   });
 

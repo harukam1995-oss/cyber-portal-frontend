@@ -555,56 +555,6 @@
   .confirm-body{ padding: 18px 20px 6px; font-size:13.5px; color: var(--text-dim); line-height:1.6; }
   .confirm-modal-actions{ padding: 6px 20px 20px; }
 
-  /* question check-in — game-style dialogue box docked inside the hero illustration
-     (id/class names below still say "lunch-*" from the feature's original scope —
-     harmless, but flagged here since it now drives any spreadsheet-defined question) */
-  .hero-dialogue{
-    position:absolute; left:16px; right:16px; bottom:16px; z-index:5;
-    max-width: 440px;
-    background: linear-gradient(180deg, rgba(14,8,28,0.7) 0%, rgba(8,4,18,0.92) 100%);
-    border: 1px solid rgba(255,143,63,0.35);
-    border-radius: 14px;
-    backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
-    box-shadow: 0 14px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03), 0 0 26px rgba(255,143,63,0.1);
-  }
-  .hero-dialogue[hidden]{ display:none; }
-  @media (max-width: 820px){ .hero-dialogue{ left:12px; right:12px; max-width:none; } }
-
-  .hero-dialogue-head{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.08);
-  }
-  .hero-dialogue-speaker{
-    font-family: var(--font-display); font-size:11px; letter-spacing:2px; color: var(--cyan);
-    text-shadow: 0 0 8px var(--cyan-dim);
-  }
-  .hero-dialogue-close{
-    background:none; border:none; padding:4px; margin:-4px; cursor:pointer; color: var(--text-dim); line-height:0;
-  }
-  .hero-dialogue-close svg{ width:16px; height:16px; stroke: currentColor; }
-  .hero-dialogue-close:hover{ color: var(--text); }
-
-  .lunch-chat{ display:flex; flex-direction:column; gap:8px; padding:12px 14px 2px; max-height:150px; overflow-y:auto; }
-  .lunch-msg{ max-width:85%; padding:8px 12px; border-radius:13px; font-size:13px; line-height:1.5; white-space:pre-line; }
-  .lunch-msg.bot{ align-self:flex-start; background: rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); color: var(--text); border-bottom-left-radius:4px; }
-  .lunch-msg.user{ align-self:flex-end; background: linear-gradient(90deg, var(--magenta), var(--violet)); color:#fff; border-bottom-right-radius:4px; }
-  .lunch-msg.err{ align-self:flex-start; background: rgba(255,60,90,0.14); border:1px solid rgba(255,60,90,0.4); color: var(--err); }
-  .lunch-quick-replies{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 14px 14px; }
-  .lunch-quick-replies[hidden]{ display:none; }
-  .lunch-reply-btn{
-    padding:7px 14px; border-radius:20px; border:1px solid var(--cyan); background: rgba(255,143,63,0.1);
-    color: var(--text); font-family: var(--font-body); font-size:12.5px; cursor:pointer; transition: background .15s ease, border-color .15s ease;
-  }
-  .lunch-reply-btn:hover{ background: rgba(255,143,63,0.2); }
-  .lunch-reply-btn:disabled{ opacity:.5; cursor:default; }
-  .lunch-input-row{ display:flex; gap:8px; padding:0 14px 14px; }
-  .lunch-input-row[hidden]{ display:none; }
-  .lunch-input-row input{
-    flex:1; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:8px;
-    padding:8px 10px; color: var(--text); font-family: var(--font-body); font-size:13.5px; color-scheme: dark;
-  }
-  .lunch-input-row input:focus{ outline:none; border-color: var(--cyan); }
-
   .mail-detail{ padding:18px 20px 22px; overflow-y:auto; }
   .mail-detail .from-row{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .mail-detail .from-meta .name{ font-size:14px; color: var(--text); }

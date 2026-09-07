@@ -23,6 +23,13 @@
   const signinBtn = document.getElementById("auth-gate-signin-btn");
   const statusEl = document.getElementById("auth-gate-status");
 
+  // 未ログイン中はページのスクロールを止める。#auth-gate は position:fixed で
+  // ビューポートを覆うが、その裏の #view-home は hidden されず実寸でレイアウトされる
+  // ため、スクロールするとゲート下端から認証済み画面が覗いてしまう(スマホで顕著)。
+  // ログイン成功時に解除する。
+  const lockScroll = (on) => { document.documentElement.style.overflow = on ? "hidden" : ""; };
+  lockScroll(true);
+
   // ログイン方式:
   //  - まず signInWithPopup(ポップアップ)。GitHub Pages は COOP ヘッダを付けない
   //    ので opener と通信でき、これが最も確実。
@@ -86,10 +93,12 @@
       // インラインstyleに負けて非表示にならない。display を直接操作する。
       gate.style.display = "none";
       gate.hidden = true;
+      lockScroll(false);
       document.dispatchEvent(new CustomEvent("cyberportal:authready", { detail: { uid: user.uid, email: user.email } }));
     } else {
       gate.style.display = "flex";
       gate.hidden = false;
+      lockScroll(true);
       statusEl.textContent = "";
     }
   });
