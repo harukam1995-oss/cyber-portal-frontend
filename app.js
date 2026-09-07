@@ -2877,6 +2877,25 @@
     var reqSel = document.getElementById("pv-contracts-requester");
     if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContracts(); });
 
+    // 検索窓は既定で畳んでおき、「すべて」右の虫めがねで開閉する。
+    // 畳むときは絞り込みを解除する(隠れたフィルタを残さない)。
+    var searchToggle = document.getElementById("pv-contracts-search-toggle");
+    var searchBox = document.getElementById("pv-contracts-search");
+    if (searchToggle && searchBox) searchToggle.addEventListener("click", function(){
+      var willShow = searchBox.hidden;
+      searchBox.hidden = !willShow;
+      searchToggle.classList.toggle("is-on", willShow);
+      if (willShow){
+        if (qInput) qInput.focus();
+      } else {
+        contractsQuery = "";
+        contractsRequester = "";
+        if (qInput) qInput.value = "";
+        if (reqSel) reqSel.value = "";
+        renderContracts();
+      }
+    });
+
     var modal = document.getElementById("contract-modal");
     var closeBtn = document.getElementById("contract-modal-close");
     var cancelBtn = document.getElementById("contract-cancel");

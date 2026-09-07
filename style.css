@@ -1344,7 +1344,16 @@
   .pv-contracts-tab.is-active{ color: var(--cyan); border-bottom-color: var(--cyan); }
   .pv-contracts-tab-alert{ color: var(--warn); }
   .pv-contracts-tab-alert.is-active{ color: var(--warn); border-bottom-color: var(--warn); }
+  /* 「すべて」の右端に置く検索トグル(タブではないので .pv-contracts-tab は付けない) */
+  .pv-contracts-search-toggle{
+    margin-left:auto; display:flex; align-items:center; padding:4px 6px; cursor:pointer;
+    background:transparent; border:none; color: var(--text-faint); border-bottom:2px solid transparent;
+  }
+  .pv-contracts-search-toggle svg{ width:14px; height:14px; stroke: currentColor; fill:none; }
+  .pv-contracts-search-toggle:hover{ color: var(--text); }
+  .pv-contracts-search-toggle.is-on{ color: var(--accent); }
   .pv-contracts-search{ display:flex; gap:6px; margin-bottom:8px; }
+  .pv-contracts-search[hidden]{ display:none; }
   .pv-contracts-q{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 8px; color-scheme: dark;
     background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
@@ -1356,7 +1365,8 @@
   }
   /* ネイティブのドロップダウン(option リスト)が白くならないよう、周りに合わせた暗色を明示 */
   .pv-contracts-requester option{ background: var(--panel-solid); color: var(--text); }
-  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; max-height:210px; overflow-y:auto; }
+  /* タブ切替で件数が変わってもカード高が動かないよう固定高。件数が少ないと余白が出る */
+  .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:210px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   /* カード内リストの「…ほか N件」行(契約書=クリックで管理モーダル、Slack=ただの表記) */
   .pv-list-more{
@@ -1849,10 +1859,15 @@
   .hero-hud::after{ display: none; }          /* 帯用アクセントティックは廃止(各カードが枠を持つ) */
   .hud-card{
     flex: 1 1 auto;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+    /* --line は未定義だった(Phase 4 の変数名ミス)ため枠が出ずカードに見えなかった。
+       トークンの --panel-border に修正し、プライベートの .pv-card と同じ見出し付きカードに。 */
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 3px;
+    padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px;
   }
-  .hud-label{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--text-faint); }
+  .hud-label{
+    font-family: var(--font-display); font-size: 13px; letter-spacing: 2px; font-weight: 600;
+    color: var(--text); padding-bottom: 10px; border-bottom: 1px solid var(--hairline);
+  }
   .hud-date{
     margin-top: 0; font-family: var(--font-display); font-size: 17px; letter-spacing: .3px;
     color: var(--text); display: flex; align-items: baseline; gap: 8px;
