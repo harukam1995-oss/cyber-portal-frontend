@@ -1923,3 +1923,20 @@
   .pv-sub-row{ border-radius: 2px; }
   /* 習慣・PLAN の曜日ヘッダは字送りを詰める */
   .pv-habit-dowhead span{ letter-spacing: 0; font-weight: 500; }
+
+  /* =====================================================================
+     B / AMBER restyle · Phase 3b — ビジネスタブ
+     契約書トラッカーの状態色は app.js の CONTRACT_STATUS_COLOR で「虹色→意味色のみ」に。
+     ここは角丸とタブ下線の詰め。
+     ===================================================================== */
+  .pv-contract-row{ border-radius: 3px; }
+  .pv-contract-chip{ border-radius: 3px; }
+  .pv-case-status-badge{ border-radius: 2px; }
+  .pv-contract-slack-badge{ border-radius: 2px; }
+  .pv-contract-alert{ border-radius: 2px; }
+  .pb-match-details, .pb-tpl-create, .pb-archive-btn{ border-radius: 3px; }
+  .pv-contracts-tab.is-active{ border-bottom-width: 1px; }
+  .pb-tab.is-active{ border-bottom-width: 1px; }
+  .pv-contracts-tab, .pb-tab{ font-family: var(--font-mono); }
+  /* Slackダイジェスト: 数字・時刻は等幅で桁揃え(既に mono だが念のため) */
+  .pv-slack-time, .pv-slack-channels{ font-variant-numeric: tabular-nums; }

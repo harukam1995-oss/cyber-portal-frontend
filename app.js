@@ -2453,7 +2453,8 @@
      client(会社名)が主識別子。title(契約書名)は任意の補足。
      status は手動選択。requestedDate/sentDate/signedDate(依頼日/送付日/締結日)で遅延をアラート表示する。 */
   var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
-  var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--cyan)", "締結済み": "var(--ok)", "報告済み": "var(--violet)" };
+  // 意味のある状態(要対応=warn / 締結済み=ok)だけ色を持たせ、途中経過はニュートラルに(虹色をやめる)
+  var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--text-faint)", "締結済み": "var(--ok)", "報告済み": "var(--text-faint)" };
   var CONTRACT_REQUESTERS = ["河野", "藤井", "船木", "竹内"]; // 依頼者の quick-pick / 絞り込み候補
   var contractsState = [];      // [{id,title,client,requestedBy,status,requestedDate,sentDate,signedDate,dueDate,confidential,source,order}]
   var contractsTab = "";        // "" = すべて / "alert" / "依頼受領" / "送付済み" / "締結済み"
@@ -2553,7 +2554,7 @@
       var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
       var row = document.createElement("div");
       row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
-      row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
+      row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
 
       var head = document.createElement("div");
       head.className = "pv-case-head";
@@ -2583,7 +2584,7 @@
       }
       var status = document.createElement("span");
       status.className = "pv-case-status-badge";
-      status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--cyan)");
+      status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
       status.textContent = c.status;
       head.appendChild(status);
       if (c.source === "slack"){
