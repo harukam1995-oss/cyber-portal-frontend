@@ -43,7 +43,7 @@
     background: rgba(180,150,255,0.35); border-radius:5px;
     border:2px solid transparent; background-clip:padding-box;
   }
-  *::-webkit-scrollbar-thumb:hover{ background: rgba(44,227,255,0.5); background-clip:padding-box; }
+  *::-webkit-scrollbar-thumb:hover{ background: rgba(255,143,63,0.5); background-clip:padding-box; }
   *::-webkit-scrollbar-corner{ background: transparent; }
 
   body{
@@ -239,7 +239,7 @@
   .hud-clock{
     font-family: var(--font-mono); font-variant-numeric: tabular-nums;
     font-size: clamp(30px, 4vw, 40px); font-weight:700; letter-spacing:1px;
-    text-shadow: 0 0 16px var(--magenta-dim), 0 0 30px rgba(255,47,146,0.15);
+    text-shadow: 0 0 16px var(--magenta-dim), 0 0 30px rgba(255,143,63,0.15);
     display:flex; align-items:baseline; gap:2px;
   }
   .hud-clock .sec{ font-size: 0.55em; color: var(--cyan); }
@@ -348,7 +348,7 @@
     transition: border-color .15s ease, transform .15s ease, background .15s ease;
     position:relative;
   }
-  .quick-tile:hover{ border-color: var(--cyan); background: rgba(44,227,255,0.05); transform: translateY(-2px); }
+  .quick-tile:hover{ border-color: var(--cyan); background: rgba(255,143,63,0.05); transform: translateY(-2px); }
   .quick-tile svg{ width:22px; height:22px; stroke: var(--cyan); }
   .quick-tile span{ font-size:12px; color: var(--text-dim); letter-spacing:.5px; }
   .quick-tile .tile-dot{ position:absolute; top:8px; right:8px; width:6px; height:6px; border-radius:50%; background: var(--magenta); box-shadow:0 0 5px var(--magenta); }
@@ -392,13 +392,13 @@
     font-size:12px; color: var(--text-dim); transition: background .12s, color .12s;
   }
   .mail-label-item:hover{ background: rgba(255,255,255,0.04); color: var(--text); }
-  .mail-label-item.is-active{ background: rgba(44,227,255,0.12); color: var(--cyan); }
+  .mail-label-item.is-active{ background: rgba(255,143,63,0.12); color: var(--cyan); }
   .mail-label-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mail-label-badge{
     flex:none; font-family: var(--font-mono); font-size:10px; color: var(--text-faint);
     background: rgba(255,255,255,0.07); border-radius:9px; padding:1px 6px;
   }
-  .mail-label-item.is-active .mail-label-badge{ color: var(--cyan); background: rgba(44,227,255,0.18); }
+  .mail-label-item.is-active .mail-label-badge{ color: var(--cyan); background: rgba(255,143,63,0.18); }
   .mail-body-main{ flex:1 1 auto; min-width:0; padding:8px 8px 14px; }
   @media (max-width: 760px){
     .mail-body{ flex-direction:column; }
@@ -419,7 +419,7 @@
     border-bottom:1px solid var(--hairline); transition: background .15s ease;
   }
   .mail-item:last-child{ border-bottom:none; }
-  .mail-item:hover{ background: rgba(44,227,255,0.05); }
+  .mail-item:hover{ background: rgba(255,143,63,0.05); }
   .mail-avatar{
     width:36px; height:36px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
     font-family: var(--font-display); font-size:12px; font-weight:700; color: var(--text);
@@ -449,16 +449,17 @@
   .task-input:focus{ outline:none; border-color: var(--cyan); }
   .task-add-btn, .note-add-btn{
     font-family: var(--font-display); font-size:11px; letter-spacing:1px; padding:8px 14px; border-radius:8px;
-    border:1px solid var(--cyan); background: rgba(44,227,255,0.08); color: var(--text); cursor:pointer; white-space:nowrap;
+    border:1px solid var(--cyan); background: rgba(255,143,63,0.08); color: var(--text); cursor:pointer; white-space:nowrap;
   }
-  .task-add-btn:hover, .note-add-btn:hover{ background: rgba(44,227,255,0.16); }
+  .task-add-btn:hover, .note-add-btn:hover{ background: rgba(255,143,63,0.16); }
 
   .tag-badge{
-    display:inline-flex; align-items:center; font-family: var(--font-display); font-size:9.5px; letter-spacing:.5px;
-    padding:2px 8px; border-radius:20px; border:1px solid; flex:none;
+    display:inline-flex; align-items:center; font-family: var(--font-mono); font-size:9px; letter-spacing:.5px;
+    padding:2px 8px; border-radius:3px; border:1px solid; flex:none;
   }
-  .tag-badge.tag-haruka{ color: var(--cyan); border-color: rgba(44,227,255,0.5); background: rgba(44,227,255,0.08); }
-  .tag-badge.tag-syslea{ color: var(--magenta); border-color: rgba(255,47,146,0.5); background: rgba(255,47,146,0.08); }
+  /* はるか(個人)= アクセント / SYSLEA(仕事)= ニュートラル で色を分ける */
+  .tag-badge.tag-haruka{ color: var(--accent); border-color: rgba(255,143,63,0.35); background: rgba(255,143,63,0.10); }
+  .tag-badge.tag-syslea{ color: var(--text-dim); border-color: var(--panel-border); background: rgba(255,255,255,0.03); }
 
   .task-list-wrap{ max-width:640px; margin:0 auto; display:flex; flex-direction:column; gap:20px; }
   .task-section-head{
@@ -503,8 +504,8 @@
   .task-item:last-child .task-detail{ border-bottom:none; }
   .task-item:not(.expanded) .task-detail{ display:none; }
   .task-repeat-badge{
-    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color: var(--violet); border:1px solid rgba(139,92,246,0.4);
-    background: rgba(139,92,246,0.08); border-radius:20px; padding:3px 10px; width:fit-content;
+    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color: var(--violet); border:1px solid rgba(255,181,121,0.4);
+    background: rgba(255,181,121,0.08); border-radius:20px; padding:3px 10px; width:fit-content;
   }
   .task-repeat-badge svg{ width:11px; height:11px; stroke: var(--violet); flex:none; }
   .task-url{
@@ -546,7 +547,7 @@
     padding:9px 11px; color: var(--text); font-family: var(--font-body); font-size:14px;
     min-height:180px; max-height:360px; overflow-y:auto; line-height:1.6; white-space:pre-wrap; word-break:break-word;
   }
-  .note-body-editable:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(44,227,255,0.15); }
+  .note-body-editable:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(255,143,63,0.15); }
   .note-body-editable:empty::before{ content: attr(data-placeholder); color: var(--text-faint); }
   .note-body-editable b, .note-body-editable strong{ color: var(--text); font-weight:700; }
 
@@ -561,10 +562,10 @@
     position:absolute; left:16px; right:16px; bottom:16px; z-index:5;
     max-width: 440px;
     background: linear-gradient(180deg, rgba(14,8,28,0.7) 0%, rgba(8,4,18,0.92) 100%);
-    border: 1px solid rgba(44,227,255,0.35);
+    border: 1px solid rgba(255,143,63,0.35);
     border-radius: 14px;
     backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
-    box-shadow: 0 14px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03), 0 0 26px rgba(44,227,255,0.1);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03), 0 0 26px rgba(255,143,63,0.1);
   }
   .hero-dialogue[hidden]{ display:none; }
   @media (max-width: 820px){ .hero-dialogue{ left:12px; right:12px; max-width:none; } }
@@ -591,10 +592,10 @@
   .lunch-quick-replies{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 14px 14px; }
   .lunch-quick-replies[hidden]{ display:none; }
   .lunch-reply-btn{
-    padding:7px 14px; border-radius:20px; border:1px solid var(--cyan); background: rgba(44,227,255,0.1);
+    padding:7px 14px; border-radius:20px; border:1px solid var(--cyan); background: rgba(255,143,63,0.1);
     color: var(--text); font-family: var(--font-body); font-size:12.5px; cursor:pointer; transition: background .15s ease, border-color .15s ease;
   }
-  .lunch-reply-btn:hover{ background: rgba(44,227,255,0.2); }
+  .lunch-reply-btn:hover{ background: rgba(255,143,63,0.2); }
   .lunch-reply-btn:disabled{ opacity:.5; cursor:default; }
   .lunch-input-row{ display:flex; gap:8px; padding:0 14px 14px; }
   .lunch-input-row[hidden]{ display:none; }
@@ -634,11 +635,11 @@
   .mail-sort-btn{
     font-family: var(--font-body); font-size:12.5px; letter-spacing:.03em;
     padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap;
-    background: linear-gradient(135deg, rgba(44,227,255,.16), rgba(255,47,146,.14));
+    background: linear-gradient(135deg, rgba(255,143,63,.16), rgba(255,143,63,.14));
     color: var(--text); border:1px solid var(--cyan-dim);
     transition:border-color .15s, box-shadow .15s;
   }
-  .mail-sort-btn:hover:not(:disabled){ border-color: var(--cyan); box-shadow:0 0 12px rgba(44,227,255,.25); }
+  .mail-sort-btn:hover:not(:disabled){ border-color: var(--cyan); box-shadow:0 0 12px rgba(255,143,63,.25); }
   .mail-sort-btn:disabled{ opacity:.5; cursor:default; }
 
   /* display:flex 指定が [hidden] を打ち消すため、明示的に打ち消し返す(このファイルの他所と同じ対応) */
@@ -679,8 +680,8 @@
     font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;
     border:1px solid currentColor;
   }
-  .pay-badge.is-furikomi{ color: var(--cyan); background: rgba(44,227,255,.10); }
-  .pay-badge.is-upsider{ color: var(--magenta); background: rgba(255,47,146,.10); }
+  .pay-badge.is-furikomi{ color: var(--cyan); background: rgba(255,143,63,.10); }
+  .pay-badge.is-upsider{ color: var(--magenta); background: rgba(255,143,63,.10); }
   .pay-badge.is-furikae{ color: var(--warn); background: rgba(255,207,107,.10); }
   .pay-badge.is-other{ color: var(--text-faint); background: rgba(120,110,150,.12); }
 
@@ -768,14 +769,15 @@
   .cal-nav-btn:hover{ border-color: var(--cyan); color: var(--text); }
   .cal-range-label{ font-family: var(--font-display); font-size:14px; letter-spacing:1px; margin-left:4px; white-space:nowrap; }
   .cal-toolbar-right{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  .acct-tabs{ display:flex; border:1px solid var(--panel-border); border-radius:8px; overflow:hidden; }
+  .acct-tabs{ display:flex; border:1px solid var(--panel-border); border-radius:2px; overflow:hidden; }
   .acct-tab{
-    padding:7px 14px; background:transparent; border:none; font-family: var(--font-display); font-size:11px; letter-spacing:1px;
+    padding:6px 13px; background:transparent; border:none; font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
     color: var(--text-dim); cursor:pointer; border-right:1px solid var(--panel-border);
   }
   .acct-tab:last-child{ border-right:none; }
-  .acct-tab.active{ background: linear-gradient(90deg, rgba(139,92,246,0.28), rgba(44,227,255,0.2)); color: var(--text); }
-  .acct-tabs.sm .acct-tab{ padding:4px 10px; font-size:9.5px; flex:1; text-align:center; }
+  .acct-tab:hover:not(.active){ color: var(--text); background: rgba(255,255,255,.03); }
+  .acct-tab.active{ background: rgba(255,143,63,0.15); color: var(--accent); }
+  .acct-tabs.sm .acct-tab{ padding:4px 9px; font-size:9px; flex:1; text-align:center; }
 
   .cal-view-switch{ display:flex; border:1px solid var(--panel-border); border-radius:8px; overflow:hidden; }
   .cal-view-btn{
@@ -783,13 +785,13 @@
     color: var(--text-dim); cursor:pointer; border-right:1px solid var(--panel-border);
   }
   .cal-view-btn:last-child{ border-right:none; }
-  .cal-view-btn.active{ background: linear-gradient(90deg, rgba(255,47,146,0.2), rgba(44,227,255,0.2)); color: var(--text); }
+  .cal-view-btn.active{ background: linear-gradient(90deg, rgba(255,143,63,0.2), rgba(255,143,63,0.2)); color: var(--text); }
   .cal-new-btn{
-    padding:8px 16px; border-radius:8px; border:1px solid var(--magenta-dim); background: rgba(255,47,146,0.1);
+    padding:8px 16px; border-radius:8px; border:1px solid var(--magenta-dim); background: rgba(255,143,63,0.1);
     color: var(--text); font-family: var(--font-display); font-size:11px; letter-spacing:1px; cursor:pointer;
     transition: background .15s ease, border-color .15s ease;
   }
-  .cal-new-btn:hover{ background: rgba(255,47,146,0.22); border-color: var(--magenta); }
+  .cal-new-btn:hover{ background: rgba(255,143,63,0.22); border-color: var(--magenta); }
 
   .cal-status-bar{ padding:8px 20px; font-size:11px; color: var(--text-faint); letter-spacing:.5px; }
   .cal-status-bar.err{ color: var(--err); }
@@ -839,7 +841,7 @@
   .cal-month-dow{ text-align:center; font-family: var(--font-display); font-size:10.5px; letter-spacing:1px; color: var(--text-faint); padding:8px 0; border-right:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
   .cal-month-cell{ min-height:96px; min-width:0; border-right:1px solid var(--hairline); border-bottom:1px solid var(--hairline); padding:6px; display:flex; flex-direction:column; gap:3px; cursor:pointer; overflow:hidden; }
   .cal-month-cell.outside{ opacity:.35; }
-  .cal-month-cell.today{ background: rgba(255,47,146,0.07); }
+  .cal-month-cell.today{ background: rgba(255,143,63,0.07); }
   .cal-month-date{ font-family: var(--font-mono); font-size:12px; color: var(--text-dim); }
   .cal-month-cell.today .cal-month-date{ color: var(--magenta); font-weight:700; }
   .cal-month-chip{
@@ -871,7 +873,7 @@
     background: var(--panel-solid);
     border: 1px solid var(--panel-border);
     border-radius: 16px;
-    box-shadow: 0 0 50px rgba(255,47,146,0.18), 0 0 90px rgba(44,227,255,0.10);
+    box-shadow: 0 0 50px rgba(255,143,63,0.18), 0 0 90px rgba(255,143,63,0.10);
     overflow:hidden;
   }
   .event-modal-panel{ width:min(480px, 100%); }
@@ -904,7 +906,7 @@
   .event-form select{ cursor:pointer; }
   .event-form select option{ background: #1a1230; color: var(--text); }
   .event-form textarea{ resize: vertical; font-family: var(--font-body); }
-  .event-form input:focus, .event-form select:focus, .event-form textarea:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(44,227,255,0.15); }
+  .event-form input:focus, .event-form select:focus, .event-form textarea:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(255,143,63,0.15); }
   /* Chrome paints its own autofill background (white/yellow) over author CSS;
      this is the standard override so text inputs stay dark when autofilled. */
   .event-form input:-webkit-autofill,
@@ -1008,7 +1010,7 @@
     width:180px; padding:0;
   }
   .mail-search-wrap input::placeholder{ color: var(--text-faint); }
-  .mail-search-wrap:focus-within{ border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(44,227,255,0.14); }
+  .mail-search-wrap:focus-within{ border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(255,143,63,0.14); }
 
   /* ---------- skeleton loading ---------- */
   @keyframes skeleton-shimmer{
@@ -1092,7 +1094,7 @@
   .pv-fin .card-head{ display:flex; align-items:center; justify-content:space-between; }
   .pv-fin-add{
     font-family: var(--font-body); font-size:11.5px; letter-spacing:.4px;
-    color: var(--cyan); background: rgba(44,227,255,0.06);
+    color: var(--cyan); background: rgba(255,143,63,0.06);
     border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px; cursor:pointer;
   }
   .pv-fin-add:hover{ border-color: var(--cyan); }
@@ -1106,14 +1108,14 @@
   }
   .pv-fin-donut-label{ font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
   .pv-fin-donut-value{ font-family: var(--font-mono); font-size:13px; font-weight:700; color: var(--text); }
-  .pv-fin-donut-value.is-neg{ color: var(--magenta); }
+  .pv-fin-donut-value.is-neg{ color: var(--err); }
   .pv-fin-donut-value.is-pos{ color: var(--ok); }
   .pv-fin-figures{ margin:0; flex:1 1 auto; display:flex; flex-direction:column; gap:7px; min-width:0; }
   .pv-fin-figures > div{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
   .pv-fin-figures dt{ font-size:11px; letter-spacing:.4px; color: var(--text-faint); }
   .pv-fin-figures dd{ margin:0; font-family: var(--font-mono); font-size:13px; color: var(--text); }
-  .pv-fin-figures dd.is-income{ color: var(--cyan); }
-  .pv-fin-figures dd.is-expense{ color: var(--magenta); }
+  .pv-fin-figures dd.is-income{ color: var(--accent); }
+  .pv-fin-figures dd.is-expense{ color: #a8836a; }
   .pv-fin-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-fin-reconnect{ margin-top:8px; }
 
@@ -1121,7 +1123,7 @@
   .pv-habit .card-head{ display:flex; align-items:center; justify-content:space-between; }
   .pv-habit-manage{
     font-family: var(--font-body); font-size:11.5px; letter-spacing:.4px;
-    color: var(--cyan); background: rgba(44,227,255,0.06);
+    color: var(--cyan); background: rgba(255,143,63,0.06);
     border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px; cursor:pointer;
   }
   .pv-habit-manage:hover{ border-color: var(--cyan); }
@@ -1160,11 +1162,11 @@
   }
   .pv-habit-cell:hover{ border-color: var(--cyan); }
   .pv-habit-cell.off{ opacity:.4; }
-  .pv-habit-cell.today{ border-color: rgba(44,227,255,0.5); }
-  .pv-habit-cell.partial{ background: rgba(255,47,146,0.14); color: var(--text); }
+  .pv-habit-cell.today{ border-color: rgba(255,143,63,0.5); }
+  .pv-habit-cell.partial{ background: rgba(255,143,63,0.14); color: var(--text); }
   .pv-habit-cell.met{
-    background: var(--habit-accent, linear-gradient(135deg, var(--magenta), var(--cyan)));
-    border-color: transparent; color: #0a0618;
+    background: var(--habit-accent, var(--accent));
+    border-color: transparent; color: #0a0d10;
   }
   .pv-habit-cell.binary svg{ width:14px; height:14px; }
   .pv-habit-meta{ display:flex; align-items:center; gap:8px; }
@@ -1287,7 +1289,7 @@
   .pv-plan-nav-btn:disabled:hover{ border-color: var(--panel-border); color: var(--text-dim); }
   .pv-plan-today{
     flex:none; font-family: var(--font-body); font-size:10.5px; letter-spacing:.3px;
-    color: var(--cyan); background: rgba(44,227,255,0.06);
+    color: var(--cyan); background: rgba(255,143,63,0.06);
     border:1px solid var(--panel-border); border-radius:5px; padding:2px 8px; cursor:pointer;
   }
   .pv-plan-today:hover{ border-color: var(--cyan); }
@@ -1331,7 +1333,7 @@
     border-radius:7px; padding:7px 8px; color: var(--text); font-family: var(--font-mono); font-size:12px;
     color-scheme: dark;
   }
-  .pv-plan-add input:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(44,227,255,0.15); }
+  .pv-plan-add input:focus{ outline:none; border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(255,143,63,0.15); }
   .pv-plan-add button{
     flex:none; width:34px; border:1px solid var(--panel-border); border-radius:7px;
     background: rgba(255,255,255,0.04); color: var(--cyan); font-size:16px; cursor:pointer;
@@ -1441,7 +1443,7 @@
     transition: color .15s, border-color .15s, background .15s;
   }
   .pv-contract-chip:hover{ color: var(--text); border-color: var(--cyan); }
-  .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(44,227,255,0.10); }
+  .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(255,143,63,0.10); }
 
   /* ---------- ビジネス: プロジェクトボード(内部は event_trackers・旧イベント／月次トラッカー) ---------- */
   .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:160px; overflow-y:auto; }
@@ -1598,20 +1600,16 @@
   /* アイデア帳: 新規ノートモーダルの本文 */
   .idea-body-input{ min-height:220px; }
 
-  .pv-hero{ position:relative; overflow:hidden; min-height:440px; }
-  .pv-hero-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.92; }
-  .pv-hero .scanlines, .pv-hero .vignette{ position:absolute; inset:0; pointer-events:none; }
-  .pv-hero-vtext{
-    position:absolute; top:26px; left:26px;
-    writing-mode: vertical-rl; text-orientation: mixed;
-    font-family: var(--font-display); letter-spacing:6px; font-size:14px;
-    color: rgba(255,255,255,0.55); text-shadow: 0 0 12px rgba(255,47,146,0.45);
-  }
+  /* ヒーロー画像はタブの「章の区切り」程度に薄い帯へ。縦書きの格言は撤去。 */
+  .pv-hero{ position:relative; overflow:hidden; min-height:92px; border-radius:3px; }
+  .pv-hero-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.42; }
+  .pv-hero .scanlines, .pv-hero .vignette{ display:none; }
+  .pv-hero-vtext{ display:none; }
 
   @media (max-width: 1080px){
     .pv-grid{ grid-template-columns: 1fr; }
     .pv-bottom{ grid-template-columns: 1fr; }
-    .pv-hero{ min-height:260px; }
+    .pv-hero{ min-height:72px; }
   }
 
   /* ---------- アイデア帳(Obsidian vault ビューア) ---------- */
@@ -1621,7 +1619,7 @@
     font-family: var(--font-body); font-size:12px; color: var(--cyan);
     border-radius:4px;
   }
-  .ideas-crumb:hover:not(:disabled){ background: rgba(44,227,255,0.1); }
+  .ideas-crumb:hover:not(:disabled){ background: rgba(255,143,63,0.1); }
   .ideas-crumb:disabled{ color: var(--text); cursor:default; }
   .ideas-crumb-sep{ color: var(--text-faint); }
 
@@ -1664,7 +1662,7 @@
   .md-body li{ margin:.25em 0; }
   .md-body li.md-task{ list-style:none; margin-left:-1.3em; }
   .md-body li.md-task input{ margin-right:7px; }
-  .md-body a{ color: var(--cyan); text-decoration:none; border-bottom:1px solid rgba(44,227,255,0.3); }
+  .md-body a{ color: var(--cyan); text-decoration:none; border-bottom:1px solid rgba(255,143,63,0.3); }
   .md-body a:hover{ border-bottom-color: var(--cyan); }
   .md-body code{
     font-family: var(--font-mono); font-size:.88em;
@@ -1681,7 +1679,7 @@
   }
   .md-body blockquote p{ margin:.35em 0; }
   .md-body hr{ border:none; border-top:1px solid var(--hairline); margin:1.5em 0; }
-  .md-body .wl{ color: var(--cyan); background: rgba(44,227,255,0.08); padding:0 4px; border-radius:3px; }
+  .md-body .wl{ color: var(--cyan); background: rgba(255,143,63,0.08); padding:0 4px; border-radius:3px; }
   .md-body del{ color: var(--text-faint); }
   .md-frontmatter{
     font-family: var(--font-mono); font-size:11.5px; line-height:1.6;
@@ -1904,3 +1902,24 @@
   .statusbar .right{ gap: 14px; }
   .statusbar #last-sync{ color: var(--text-dim); }
   .statusbar .right span:last-child{ color: var(--accent); }
+
+  /* =====================================================================
+     B / AMBER restyle · Phase 3 — プライベートタブ
+     ネオン残骸(rgba リテラル)は sed で一掃済み。ここは角丸を詰める等の仕上げ。
+     ===================================================================== */
+  .pv-habit-cell{ border-radius: 2px; }
+  .pv-habit-weeknav button{ border-radius: 2px; }
+  .pv-habit-manage,
+  .pv-subs-manage,
+  .pv-fin-add{
+    border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
+    color: var(--accent); background: rgba(255,143,63,0.08);
+  }
+  .habit-list-row, .habit-count-pop, .habit-count-pop button, .habit-count-pop input{ border-radius: 2px; }
+  .pv-fin-donut-value{ letter-spacing: .3px; }
+  .pv-fin-figures dd, .pv-fin-donut-value{ font-variant-numeric: tabular-nums; }
+  /* サブスクカードの行: 左の 3px アクセント帯は残しつつ数字を等幅・桁揃え */
+  .pv-sub-amount, .pv-subs-total{ font-variant-numeric: tabular-nums; }
+  .pv-sub-row{ border-radius: 2px; }
+  /* 習慣・PLAN の曜日ヘッダは字送りを詰める */
+  .pv-habit-dowhead span{ letter-spacing: 0; font-weight: 500; }
