@@ -173,6 +173,22 @@
     return res.json();
   }
 
+  // apiFetch のバイナリ版。CSV 書き出し(/api/export/csv)のように
+  // Content-Disposition 付きのファイルを取ってくる用。JSON 化せず Blob を返す。
+  async function apiFetchBlob(path){
+    var token = await getIdToken();
+    if (!token){ var e = new Error("未ログインです。"); e.code = "unauthenticated"; throw e; }
+    var res = await rawFetchWithRetry(API_BASE + path, { headers: { "Authorization": "Bearer " + token } });
+    if (!res.ok){
+      var body = null;
+      try { body = await res.json(); } catch(err){}
+      var er = new Error((body && body.message) || ("APIエラー: " + res.status));
+      er.code = (body && body.error) || ("http_" + res.status);
+      throw er;
+    }
+    return res.blob();
+  }
+
   // Google連携APIのパスに ?account=haruka|syslea を付ける
   function acctPath(path, account){
     var sep = path.indexOf("?") === -1 ? "?" : "&";
@@ -6710,6 +6726,8 @@
     settingsModal.hidden = false;
     if (!settingsState){ loadSettings().then(fillSettingsForm); }
     fillSettingsConnState();
+    refreshBackupState();
+    csvImportReset();
   }
   function closeSettings(){ if (settingsModal) settingsModal.hidden = true; }
 
@@ -6755,6 +6773,180 @@
   });
   var settingsExportBtn = document.getElementById("settings-export-btn");
   if (settingsExportBtn) settingsExportBtn.addEventListener("click", exportAllData);
+
+  // ---- データ: Drive バックアップ / CSV 書き出し・読み込み ----
+  var csvImportText = "";   // 選択された CSV ファイルの中身(テキスト)
+  var csvDryRun = null;     // 直近のプレビュー結果
+
+  function backupStateText(s){
+    if (!s || !s.lastAt) return "Drive バックアップ: まだ実行されていません";
+    var when = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" }).format(new Date(s.lastAt));
+    var kb = s.lastBytes ? " ・ " + Math.max(1, Math.round(s.lastBytes / 1024)) + "KB" : "";
+    return "Drive バックアップ: 最終 " + when + " ・ " + (s.fileCount || 1) + "世代" + kb;
+  }
+  async function refreshBackupState(){
+    var el = document.getElementById("settings-backup-state");
+    if (!el) return;
+    el.textContent = "Drive バックアップ: 確認中…";
+    try { el.textContent = backupStateText(await apiFetch("/api/backup/status")); }
+    catch(e){ el.textContent = "Drive バックアップ: 状態を取得できませんでした"; }
+  }
+  var backupNowBtn = document.getElementById("settings-backup-now-btn");
+  if (backupNowBtn) backupNowBtn.addEventListener("click", async function(){
+    var el = document.getElementById("settings-backup-state");
+    backupNowBtn.disabled = true; backupNowBtn.textContent = "保存中…";
+    if (el) el.textContent = "Drive バックアップ: 実行中…";
+    try {
+      var s = await apiFetch("/api/backup/run", { method:"POST", body:"{}" });
+      if (el) el.textContent = backupStateText(s) + (s.lastFile ? "（" + s.lastFile + "）" : "");
+    } catch(e){
+      if (el) el.textContent = "Drive バックアップ: 失敗 — " + apiErrorMessage(e, "バックアップ");
+    } finally {
+      backupNowBtn.disabled = false; backupNowBtn.textContent = "Driveに今すぐ保存";
+    }
+  });
+
+  var csvExportBtn = document.getElementById("settings-csv-export-btn");
+  if (csvExportBtn) csvExportBtn.addEventListener("click", async function(){
+    var sel = document.getElementById("settings-csv-target");
+    var target = sel ? sel.value : "tasks";
+    csvExportBtn.disabled = true; csvExportBtn.textContent = "書き出し中…";
+    try {
+      var blob = await apiFetchBlob("/api/export/csv?collection=" + encodeURIComponent(target));
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = target + "-" + jstDateKey(new Date()) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    } catch(e){ alert(apiErrorMessage(e, "CSV書き出し")); }
+    finally { csvExportBtn.disabled = false; csvExportBtn.textContent = "CSVで書き出し"; }
+  });
+
+  function csvImportReset(){
+    var box = document.getElementById("settings-csv-import-box");
+    if (box) box.hidden = true;
+    csvImportText = ""; csvDryRun = null;
+    var f = document.getElementById("settings-csv-file"); if (f) f.value = "";
+    var w = document.getElementById("settings-csv-replace-word"); if (w) w.value = "";
+    var m = document.querySelector('#settings-modal input[name="csv-mode"][value="merge"]'); if (m) m.checked = true;
+    var rc = document.getElementById("settings-csv-replace-confirm"); if (rc) rc.hidden = true;
+    var rs = document.getElementById("settings-csv-result"); if (rs){ rs.hidden = true; rs.textContent = ""; }
+    var ap = document.getElementById("settings-csv-apply-btn"); if (ap) ap.disabled = true;
+  }
+
+  // File → テキスト。UTF-8 で読めなければ Shift_JIS(Excel 既定)で読み直す。
+  async function csvReadFile(file){
+    var buf = await file.arrayBuffer();
+    try { return new TextDecoder("utf-8", { fatal:true }).decode(buf); }
+    catch(e){
+      try { return new TextDecoder("shift_jis").decode(buf); }
+      catch(e2){ return new TextDecoder("utf-8").decode(buf); }
+    }
+  }
+  function csvSelectedMode(){
+    var r = document.querySelector('#settings-modal input[name="csv-mode"]:checked');
+    return r && r.value === "replace" ? "replace" : "merge";
+  }
+  function csvUpdateApplyEnabled(){
+    var btn = document.getElementById("settings-csv-apply-btn");
+    if (!btn) return;
+    var ok = !!csvDryRun;
+    if (csvSelectedMode() === "replace"){
+      var w = document.getElementById("settings-csv-replace-word");
+      ok = ok && !!w && w.value.trim() === "置換";
+    }
+    btn.disabled = !ok;
+  }
+  async function csvRunPreview(){
+    var sel = document.getElementById("settings-csv-target");
+    var target = sel ? sel.value : "tasks";
+    var pv = document.getElementById("settings-csv-preview");
+    var mode = csvSelectedMode();
+    csvDryRun = null; csvUpdateApplyEnabled();
+    if (pv) pv.textContent = "確認中…";
+    try {
+      var res = await apiFetch("/api/import/" + encodeURIComponent(target), {
+        method: "POST",
+        body: JSON.stringify({ csv: csvImportText, mode: mode, dryRun: true })
+      });
+      csvDryRun = res;
+      var c = res.counts || {};
+      var msg = "新規 " + (c.create || 0) + " ・ 更新 " + (c.update || 0)
+        + (mode === "replace" ? " ・ 削除 " + (c.delete || 0) : "")
+        + " ・ エラー " + (c.error || 0);
+      if (res.errors && res.errors.length){
+        msg += "\n" + res.errors.slice(0, 8).map(function(x){ return x.row + "行目: " + x.message; }).join("\n");
+      }
+      if (pv) pv.textContent = msg;
+    } catch(e){
+      csvDryRun = null;
+      if (pv) pv.textContent = "エラー: " + apiErrorMessage(e, "CSV読み込み");
+    }
+    csvUpdateApplyEnabled();
+  }
+
+  var csvFileInput = document.getElementById("settings-csv-file");
+  if (csvFileInput) csvFileInput.addEventListener("change", async function(){
+    var file = csvFileInput.files && csvFileInput.files[0];
+    if (!file) return;
+    var box = document.getElementById("settings-csv-import-box");
+    var nameEl = document.getElementById("settings-csv-file-name");
+    var rs = document.getElementById("settings-csv-result");
+    if (rs){ rs.hidden = true; rs.textContent = ""; }
+    if (nameEl) nameEl.textContent = "ファイル: " + file.name;
+    if (box) box.hidden = false;
+    try { csvImportText = await csvReadFile(file); }
+    catch(e){
+      csvImportText = "";
+      var pv = document.getElementById("settings-csv-preview");
+      if (pv) pv.textContent = "ファイルを読み込めませんでした。";
+      return;
+    }
+    csvRunPreview();
+  });
+  document.querySelectorAll('#settings-modal input[name="csv-mode"]').forEach(function(r){
+    r.addEventListener("change", function(){
+      var rc = document.getElementById("settings-csv-replace-confirm");
+      if (rc) rc.hidden = csvSelectedMode() !== "replace";
+      if (csvImportText) csvRunPreview(); else csvUpdateApplyEnabled();
+    });
+  });
+  var csvReplaceWord = document.getElementById("settings-csv-replace-word");
+  if (csvReplaceWord) csvReplaceWord.addEventListener("input", csvUpdateApplyEnabled);
+  var csvCancelBtn = document.getElementById("settings-csv-cancel-btn");
+  if (csvCancelBtn) csvCancelBtn.addEventListener("click", csvImportReset);
+
+  var csvApplyBtn = document.getElementById("settings-csv-apply-btn");
+  if (csvApplyBtn) csvApplyBtn.addEventListener("click", async function(){
+    var sel = document.getElementById("settings-csv-target");
+    var target = sel ? sel.value : "tasks";
+    var mode = csvSelectedMode();
+    var rs = document.getElementById("settings-csv-result");
+    csvApplyBtn.disabled = true; csvApplyBtn.textContent = "取り込み中…";
+    try {
+      var res = await apiFetch("/api/import/" + encodeURIComponent(target), {
+        method: "POST",
+        body: JSON.stringify({ csv: csvImportText, mode: mode, dryRun: false })
+      });
+      var c = res.counts || {};
+      if (rs){
+        rs.hidden = false;
+        rs.textContent = "取り込み完了: 新規 " + (c.create || 0) + " ・ 更新 " + (c.update || 0)
+          + (mode === "replace" ? " ・ 削除 " + (c.delete || 0) : "") + " ・ スキップ " + (c.error || 0);
+      }
+      if (target === "tasks" && tasksInitialized) initTasks();
+      if (target === "notes" && notesInitialized) initNotes();
+      if (target === "contracts" && businessInitialized) loadContracts();
+      if (target === "event_trackers" && businessInitialized) loadEventTrackers();
+      var f = document.getElementById("settings-csv-file"); if (f) f.value = "";
+      csvImportText = ""; csvDryRun = null;
+    } catch(e){
+      if (rs){ rs.hidden = false; rs.textContent = "失敗: " + apiErrorMessage(e, "CSV取り込み"); }
+    } finally {
+      csvApplyBtn.textContent = "取り込む";
+      csvUpdateApplyEnabled();
+    }
+  });
 
   if (settingsForm){
     settingsForm.addEventListener("submit", async function(e){

@@ -233,7 +233,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.29.0</span>
+      <span>v2.30.0</span>
     </div>
   </footer>
 </div>
@@ -1333,9 +1333,46 @@
 
       <div class="settings-section">
         <h4>データのバックアップ</h4>
-        <p class="settings-hint">タスク・メモ・習慣トラッカー・TODAY'S PLAN・設定を1つのJSONファイルにまとめてダウンロードします。パスワードやGoogle連携トークンなどの認証情報は含まれません。週1回程度、手元に保存することをおすすめします。</p>
-        <button type="button" class="ev-btn" id="settings-export-btn">全データをJSONでダウンロード</button>
+        <p class="settings-hint">全データ（タスク・メモ・習慣・TODAY'S PLAN・契約書・プロジェクト・支払い台帳・設定ほか）を1つのJSONにまとめます。認証情報は含まれません。</p>
+        <div class="settings-btn-row">
+          <button type="button" class="ev-btn" id="settings-export-btn">JSONでダウンロード</button>
+          <button type="button" class="ev-btn" id="settings-backup-now-btn">Driveに今すぐ保存</button>
+        </div>
+        <p class="settings-hint" id="settings-backup-state">Drive バックアップ: 確認中…</p>
         <p class="settings-hint" id="settings-export-status" hidden></p>
+      </div>
+
+      <div class="settings-section">
+        <h4>データの CSV 書き出し / 読み込み</h4>
+        <label>対象
+          <select id="settings-csv-target">
+            <option value="tasks">タスク</option>
+            <option value="notes">メモ</option>
+            <option value="contracts">契約書</option>
+            <option value="event_trackers">プロジェクト</option>
+          </select>
+        </label>
+        <div class="settings-btn-row">
+          <button type="button" class="ev-btn" id="settings-csv-export-btn">CSVで書き出し</button>
+          <label class="ev-btn settings-file-btn">CSVを選ぶ<input type="file" id="settings-csv-file" accept=".csv,text/csv" hidden></label>
+        </div>
+        <p class="settings-hint">プロジェクトはチェックリスト等の付随データを除いた基本項目のみ（全置換不可）。サブスク・今月の収支はスプレッドシートで直接編集してください。</p>
+        <div id="settings-csv-import-box" hidden>
+          <p class="settings-hint" id="settings-csv-file-name"></p>
+          <p class="settings-hint" id="settings-csv-preview">確認中…</p>
+          <label class="settings-check"><input type="radio" name="csv-mode" value="merge" checked> 追加・更新（id が一致する行を更新、無ければ追加。CSV に無い既存データは残す）</label>
+          <label class="settings-check"><input type="radio" name="csv-mode" value="replace"> 全置換（CSV に無い既存データを削除。危険）</label>
+          <div id="settings-csv-replace-confirm" hidden>
+            <label>確認のため「置換」と入力
+              <input type="text" id="settings-csv-replace-word" autocomplete="off" placeholder="置換">
+            </label>
+          </div>
+          <div class="settings-btn-row">
+            <button type="button" class="ev-btn" id="settings-csv-cancel-btn">やめる</button>
+            <button type="button" class="ev-btn ev-btn-primary" id="settings-csv-apply-btn" disabled>取り込む</button>
+          </div>
+          <p class="settings-hint" id="settings-csv-result" hidden></p>
+        </div>
       </div>
 
       <div class="event-form-error" id="settings-form-error" hidden></div>
