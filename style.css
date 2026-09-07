@@ -1829,6 +1829,76 @@
   *::-webkit-scrollbar-thumb{ background: rgba(235,170,120,.30) !important; }
   *::-webkit-scrollbar-thumb:hover{ background: rgba(235,170,120,.48) !important; }
 
-  /* --- HOME ヒーローの生成スカイライン canvas はまだネオン配色のまま。
-         Phase 2 でシステムバンドに置き換えるまで薄く沈めておく。 --- */
-  .scene canvas{ opacity: .30; }
+  /* =====================================================================
+     B / AMBER restyle · Phase 2 — クローム(トップバー / ヒーロー→システムバンド / フッター)
+     いずれも CSS のみ。HTML の id/構造は不変なので clock/weather の JS 配線はそのまま。
+     ===================================================================== */
+
+  /* --- トップバー --- */
+  .topbar{ border-radius: 3px; padding: 11px 18px; }
+  .brand-mark svg path{ stroke: var(--accent); }
+  .brand-mark svg path[fill^="url"]{ fill: var(--accent); }
+  .brand-text .name{
+    font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: 2.5px;
+    background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--text);
+  }
+  .brand-text .tag{
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-faint);
+  }
+  .nav{ gap: 20px; }
+  .nav a{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px;
+    color: var(--text-dim); padding: 4px 0;
+  }
+  .nav a.active{ color: var(--accent); }
+  .nav a.active::after{ height: 1px; bottom: -4px; background: var(--accent); }
+  .icon-btn{
+    width: 30px; height: 30px; border-radius: 2px;
+    border: 1px solid transparent; background: transparent;
+  }
+  .icon-btn:hover{ border-color: var(--panel-border); background: rgba(255,255,255,.03); transform: none; }
+  .icon-btn svg{ stroke: var(--text-dim); }
+  .avatar{ border-radius: 2px; }
+  .profile-meta .uname{ font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--text-dim); }
+  .profile-meta .status{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
+  .profile-meta .status::before{ background: var(--ok); }
+
+  /* --- ヒーロー → 横長のシステムバンド --- */
+  .hero{ min-height: auto; display: block; border-radius: 3px; }
+  .hero .scene{ display: none; }             /* スカイライン canvas を廃止。中の #lunch-modal は
+                                                既に死コード(ユーザー判断で残置)なので影響なし。
+                                                復活させるならヒーロー設計ごと再考が必要。 */
+  .hero-hud{
+    display: flex; flex-flow: row wrap; align-items: baseline; gap: 6px 18px;
+    padding: 13px 18px 15px; border-right: none; position: relative;
+  }
+  .hero-hud > div:first-child{ display: flex; align-items: baseline; gap: 10px; }
+  .hud-label{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--text-faint); }
+  .hud-date{ margin-top: 0; font-family: var(--font-display); font-size: 16px; letter-spacing: .3px; color: var(--text); gap: 8px; }
+  .hud-date .yr{ font-size: 11px; }
+  .hud-clock-wrap{ margin: 0; display: flex; align-items: baseline; justify-content: flex-start; }
+  .hud-ring{ display: none; }
+  .hud-clock{ font-size: 14px; font-weight: 500; letter-spacing: .5px; color: var(--text-dim); gap: 1px; }
+  .hud-clock .sec{ font-size: .7em; color: var(--text-faint); }
+  .hud-tz{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
+  .hud-quote{ display: none; }               /* 格言(AIっぽさの元)は撤去 */
+  .hud-weather{ border-top: none; margin: 0; padding: 0; gap: 10px; font-size: 12px; }
+  .hud-weather svg{ stroke: var(--text-dim); }
+  .hud-weather .place{ gap: 6px; color: var(--text-dim); }
+  .hud-weather .temp{ font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+  .weather-note{ flex-basis: 100%; font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+  .hero-hud::after{
+    content: ""; position: absolute; left: 18px; right: 18px; bottom: 0; height: 1px;
+    background: linear-gradient(90deg, var(--accent) 0 30px, var(--line) 30px);
+  }
+
+  /* --- フッター(ステータスバー) --- */
+  .statusbar{
+    border-radius: 3px; padding: 10px 18px;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1px; color: var(--text-faint);
+  }
+  .statusbar .sys{ color: var(--text-dim); }
+  .statusbar .right{ gap: 14px; }
+  .statusbar #last-sync{ color: var(--text-dim); }
+  .statusbar .right span:last-child{ color: var(--accent); }
