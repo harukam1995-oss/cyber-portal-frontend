@@ -218,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.31.1</span>
+      <span>v2.31.2</span>
     </div>
   </footer>
 </div>
@@ -472,6 +472,7 @@
             <button class="quick-tile" type="button" id="biz-quick-notes"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>メモ</span></button>
             <button class="quick-tile" type="button" id="biz-quick-mail"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>メール</span></button>
             <button class="quick-tile" type="button" id="biz-quick-ideas"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-4 10.5c.6.6 1 1.6 1 2.5h6c0-.9.4-1.9 1-2.5A6 6 0 0 0 12 2Z"/></svg><span>アイデア帳</span></button>
+            <button class="quick-tile" type="button" id="biz-quick-payables"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 3h12l4 4v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v5h5"/><path d="M8 13h8M8 17h5M8 9h3"/></svg><span>請求書管理</span></button>
             <a class="quick-tile" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M6.3 17.7l2.8-2.8M14.9 9.1l2.8-2.8"/></svg><span>Claude</span></a>
           </div>
         </div>
@@ -677,6 +678,144 @@
       </div>
     </div>
   </section>
+</div>
+
+<!-- ================= 請求書管理 VIEW（SYSLEA 支払明細台帳 ＋ ベンダーマスタ） ================= -->
+<div class="frame" id="view-payables" hidden>
+
+  <header class="panel topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#g7)" stroke-width="2.4"/>
+          <path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#g7)" opacity="0.85"/>
+          <defs><linearGradient id="g7" x1="4" y1="3" x2="36" y2="37"><stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="name">請求書管理</div>
+        <div class="tag">SYSLEA 支払台帳</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="profile">
+        <div class="avatar">遥</div>
+        <div class="profile-meta">
+          <div class="uname">HARUKA</div>
+          <div class="status">Online</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="payables-back" type="button">← 戻る</button>
+      <div class="acct-tabs" role="tablist" id="pay2-tabs">
+        <button class="acct-tab active" type="button" data-p2tab="detail">支払明細</button>
+        <button class="acct-tab" type="button" data-p2tab="vendor">ベンダーマスタ</button>
+      </div>
+    </div>
+    <div class="cal-toolbar-right" id="pay2-detail-tools">
+      <select id="pay2-month" class="pay2-sel" aria-label="対象月で絞り込み"><option value="">全期間</option></select>
+      <select id="pay2-method" class="pay2-sel" aria-label="支払方式で絞り込み">
+        <option value="">方式（すべて）</option>
+        <option value="銀行振込">銀行振込</option>
+        <option value="UPSIDER">UPSIDER</option>
+        <option value="口座振替">口座振替</option>
+        <option value="その他">その他</option>
+      </select>
+      <label class="pay2-check-inline"><input type="checkbox" id="pay2-unpaid"> 未払いのみ</label>
+      <button type="button" class="pay2-tool-btn" id="pay2-import-btn">✉ メール取り込み</button>
+      <button type="button" class="pay2-tool-btn" id="pay2-csv-btn">↓ CSV</button>
+      <button type="button" class="pay2-tool-btn pay2-tool-primary" id="pay2-new-btn">＋ 新規</button>
+    </div>
+    <div class="cal-toolbar-right" id="pay2-vendor-tools" hidden>
+      <button type="button" class="pay2-tool-btn" id="pay2-vendor-csv-btn">↓ CSV</button>
+      <button type="button" class="pay2-tool-btn pay2-tool-primary" id="pay2-vendor-new-btn">＋ ベンダー追加</button>
+    </div>
+  </section>
+
+  <section class="panel cal-status-bar" id="pay2-status">接続確認中…</section>
+
+  <section class="panel cal-body-panel">
+    <div class="pay2-summary" id="pay2-summary" hidden></div>
+    <div class="pay2-tablewrap" id="pay2-detail-wrap">
+      <table class="pay2-table" id="pay2-detail-table"></table>
+      <p class="pay2-empty" id="pay2-detail-empty" hidden></p>
+    </div>
+    <div class="pay2-tablewrap" id="pay2-vendor-wrap" hidden>
+      <table class="pay2-table" id="pay2-vendor-table"></table>
+      <p class="pay2-empty" id="pay2-vendor-empty" hidden></p>
+    </div>
+  </section>
+</div>
+
+<!-- 支払明細の編集モーダル -->
+<div class="modal-overlay" id="pay2-edit-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pay2-edit-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="pay2-edit-title">請求書の登録</h3>
+      <button class="modal-close" type="button" id="pay2-edit-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="pay2-edit-form">
+      <div id="pay2-edit-body"></div>
+      <div class="event-form-error" id="pay2-edit-error" hidden></div>
+      <div class="event-form-actions">
+        <button type="button" id="pay2-edit-del" class="ev-btn ev-btn-danger" hidden>削除</button>
+        <div class="event-form-actions-right">
+          <button type="button" id="pay2-edit-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="pay2-edit-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ベンダーマスタの編集モーダル -->
+<div class="modal-overlay" id="pay2-vendor-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pay2-vendor-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="pay2-vendor-title">ベンダーの登録</h3>
+      <button class="modal-close" type="button" id="pay2-vendor-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="pay2-vendor-form">
+      <div id="pay2-vendor-body"></div>
+      <div class="event-form-error" id="pay2-vendor-error" hidden></div>
+      <div class="event-form-actions">
+        <button type="button" id="pay2-vendor-del" class="ev-btn ev-btn-danger" hidden>削除</button>
+        <div class="event-form-actions-right">
+          <button type="button" id="pay2-vendor-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="pay2-vendor-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 01.payment メールからの取り込みモーダル -->
+<div class="modal-overlay" id="pay2-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pay2-import-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="pay2-import-title">メールから取り込み</h3>
+      <button class="modal-close" type="button" id="pay2-import-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <p class="pay2-import-hint">SYSLEA アカウントの <code>01.payment</code> ラベルの未処理メールです。台帳に無いものを選んで下書き行を作成します（金額・支払期日は後で入力）。</p>
+    <div class="pay2-import-list" id="pay2-import-list"><p class="pay2-empty">読み込み中…</p></div>
+    <div class="event-form-error" id="pay2-import-error" hidden></div>
+    <div class="event-form-actions">
+      <div class="event-form-actions-right">
+        <button type="button" id="pay2-import-cancel" class="ev-btn">キャンセル</button>
+        <button type="button" id="pay2-import-run" class="ev-btn ev-btn-primary" disabled>選択を取り込む</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ================= TASKS VIEW ================= -->
@@ -1344,6 +1483,8 @@
             <option value="notes">メモ</option>
             <option value="contracts">契約書</option>
             <option value="event_trackers">プロジェクト</option>
+            <option value="syslea_payables">SYSLEA支払明細</option>
+            <option value="syslea_vendors">SYSLEAベンダーマスタ</option>
           </select>
         </label>
         <div class="settings-btn-row">
