@@ -6,7 +6,7 @@
 // このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
 // install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
 // (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
-const CACHE = "cyber-portal-shell-v58";
+const CACHE = "cyber-portal-shell-v59";
 // ヒーロー画像はここに入れない。install 時に全部(4枚)を事前DLしていたが、
 // 実際は1枚しか使わない(スマホは0枚)。fetch ハンドラの stale-while-revalidate
 // で、実際に表示されたものだけ実行時にキャッシュされる。
