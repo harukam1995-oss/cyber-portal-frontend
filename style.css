@@ -1,29 +1,35 @@
-  /* ---------- tokens (single committed dark cyber-world) ---------- */
+  /* ---------- tokens (B / AMBER restyle · Phase 1) ----------
+     旧 cyber-world の変数名は残したまま値だけ差し替えている。
+     --magenta / --cyan は同じ accent(#ff8f3f) を指す → 旧グラデ(magenta→cyan)は
+     実質ベタのアンバーに畳まれる。--violet は薄いアンバー寄りに。 */
   :root{
-    --bg:            #050310;
-    --bg-deep:       #020108;
-    --panel:         rgba(18, 10, 40, 0.55);
-    --panel-solid:   #0d0824;
-    --panel-border:  rgba(180, 140, 255, 0.16);
-    --hairline:      rgba(180, 150, 255, 0.10);
+    --bg:            #07090c;
+    --bg-deep:       #05070a;
+    --panel:         #0b0e12;   /* 不透明。旧 rgba(...,.55) + blur は廃止 */
+    --panel-solid:   #0d1116;
+    --panel-border:  rgba(235, 170, 120, 0.15);  /* アンバー寄りのヘアライン */
+    --hairline:      rgba(235, 170, 120, 0.08);
+    --dot:           rgba(235, 170, 120, 0.055); /* 背景ドットグリッド */
 
-    --magenta:       #ff2f92;
-    --magenta-dim:   rgba(255, 47, 146, 0.35);
-    --cyan:          #2ce3ff;
-    --cyan-dim:      rgba(44, 227, 255, 0.35);
-    --violet:        #8b5cf6;
+    --accent:        #ff8f3f;
+    --accent-dim:    rgba(255, 143, 63, 0.30);
+    --magenta:       #ff8f3f;
+    --magenta-dim:   rgba(255, 143, 63, 0.30);
+    --cyan:          #ff8f3f;
+    --cyan-dim:      rgba(255, 143, 63, 0.26);
+    --violet:        #ffb579;
 
-    --text:          #f1eefc;
-    --text-dim:      #a79fc9;
-    --text-faint:    #6c6390;
+    --text:          #e8e4de;
+    --text-dim:      #9a938a;
+    --text-faint:    #7d7368;
 
-    --ok:            #3cf2b4;
-    --warn:          #ffcf6b;
-    --err:           #ff9d9d;
+    --ok:            #5ec98a;
+    --warn:          #d8c24a;
+    --err:           #ff5c5c;
 
-    --font-display:  'Orbitron', 'Segoe UI', sans-serif;
-    --font-body:     'Rajdhani', 'Segoe UI', sans-serif;
-    --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+    --font-display:  'Space Grotesk', 'Inter', 'Segoe UI', sans-serif;
+    --font-body:     'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono:     'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
   }
 
   *{ box-sizing: border-box; }
@@ -41,7 +47,9 @@
   *::-webkit-scrollbar-corner{ background: transparent; }
 
   body{
-    background: radial-gradient(ellipse 120% 80% at 50% -10%, #1a0d3d 0%, var(--bg) 45%, var(--bg-deep) 100%);
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+    background-size: 24px 24px;
     color: var(--text);
     font-family: var(--font-body);
     min-height: 100vh;
@@ -1159,7 +1167,7 @@
   .pv-habit-cell.binary svg{ width:14px; height:14px; }
   .pv-habit-meta{ display:flex; align-items:center; gap:8px; }
   .pv-habit-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
-  .pv-habit-bar span{ display:block; height:100%; border-radius:3px; background: var(--habit-accent, linear-gradient(90deg, var(--magenta), var(--cyan))); box-shadow: 0 0 6px var(--magenta-dim); }
+  .pv-habit-bar span{ display:block; height:100%; border-radius:2px; background: var(--habit-accent, var(--accent)); }
   .pv-habit-streak{ font-family: var(--font-mono); font-size:10.5px; color: var(--warn); flex:none; }
   .pv-habit-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
   .pv-habit-paused-note{ font-size:11px; color: var(--text-faint); margin-top:2px; line-height:1.6; }
@@ -1283,7 +1291,7 @@
   .pv-plan-today:hover{ border-color: var(--cyan); }
   .pv-plan-today[hidden]{ display:none; }
   .pv-plan-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
-  .pv-plan-bar span{ display:block; height:100%; border-radius:3px; background: linear-gradient(90deg, var(--violet), var(--cyan)); box-shadow: 0 0 6px rgba(139,92,246,0.5); transition: width .2s ease; }
+  .pv-plan-bar span{ display:block; height:100%; border-radius:2px; background: var(--accent); transition: width .2s ease; }
   .pv-plan-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
   .pv-plan-list{ display:flex; flex-direction:column; gap:2px; }
   .pv-plan-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
@@ -1768,3 +1776,59 @@
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   }
   .server-warming-toast[hidden]{ display: none; }
+
+  /* =====================================================================
+     B / AMBER restyle · Phase 1 — 発光・HUD装飾・グラス効果の全撤去
+     ここは「土台」だけ。レイアウトは触らない。個別カードの作り込み
+     (セグメント進捗・ブラケット表記・字組み)は後続フェーズで各所を直接編集する。
+     この 1 ブロックを消せば Phase 1 の見た目変更はほぼロールバックできる。
+     ===================================================================== */
+
+  /* --- 発光(text-shadow は全部グロー目的だった) --- */
+  *{ text-shadow: none !important; }
+
+  /* --- HUD 装飾: コーナー括弧 / パネルのグラデ枠 / 走査線 / ビネット --- */
+  .corner{ display: none !important; }
+  .panel::before{ content: none !important; }
+  .scanlines, .vignette,
+  .scene .scanlines, .scene .vignette,
+  .pv-hero .scanlines, .pv-hero .vignette{ display: none !important; }
+
+  /* --- グラス効果(backdrop-filter)を廃止して不透明パネルに --- */
+  .panel{ backdrop-filter: none !important; -webkit-backdrop-filter: none !important; border-radius: 3px; }
+  .notif-panel, .modal-panel{ backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: var(--panel-solid) !important; }
+
+  /* --- ロゴ・サイン画像のグロー(drop-shadow)除去 --- */
+  .brand-mark svg, .scene-signage .mark{ filter: none !important; }
+
+  /* --- 発光ドット / ライン / バーの box-shadow(0 0 Npx …)除去。形は残す --- */
+  .nav a.active::after,
+  .status::before, .statusbar .sys::before, .profile-meta .status::before,
+  .dot-badge, .quick-tile .tile-dot, .mail-unread-dot,
+  .cal-now-line, .cal-now-line::before,
+  .pv-up-dot, .pv-habit-bar span, .pv-plan-bar span,
+  .progress-fill{ box-shadow: none !important; }
+
+  /* --- 進捗バーはグラデ廃止でベタのアンバー --- */
+  .progress-fill{ background: var(--accent) !important; border-radius: 2px; }
+  .progress-track{ border-radius: 2px; }
+
+  /* --- モーダル/ポップオーバーの影はドロップシャドウのみ(グロー成分を除去) --- */
+  .notif-panel{ box-shadow: 0 14px 40px rgba(0,0,0,.6) !important; }
+  .modal-panel, .event-modal-panel{ box-shadow: 0 16px 44px rgba(0,0,0,.6) !important; }
+  .mail-sort-btn:hover:not(:disabled){ box-shadow: none !important; }
+
+  /* --- フォーカスリングの色をシアン固定値からアンバーへ(リング自体は残す) --- */
+  .note-body-editable:focus,
+  .event-form input:focus, .event-form select:focus, .event-form textarea:focus,
+  .pv-plan-add input:focus,
+  .mail-search-wrap:focus-within{ box-shadow: 0 0 0 2px var(--accent-dim) !important; }
+
+  /* --- スクロールバーを紫→アンバー --- */
+  *{ scrollbar-color: rgba(235,170,120,.30) rgba(255,255,255,.03) !important; }
+  *::-webkit-scrollbar-thumb{ background: rgba(235,170,120,.30) !important; }
+  *::-webkit-scrollbar-thumb:hover{ background: rgba(235,170,120,.48) !important; }
+
+  /* --- HOME ヒーローの生成スカイライン canvas はまだネオン配色のまま。
+         Phase 2 でシステムバンドに置き換えるまで薄く沈めておく。 --- */
+  .scene canvas{ opacity: .30; }
