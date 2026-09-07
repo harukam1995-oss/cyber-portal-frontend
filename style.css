@@ -1600,12 +1600,11 @@
   .idea-body-input{ min-height:220px; }
 
   /* 中央列のヒーロー。左右のカード列の高さに合わせて伸びる(align-items:stretch)。
-     画像はアンバー寄りのデュオトーンにして B/アンバーの世界に馴染ませる。
-     走査線・ビネット・縦書きの格言は撤去済み。 */
+     画像は元からアンバー基調なので軽く沈めるだけ。走査線・ビネット・縦書きの格言は撤去済み。 */
   .pv-hero{ position:relative; overflow:hidden; min-height:260px; border-radius:3px; }
   .pv-hero-img{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.92;
-    filter: grayscale(1) sepia(.55) saturate(1.45) hue-rotate(-6deg) brightness(.58) contrast(1.05);
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:1;
+    filter: brightness(.86) contrast(1.03) saturate(1.02);
   }
   .pv-hero .scanlines, .pv-hero .vignette{ display:none; }
   .pv-hero-vtext{ display:none; }

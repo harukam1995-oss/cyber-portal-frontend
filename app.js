@@ -674,9 +674,7 @@
   /* ================= hero illustrations (user-supplied artwork, one shown at random per load) ================= */
   var HERO_ILLUSTRATIONS = [
     "hero1.webp",
-    "hero2.webp",
-    "hero3.webp",
-    "hero4.webp"
+    "hero2.webp"
   ];
   (function(){
     var img = document.getElementById("scene-illustration");
