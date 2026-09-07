@@ -233,7 +233,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.30.2</span>
+      <span>v2.31.0</span>
     </div>
   </footer>
 </div>
@@ -763,12 +763,30 @@
     </div>
   </section>
 
-  <div class="task-tag-filter" id="task-tag-filter" hidden></div>
-
   <section class="panel cal-status-bar" id="tasks-status-bar">接続確認中…</section>
 
-  <section class="panel cal-body-panel">
-    <div class="task-list-wrap" id="task-list"><div class="task-empty">読み込み中…</div></div>
+  <section class="panel task-layout">
+    <aside class="task-sidebar" id="task-sidebar">
+      <div class="task-side-group">
+        <div class="task-side-title">ビュー</div>
+        <ul class="task-side-list" id="task-side-views"></ul>
+      </div>
+      <div class="task-side-group">
+        <div class="task-side-title">プロジェクト</div>
+        <ul class="task-side-list" id="task-side-projects"></ul>
+      </div>
+      <div class="task-side-group" id="task-side-tags-group">
+        <div class="task-side-title">タグ</div>
+        <ul class="task-side-list" id="task-side-tags"></ul>
+      </div>
+    </aside>
+    <div class="task-main">
+      <div class="task-status-tabs" role="tablist" id="task-status-tabs">
+        <button type="button" class="task-status-tab is-active" data-status="pending">未完了 <span id="task-count-pending">0</span></button>
+        <button type="button" class="task-status-tab" data-status="done">完了 <span id="task-count-done">0</span></button>
+      </div>
+      <div class="task-list-wrap" id="task-list"><div class="task-empty">読み込み中…</div></div>
+    </div>
   </section>
 </div>
 
@@ -967,6 +985,14 @@
         <input type="text" id="task-tags-input" placeholder="月次決算, 経理, 総務  （カンマ・スペース区切り）" autocomplete="off" maxlength="200">
       </label>
       <div class="task-tags-chips" id="task-tags-chips" hidden></div>
+      <div class="event-datetime-row">
+        <label>親タスク（任意）
+          <select id="task-parent-input"><option value="">（なし）</option></select>
+        </label>
+        <label>プロジェクト（任意）
+          <select id="task-project-input"><option value="">（なし）</option></select>
+        </label>
+      </div>
       <label>繰り返し
         <select id="task-repeat-input">
           <option value="none">なし</option>

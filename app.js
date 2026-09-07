@@ -5942,10 +5942,45 @@
   var tasksStatusBar = document.getElementById("tasks-status-bar");
   var taskList = document.getElementById("task-list");
   var taskSaveTimer = null;
-  var taskFilterTag = "all";
-  var taskTagFilter = "";   // 自由タグでの絞り込み("" = なし)
+  var taskFilterTag = "all";      // アカウント(all/haruka/syslea) — 上部タブ
+  var taskTagFilter = "";         // 自由タグでの絞り込み("" = なし) — サイドバー
+  var taskStatusTab = "pending";  // "pending" | "done" — メイン上部タブ
+  var taskView = "all";           // "all" | "today" | "week" | "overdue" — サイドバー
+  var taskProjectFilter = "";     // "" | "__none" | <projectId> — サイドバー
+  var projectsForLink = [];       // [{ id, name, archived }] — タスク⇔プロジェクト用に独立ロード
+  var projectsLoaded = false;
   var editingTaskId = null; // null = creating a new task
   var taskFormTag = "haruka";
+
+  // event_trackers(プロジェクトボード)を、ビジネスタブのカード描画とは独立に一覧取得する。
+  // タスクモーダルの「プロジェクト」セレクトとサイドバーの「プロジェクト」一覧で使う。
+  async function ensureProjectsLoaded(force){
+    if (projectsLoaded && !force) return projectsForLink;
+    try {
+      var res = await apiFetch("/api/event-trackers");
+      projectsForLink = (res && res.eventTrackers || []).map(function(t){
+        return { id: t.id, name: t.name || "(無題)", archived: !!t.archived };
+      });
+      projectsLoaded = true;
+    } catch(e){ /* 取れなければ前回値のまま */ }
+    return projectsForLink;
+  }
+  function projectName(id){
+    if (!id) return "";
+    var p = projectsForLink.filter(function(x){ return x.id === id; })[0];
+    if (p) return p.name;
+    var e = (typeof eventTrackersState !== "undefined" ? eventTrackersState : []).filter(function(x){ return x.id === id; })[0];
+    return e ? (e.name || "(無題)") : "";
+  }
+  // サイドバー「ビュー」の判定。view 明示。due 無しは "all" のときだけ含める。
+  function taskViewMatch(task, todayKey, view){
+    if (view === "all") return true;
+    if (!task.due) return false;
+    if (view === "today") return task.due === todayKey;
+    if (view === "overdue") return task.due < todayKey && !task.done;
+    if (view === "week") return task.due >= todayKey && task.due < addDaysKey(todayKey, 7);
+    return true;
+  }
 
   // 自由タグ入力("月次決算, 経理  経理" 等) → 一意な配列。各24字・最大12個。
   function parseFreeTags(str){
@@ -5986,23 +6021,70 @@
       }));
     });
   }
-  // タスク一覧の上の「タグで絞り込み」チップ行
-  function renderTaskTagFilter(){
-    var bar = document.getElementById("task-tag-filter");
-    if (!bar) return;
-    var all = {};
-    tasksState.forEach(function(t){ (t.tags || []).forEach(function(x){ if (x) all[x] = 1; }); });
-    var tags = Object.keys(all).sort(function(a, b){ return a.localeCompare(b, "ja"); });
-    bar.innerHTML = "";
-    if (!tags.length){ bar.hidden = true; taskTagFilter = ""; return; }
-    bar.hidden = false;
-    if (taskTagFilter && tags.indexOf(taskTagFilter) === -1) taskTagFilter = "";
-    tags.forEach(function(t){
-      bar.appendChild(taskFreeTagChip(t, null, t === taskTagFilter)).addEventListener("click", function(){
-        taskTagFilter = (taskTagFilter === t) ? "" : t;
-        renderTasks();
-      });
+  // サイドバー(ビュー / プロジェクト / タグ)を描く。件数は「現在のアカウントタブ＋
+  // 未完了/完了タブ」を通した集合に対して数える(＝その項目を選んだら何件出るか)。
+  function taskSideItem(listEl, label, count, active, onClick){
+    var li = document.createElement("li");
+    li.className = "task-side-item" + (active ? " is-active" : "");
+    var lab = document.createElement("span");
+    lab.className = "task-side-label"; lab.textContent = label; lab.title = label;
+    var cnt = document.createElement("span");
+    cnt.className = "task-side-count"; cnt.textContent = count;
+    li.appendChild(lab); li.appendChild(cnt);
+    li.addEventListener("click", onClick);
+    listEl.appendChild(li);
+  }
+  function renderTaskSidebar(){
+    var todayKey = jstDateKey(new Date());
+    var base = tasksState.filter(function(t){
+      if (taskFilterTag !== "all" && t.tag !== taskFilterTag) return false;
+      return (taskStatusTab === "done") ? !!t.done : !t.done;
     });
+
+    var vEl = document.getElementById("task-side-views");
+    if (vEl){
+      vEl.innerHTML = "";
+      [["all", "すべて"], ["today", "今日"], ["week", "今週"], ["overdue", "期限切れ"]].forEach(function(p){
+        var n = base.filter(function(t){ return taskViewMatch(t, todayKey, p[0]); }).length;
+        taskSideItem(vEl, p[1], n, taskView === p[0], function(){ taskView = p[0]; renderTasks(); });
+      });
+    }
+
+    var pEl = document.getElementById("task-side-projects");
+    if (pEl){
+      pEl.innerHTML = "";
+      taskSideItem(pEl, "すべて", base.length, taskProjectFilter === "", function(){ taskProjectFilter = ""; renderTasks(); });
+      taskSideItem(pEl, "（プロジェクトなし）", base.filter(function(t){ return !t.projectId; }).length,
+        taskProjectFilter === "__none", function(){ taskProjectFilter = "__none"; renderTasks(); });
+      projectsForLink.filter(function(p){ return !p.archived; }).forEach(function(p){
+        var n = base.filter(function(t){ return t.projectId === p.id; }).length;
+        taskSideItem(pEl, p.name, n, taskProjectFilter === p.id, function(){ taskProjectFilter = p.id; renderTasks(); });
+      });
+      // 絞り込み中のプロジェクトが一覧に無い(アーカイブ等)なら選択を解除
+      if (taskProjectFilter && taskProjectFilter !== "__none" &&
+          !projectsForLink.some(function(p){ return p.id === taskProjectFilter && !p.archived; })) {
+        taskProjectFilter = "";
+      }
+    }
+
+    var tEl = document.getElementById("task-side-tags");
+    var tGroup = document.getElementById("task-side-tags-group");
+    if (tEl){
+      var all = {};
+      base.forEach(function(t){ (t.tags || []).forEach(function(x){ if (x) all[x] = (all[x] || 0) + 1; }); });
+      var keys = Object.keys(all).sort(function(a, b){ return a.localeCompare(b, "ja"); });
+      if (taskTagFilter && keys.indexOf(taskTagFilter) === -1) taskTagFilter = "";
+      tEl.innerHTML = "";
+      if (tGroup) tGroup.hidden = !keys.length;
+      if (keys.length){
+        taskSideItem(tEl, "すべて", base.length, taskTagFilter === "", function(){ taskTagFilter = ""; renderTasks(); });
+        keys.forEach(function(k){
+          taskSideItem(tEl, k, all[k], taskTagFilter === k, function(){
+            taskTagFilter = (taskTagFilter === k) ? "" : k; renderTasks();
+          });
+        });
+      }
+    }
   }
   var taskFormRepeatDays = []; // selected weekdays (0=Sun..6=Sat) while the weekly picker is open
   var taskExpandedIds = {}; // id -> true while a task row's detail is expanded
@@ -6059,11 +6141,15 @@
       setTasksStatus(apiErrorMessage(err, "タスク"), "err");
     }
     renderTasks();
+    // プロジェクト一覧(サイドバー・モーダルのセレクト用)を裏で用意しておく
+    ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
   }
 
-  function buildTaskRow(task, todayKey){
+  function buildTaskRow(task, todayKey, depth){
     var li = document.createElement("li");
-    li.className = "task-item" + (task.done ? " done" : "") + (taskExpandedIds[task.id] ? " expanded" : "");
+    li.className = "task-item" + (task.done ? " done" : "") + (taskExpandedIds[task.id] ? " expanded" : "")
+      + (depth ? " is-child" : "");
+    var kids = depth ? [] : tasksState.filter(function(t){ return t.parentId === task.id; });
 
     var row = document.createElement("div");
     row.className = "task-row";
@@ -6134,6 +6220,12 @@
       }
       row.appendChild(tw);
     }
+    if (kids.length){
+      var kc = document.createElement("span");
+      kc.className = "task-kid-count";
+      kc.textContent = "子 " + kids.filter(function(k){ return k.done; }).length + "/" + kids.length;
+      row.appendChild(kc);
+    }
     if (task.due){
       var due = document.createElement("span");
       due.className = "task-due";
@@ -6175,54 +6267,87 @@
       remarks.textContent = task.remarks;
       detail.appendChild(remarks);
     }
+    if (task.projectId){
+      var pj = document.createElement("div");
+      pj.className = "task-remarks";
+      pj.textContent = "プロジェクト: " + (projectName(task.projectId) || "（不明）");
+      detail.appendChild(pj);
+    }
+    if (depth && task.parentId){
+      var par = tasksState.filter(function(t){ return t.id === task.parentId; })[0];
+      var ph = document.createElement("div");
+      ph.className = "task-remarks";
+      ph.textContent = "親: " + ((par && par.text) || "（不明）");
+      detail.appendChild(ph);
+    }
+    var btnRow = document.createElement("div");
+    btnRow.className = "task-detail-btns";
     var editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "task-edit-btn";
     editBtn.textContent = "編集";
     editBtn.addEventListener("click", function(e){ e.stopPropagation(); openEditTask(task); });
-    detail.appendChild(editBtn);
+    btnRow.appendChild(editBtn);
+    if (!depth){
+      var subBtn = document.createElement("button");
+      subBtn.type = "button";
+      subBtn.className = "task-subtask-btn";
+      subBtn.textContent = "＋ サブタスク";
+      subBtn.addEventListener("click", function(e){ e.stopPropagation(); openNewTask(task.tag, task.id); });
+      btnRow.appendChild(subBtn);
+    }
+    detail.appendChild(btnRow);
 
     li.appendChild(row); li.appendChild(detail);
     return li;
   }
 
-  function buildTaskSection(key, label, items, todayKey){
-    var section = document.createElement("div");
-    section.className = "task-section" + (taskSectionCollapsed[key] ? " collapsed" : "");
-    var head = document.createElement("button");
-    head.type = "button";
-    head.className = "task-section-head";
-    head.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><span>'
-      + escapeHtml(label) + '</span><span class="task-section-count">' + items.length + '</span>';
-    head.addEventListener("click", function(){
-      taskSectionCollapsed[key] = !taskSectionCollapsed[key];
-      renderTasks();
-    });
-    var ul = document.createElement("ul");
-    items.forEach(function(task){ ul.appendChild(buildTaskRow(task, todayKey)); });
-    section.appendChild(head); section.appendChild(ul);
-    return section;
-  }
-
   function renderTasks(){
     renderBizTasks(); // ビジネス画面の「最近のタスク」ミニリストも同時に更新
-    renderTaskTagFilter();
-    taskList.innerHTML = "";
-    var items = tasksState.filter(function(t){
+    renderTaskSidebar();
+    var todayKey = jstDateKey(new Date());
+
+    // 未完了/完了タブの件数(アカウントタブ通過後)
+    var acctSet = tasksState.filter(function(t){ return taskFilterTag === "all" || t.tag === taskFilterTag; });
+    var cp = document.getElementById("task-count-pending");
+    var cd = document.getElementById("task-count-done");
+    if (cp) cp.textContent = acctSet.filter(function(t){ return !t.done; }).length;
+    if (cd) cd.textContent = acctSet.filter(function(t){ return t.done; }).length;
+    document.querySelectorAll("#task-status-tabs .task-status-tab").forEach(function(b){
+      b.classList.toggle("is-active", b.getAttribute("data-status") === taskStatusTab);
+    });
+
+    var matched = tasksState.filter(function(t){
       if (taskFilterTag !== "all" && t.tag !== taskFilterTag) return false;
+      if ((taskStatusTab === "done") ? !t.done : !!t.done) return false;
+      if (!taskViewMatch(t, todayKey, taskView)) return false;
+      if (taskProjectFilter === "__none" && t.projectId) return false;
+      if (taskProjectFilter && taskProjectFilter !== "__none" && t.projectId !== taskProjectFilter) return false;
       if (taskTagFilter && (t.tags || []).indexOf(taskTagFilter) === -1) return false;
       return true;
     });
-    if (items.length === 0){
-      taskList.innerHTML = '<div class="task-empty">タスクはありません。「+ 新規タスク」から追加してください。</div>';
+
+    taskList.innerHTML = "";
+    if (!matched.length){
+      taskList.innerHTML = '<div class="task-empty">該当するタスクはありません。</div>';
       return;
     }
-    var todayKey = jstDateKey(new Date());
+
+    // matched から親子ツリーを組む(1階層)。親が matched に無い子はトップレベル扱い。
+    var inMatched = {};
+    matched.forEach(function(t){ inMatched[t.id] = true; });
     var byDue = function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); };
-    var pending = items.filter(function(t){ return !t.done; }).sort(byDue);
-    var done = items.filter(function(t){ return t.done; }).sort(byDue);
-    if (pending.length) taskList.appendChild(buildTaskSection("pending", "未完了", pending, todayKey));
-    if (done.length) taskList.appendChild(buildTaskSection("done", "完了", done, todayKey));
+    var roots = matched.filter(function(t){ return !t.parentId || !inMatched[t.parentId]; }).sort(byDue);
+
+    var ul = document.createElement("ul");
+    ul.className = "task-tree";
+    roots.forEach(function(root){
+      ul.appendChild(buildTaskRow(root, todayKey, 0));
+      matched.filter(function(t){ return t.parentId === root.id; }).sort(byDue).forEach(function(ch){
+        ul.appendChild(buildTaskRow(ch, todayKey, 1));
+      });
+    });
+    taskList.appendChild(ul);
   }
 
   function scheduleTasksSave(){
@@ -6250,13 +6375,61 @@
   });
   wireAcctTabs("task-tag-tabs", function(){ return taskFormTag; }, function(v){ taskFormTag = v; });
 
+  var taskStatusTabsEl = document.getElementById("task-status-tabs");
+  if (taskStatusTabsEl) taskStatusTabsEl.addEventListener("click", function(e){
+    var b = e.target.closest(".task-status-tab");
+    if (!b) return;
+    taskStatusTab = b.getAttribute("data-status") === "done" ? "done" : "pending";
+    renderTasks();
+  });
+
   function setWeekdayPicker(selectedDays){
     taskFormRepeatDays = (selectedDays || []).slice();
     taskWeekdayPicker.querySelectorAll(".weekday-btn").forEach(function(btn){
       btn.classList.toggle("active", taskFormRepeatDays.indexOf(Number(btn.getAttribute("data-day"))) !== -1);
     });
   }
-  function openNewTask(defaultTag){
+  // モーダルの「親タスク」「プロジェクト」セレクトを埋める。
+  //   currentId       : 編集中タスクの id(自分自身・自分の子は親候補から除外)
+  //   presetParent    : 事前選択する親 id("" で なし)。undefined なら現在値維持
+  //   presetProject   : 事前選択するプロジェクト id。undefined なら現在値維持
+  function populateTaskModalSelects(currentId, presetParent, presetProject){
+    var pSel = document.getElementById("task-parent-input");
+    if (pSel){
+      var curParent = presetParent !== undefined ? presetParent : pSel.value;
+      pSel.innerHTML = '<option value="">（なし）</option>';
+      tasksState.forEach(function(t){
+        if (t.id === currentId) return;   // 自分は親にできない
+        if (t.parentId) return;           // 1階層のみ: すでに子のタスクは親候補にしない
+        if (currentId && t.parentId === currentId) return; // (念のため)自分の子も除外
+        var o = document.createElement("option");
+        o.value = t.id; o.textContent = t.text || "(無題)";
+        pSel.appendChild(o);
+      });
+      // 編集中タスクに子がいる場合、そのタスク自身は子になれない → 親セレクトを無効化
+      var hasKids = currentId && tasksState.some(function(t){ return t.parentId === currentId; });
+      pSel.disabled = !!hasKids;
+      pSel.value = hasKids ? "" : (curParent || "");
+    }
+    var prjSel = document.getElementById("task-project-input");
+    if (prjSel){
+      var curPrj = presetProject !== undefined ? presetProject : prjSel.value;
+      prjSel.innerHTML = '<option value="">（なし）</option>';
+      projectsForLink.filter(function(p){ return !p.archived; }).forEach(function(p){
+        var o = document.createElement("option"); o.value = p.id; o.textContent = p.name;
+        prjSel.appendChild(o);
+      });
+      var found = false;
+      for (var i = 0; i < prjSel.options.length; i++){ if (prjSel.options[i].value === curPrj) found = true; }
+      if (curPrj && !found){
+        var ox = document.createElement("option");
+        ox.value = curPrj; ox.textContent = (projectName(curPrj) || "（不明なプロジェクト）");
+        prjSel.appendChild(ox);
+      }
+      prjSel.value = curPrj || "";
+    }
+  }
+  function openNewTask(defaultTag, parentId){
     editingTaskId = null;
     taskModalTitle.textContent = "新規タスク";
     taskTitleInput.value = "";
@@ -6272,6 +6445,8 @@
     taskRemarksInput.value = "";
     taskFormTag = defaultTag === "syslea" ? "syslea" : "haruka";
     setActiveTab("task-tag-tabs", taskFormTag);
+    populateTaskModalSelects(null, (typeof parentId === "string" ? parentId : ""), "");
+    ensureProjectsLoaded().then(function(){ if (!taskModal.hidden && editingTaskId === null) populateTaskModalSelects(null, undefined, undefined); });
     taskFormError.hidden = true;
     taskDeleteBtn.hidden = true;
     taskModal.hidden = false;
@@ -6286,6 +6461,8 @@
     var dtE = document.getElementById("task-duetime-input"); if (dtE) dtE.value = task.dueTime || "";
     var tgE = document.getElementById("task-tags-input"); if (tgE) tgE.value = (task.tags || []).join(", ");
     renderTaskTagChips();
+    populateTaskModalSelects(task.id, task.parentId || "", task.projectId || "");
+    ensureProjectsLoaded().then(function(){ if (!taskModal.hidden && editingTaskId === task.id) populateTaskModalSelects(task.id, undefined, undefined); });
     taskRepeatInput.value = task.repeat || "none";
     setWeekdayPicker(task.repeatDays || []);
     taskMonthdayInput.value = task.repeatDayOfMonth || "";
@@ -6323,12 +6500,18 @@
     var dtInput = document.getElementById("task-duetime-input");
     var dueTime = dtInput && /^\d{1,2}:\d{2}$/.test(dtInput.value) ? dtInput.value : null;
     var tagsInput = document.getElementById("task-tags-input");
+    var parentSel = document.getElementById("task-parent-input");
+    var projectSel = document.getElementById("task-project-input");
+    var parentId = (parentSel && !parentSel.disabled && parentSel.value) ? parentSel.value : null;
+    if (parentId && parentId === editingTaskId) parentId = null; // 念のため自己参照を弾く
     var fields = {
       text: text,
       due: taskDueInput.value || null,
       dueTime: (taskDueInput.value && dueTime) ? dueTime : null,
       tag: taskFormTag,
       tags: tagsInput ? parseFreeTags(tagsInput.value) : [],
+      parentId: parentId,
+      projectId: (projectSel && projectSel.value) ? projectSel.value : null,
       repeat: repeat,
       repeatDays: repeat === "weekly" ? taskFormRepeatDays.slice() : null,
       repeatDayOfMonth: repeat === "monthly" && taskMonthdayInput.value ? Number(taskMonthdayInput.value) : null,
@@ -6463,7 +6646,7 @@
     var list = document.getElementById("biz-task-list");
     if (!list) return;
     var items = tasksState
-      .filter(function(t){ return t.tag === "syslea" && !t.done; })
+      .filter(function(t){ return t.tag === "syslea" && !t.done && !t.parentId; })
       .slice()
       .sort(function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); })
       .slice(0, 5);
