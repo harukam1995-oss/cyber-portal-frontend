@@ -275,7 +275,7 @@
   var secFmt  = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, second: "2-digit" });
   var dateFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month: "2-digit", day: "2-digit" });
   var yearFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, year: "numeric" });
-  var dowFmt  = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, weekday: "short" });
+  var dowFmt  = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, weekday: "short" }); // 月/火/…
   // jstParts() が毎秒呼ばれるので、フォーマッタはここで一度だけ生成する。
   var jstPartsFmt = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
@@ -338,7 +338,7 @@
     var now = new Date();
     var tStr = timeFmt.format(now), sStr = secFmt.format(now);
     var mdStr = dateFmt.format(now), yrStr = yearFmt.format(now);
-    var dowStr = dowFmt.format(now).toUpperCase();
+    var dowStr = dowFmt.format(now);
     elTime.textContent = tStr;
     elSec.textContent = sStr;
     elMd.textContent = mdStr;
@@ -722,9 +722,7 @@
       .forEach(function(ev, idx){
         var li = document.createElement("li");
         var dot = document.createElement("span");
-        dot.className = "sched-dot";
-        dot.style.background = dotColors[idx % dotColors.length];
-        dot.style.boxShadow = "0 0 6px " + dotColors[idx % dotColors.length];
+        dot.className = "sched-dot"; // 色は CSS(--accent)で統一。予定ごとの色分けはしない
         var time = document.createElement("span");
         time.className = "sched-time";
         time.textContent = fmtEventTime(ev.start);
@@ -962,7 +960,7 @@
       events.forEach(function(ev){
         var d = ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + "T00:00:00+09:00");
         var dateStr = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month: "2-digit", day: "2-digit" }).format(d);
-        var dow = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, weekday: "short" }).format(d).toUpperCase();
+        var dow = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, weekday: "short" }).format(d);
         var li = document.createElement("li");
         li.className = "pv-up-item";
         var dot = document.createElement("span"); dot.className = "pv-up-dot";
