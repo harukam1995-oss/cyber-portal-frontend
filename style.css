@@ -520,6 +520,27 @@
     border:1px solid var(--panel-border); background:transparent; color: var(--text-dim); cursor:pointer;
   }
   .task-edit-btn:hover{ border-color: var(--cyan); color: var(--text); }
+
+  /* 自由タグ */
+  .task-due-inline{ display:flex; gap:8px; }
+  .task-due-inline input{ min-width:0; }
+  .task-tags-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .task-tags-chips[hidden]{ display:none; }
+  .task-freetag{
+    display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-family: var(--font-mono);
+    color: var(--text-dim); border:1px solid var(--panel-border); background: rgba(255,255,255,0.03);
+    border-radius:3px; padding:2px 7px; letter-spacing:.3px;
+  }
+  .task-tags-chips .task-freetag{ cursor:default; }
+  .task-tags-chips .task-freetag button{
+    border:none; background:none; color: var(--text-faint); cursor:pointer; padding:0; font-size:13px; line-height:1;
+  }
+  .task-tags-chips .task-freetag button:hover{ color: var(--err); }
+  .task-row-tags{ display:inline-flex; gap:5px; flex:none; }
+  .task-tag-filter{ display:flex; flex-wrap:wrap; gap:6px; margin:-2px 0 4px; }
+  .task-tag-filter[hidden]{ display:none; }
+  .task-tag-filter .task-freetag{ cursor:pointer; }
+  .task-tag-filter .task-freetag.is-on{ color: var(--accent); border-color: var(--accent-dim); background: rgba(255,143,63,0.10); }
   .task-empty{ padding:24px; text-align:center; color: var(--text-faint); font-size:13px; }
 
   .notes-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; padding:8px 4px; }
@@ -1507,13 +1528,14 @@
 
   .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
   .pv-today-date .yr{ color: var(--text-faint); font-size:12px; }
-  .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; text-shadow: 0 0 16px var(--magenta-dim); }
+  .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; }
   .pv-today-clock .sec{ font-size:0.5em; color: var(--cyan); margin-left:4px; }
   .pv-today-tz{ font-size:11px; letter-spacing:2px; color: var(--text-faint); }
 
-  .pv-weather-main{ font-size:16px; color: var(--text); }
-  .pv-weather-range{ font-size:13px; color: var(--text-dim); margin-top:4px; }
-  .pv-weather-note{ font-size:10.5px; color: var(--text-faint); letter-spacing:.4px; margin-top:6px; }
+  /* WEATHER は HOME(.hud-weather)の寸法に揃える */
+  .pv-weather-main{ font-size:13px; color: var(--text-dim); }
+  .pv-weather-range{ font-family: var(--font-mono); font-size:14px; color: var(--text); margin-top:4px; }
+  .pv-weather-note{ font-size:9px; color: var(--text-faint); letter-spacing:.4px; margin-top:6px; text-align:center; }
 
   .pv-up-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
   .pv-up-item{ display:flex; align-items:center; gap:10px; font-size:13px; }
@@ -1868,26 +1890,27 @@
     font-family: var(--font-display); font-size: 13px; letter-spacing: 2px; font-weight: 600;
     color: var(--text); padding-bottom: 10px; border-bottom: 1px solid var(--hairline);
   }
+  /* TODAY は プライベート(.pv-today-*)の寸法・書体に揃える */
   .hud-date{
-    margin-top: 0; font-family: var(--font-display); font-size: 17px; letter-spacing: .3px;
-    color: var(--text); display: flex; align-items: baseline; gap: 8px;
+    margin-top: 0; font-family: var(--font-display); font-size: 15px; letter-spacing: 1px;
+    color: var(--text-dim); display: flex; align-items: baseline; gap: 10px;
   }
-  .hud-date .yr{ color: var(--text-faint); font-size: 11px; }
+  .hud-date .yr{ color: var(--text-faint); font-size: 12px; }
   .hud-clock-wrap{ position: static; margin: 2px 0 0; display: block; }
   .hud-ring{ display: none; }                 /* #ring-progress は tick() のため DOM には残す */
   .hud-clock{
     font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-    font-size: 30px; font-weight: 700; letter-spacing: 1px; color: var(--text);
+    font-size: clamp(30px, 3.6vw, 40px); font-weight: 700; letter-spacing: 1px; color: var(--text);
     display: flex; align-items: baseline; gap: 2px;
   }
   .hud-clock .sec{ font-size: .5em; color: var(--accent); }
-  .hud-tz{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); margin-top: 2px; }
+  .hud-tz{ font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; color: var(--text-faint); margin-top: 2px; }
   .hud-quote{ display: none; }
   .hud-weather{ border-top: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
   .hud-weather .place{ display: flex; align-items: center; gap: 7px; color: var(--text-dim); }
   .hud-weather svg{ stroke: var(--text-dim); }
   .hud-weather .temp{ font-family: var(--font-mono); font-size: 14px; color: var(--text); }
-  .weather-note{ font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+  .weather-note{ font-size: 9px; color: var(--text-faint); margin-top: 2px; text-align: center; }
 
   /* HOME 右列: 実写ヒーロー。高さは左のカード列に stretch で追従 */
   .hero .scene{ display: block; position: relative; min-height: 220px; overflow: hidden; border-radius: 3px; }

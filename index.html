@@ -233,7 +233,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.30.1</span>
+      <span>v2.30.2</span>
     </div>
   </footer>
 </div>
@@ -763,6 +763,8 @@
     </div>
   </section>
 
+  <div class="task-tag-filter" id="task-tag-filter" hidden></div>
+
   <section class="panel cal-status-bar" id="tasks-status-bar">接続確認中…</section>
 
   <section class="panel cal-body-panel">
@@ -949,15 +951,22 @@
       </label>
       <div class="event-datetime-row">
         <label>期限
-          <input type="date" id="task-due-input" min="2000-01-01" max="2099-12-31">
+          <span class="task-due-inline">
+            <input type="date" id="task-due-input" min="2000-01-01" max="2099-12-31">
+            <input type="time" id="task-duetime-input" step="300" aria-label="時刻">
+          </span>
         </label>
-        <label>タグ
+        <label>タグ（アカウント）
           <div class="acct-tabs sm" role="tablist" id="task-tag-tabs">
             <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
             <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
           </div>
         </label>
       </div>
+      <label>タグ（自由）
+        <input type="text" id="task-tags-input" placeholder="月次決算, 経理, 総務  （カンマ・スペース区切り）" autocomplete="off" maxlength="200">
+      </label>
+      <div class="task-tags-chips" id="task-tags-chips" hidden></div>
       <label>繰り返し
         <select id="task-repeat-input">
           <option value="none">なし</option>

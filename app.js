@@ -5943,8 +5943,67 @@
   var taskList = document.getElementById("task-list");
   var taskSaveTimer = null;
   var taskFilterTag = "all";
+  var taskTagFilter = "";   // 自由タグでの絞り込み("" = なし)
   var editingTaskId = null; // null = creating a new task
   var taskFormTag = "haruka";
+
+  // 自由タグ入力("月次決算, 経理  経理" 等) → 一意な配列。各24字・最大12個。
+  function parseFreeTags(str){
+    var seen = {};
+    var out = [];
+    String(str == null ? "" : str).split(/[,、\s]+/).forEach(function(s){
+      s = s.trim().slice(0, 24);
+      if (!s || seen[s]) return;
+      seen[s] = 1;
+      out.push(s);
+    });
+    return out.slice(0, 12);
+  }
+  function taskFreeTagChip(label, onRemove, on){
+    var chip = document.createElement("span");
+    chip.className = "task-freetag" + (on ? " is-on" : "");
+    chip.appendChild(document.createTextNode(label));
+    if (onRemove){
+      var x = document.createElement("button");
+      x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", label + " を外す");
+      x.addEventListener("click", function(e){ e.stopPropagation(); onRemove(); });
+      chip.appendChild(x);
+    }
+    return chip;
+  }
+  // モーダルの「タグ（自由）」入力の下に、現在の入力内容をチップでプレビュー(× で削除)
+  function renderTaskTagChips(){
+    var input = document.getElementById("task-tags-input");
+    var wrap = document.getElementById("task-tags-chips");
+    if (!input || !wrap) return;
+    var tags = parseFreeTags(input.value);
+    wrap.innerHTML = "";
+    wrap.hidden = !tags.length;
+    tags.forEach(function(t){
+      wrap.appendChild(taskFreeTagChip(t, function(){
+        input.value = tags.filter(function(x){ return x !== t; }).join(", ");
+        renderTaskTagChips();
+      }));
+    });
+  }
+  // タスク一覧の上の「タグで絞り込み」チップ行
+  function renderTaskTagFilter(){
+    var bar = document.getElementById("task-tag-filter");
+    if (!bar) return;
+    var all = {};
+    tasksState.forEach(function(t){ (t.tags || []).forEach(function(x){ if (x) all[x] = 1; }); });
+    var tags = Object.keys(all).sort(function(a, b){ return a.localeCompare(b, "ja"); });
+    bar.innerHTML = "";
+    if (!tags.length){ bar.hidden = true; taskTagFilter = ""; return; }
+    bar.hidden = false;
+    if (taskTagFilter && tags.indexOf(taskTagFilter) === -1) taskTagFilter = "";
+    tags.forEach(function(t){
+      bar.appendChild(taskFreeTagChip(t, null, t === taskTagFilter)).addEventListener("click", function(){
+        taskTagFilter = (taskTagFilter === t) ? "" : t;
+        renderTasks();
+      });
+    });
+  }
   var taskFormRepeatDays = []; // selected weekdays (0=Sun..6=Sat) while the weekly picker is open
   var taskExpandedIds = {}; // id -> true while a task row's detail is expanded
   var taskSectionCollapsed = { pending: false, done: true }; // 完了 collapsed by default to keep the list short
@@ -5970,6 +6029,11 @@
     taskRepeatMonthly.hidden = v !== "monthly";
   }
   taskRepeatInput.addEventListener("change", updateRepeatDetailVisibility);
+  var taskTagsInputEl = document.getElementById("task-tags-input");
+  if (taskTagsInputEl){
+    taskTagsInputEl.addEventListener("input", renderTaskTagChips);
+    taskTagsInputEl.addEventListener("blur", function(){ taskTagsInputEl.value = parseFreeTags(taskTagsInputEl.value).join(", "); renderTaskTagChips(); });
+  }
   taskWeekdayPicker.querySelectorAll(".weekday-btn").forEach(function(btn){
     btn.addEventListener("click", function(){
       var d = Number(btn.getAttribute("data-day"));
@@ -6057,11 +6121,24 @@
     });
 
     row.appendChild(check); row.appendChild(text);
+    if (Array.isArray(task.tags) && task.tags.length){
+      var tw = document.createElement("span");
+      tw.className = "task-row-tags";
+      task.tags.slice(0, 3).forEach(function(tg){
+        var c = document.createElement("span"); c.className = "task-freetag"; c.textContent = tg;
+        tw.appendChild(c);
+      });
+      if (task.tags.length > 3){
+        var more = document.createElement("span"); more.className = "task-freetag"; more.textContent = "+" + (task.tags.length - 3);
+        tw.appendChild(more);
+      }
+      row.appendChild(tw);
+    }
     if (task.due){
       var due = document.createElement("span");
       due.className = "task-due";
       due.setAttribute("data-overdue", String(!task.done && task.due < todayKey));
-      due.textContent = task.due.slice(5).replace("-", "/");
+      due.textContent = task.due.slice(5).replace("-", "/") + (task.dueTime ? " " + task.dueTime : "");
       row.appendChild(due);
     }
     row.appendChild(tagBadge);
@@ -6129,8 +6206,13 @@
 
   function renderTasks(){
     renderBizTasks(); // ビジネス画面の「最近のタスク」ミニリストも同時に更新
+    renderTaskTagFilter();
     taskList.innerHTML = "";
-    var items = tasksState.filter(function(t){ return taskFilterTag === "all" || t.tag === taskFilterTag; });
+    var items = tasksState.filter(function(t){
+      if (taskFilterTag !== "all" && t.tag !== taskFilterTag) return false;
+      if (taskTagFilter && (t.tags || []).indexOf(taskTagFilter) === -1) return false;
+      return true;
+    });
     if (items.length === 0){
       taskList.innerHTML = '<div class="task-empty">タスクはありません。「+ 新規タスク」から追加してください。</div>';
       return;
@@ -6179,6 +6261,9 @@
     taskModalTitle.textContent = "新規タスク";
     taskTitleInput.value = "";
     taskDueInput.value = "";
+    var dtN = document.getElementById("task-duetime-input"); if (dtN) dtN.value = "";
+    var tgN = document.getElementById("task-tags-input"); if (tgN) tgN.value = "";
+    renderTaskTagChips();
     taskRepeatInput.value = "none";
     setWeekdayPicker([]);
     taskMonthdayInput.value = "";
@@ -6198,6 +6283,9 @@
     taskModalTitle.textContent = "タスクを編集";
     taskTitleInput.value = task.text || "";
     taskDueInput.value = task.due || "";
+    var dtE = document.getElementById("task-duetime-input"); if (dtE) dtE.value = task.dueTime || "";
+    var tgE = document.getElementById("task-tags-input"); if (tgE) tgE.value = (task.tags || []).join(", ");
+    renderTaskTagChips();
     taskRepeatInput.value = task.repeat || "none";
     setWeekdayPicker(task.repeatDays || []);
     taskMonthdayInput.value = task.repeatDayOfMonth || "";
@@ -6232,10 +6320,15 @@
     }
     var url = taskUrlInput.value.trim();
     var repeat = taskRepeatInput.value || "none";
+    var dtInput = document.getElementById("task-duetime-input");
+    var dueTime = dtInput && /^\d{1,2}:\d{2}$/.test(dtInput.value) ? dtInput.value : null;
+    var tagsInput = document.getElementById("task-tags-input");
     var fields = {
       text: text,
       due: taskDueInput.value || null,
+      dueTime: (taskDueInput.value && dueTime) ? dueTime : null,
       tag: taskFormTag,
+      tags: tagsInput ? parseFreeTags(tagsInput.value) : [],
       repeat: repeat,
       repeatDays: repeat === "weekly" ? taskFormRepeatDays.slice() : null,
       repeatDayOfMonth: repeat === "monthly" && taskMonthdayInput.value ? Number(taskMonthdayInput.value) : null,
