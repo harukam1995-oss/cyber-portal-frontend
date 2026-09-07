@@ -699,7 +699,8 @@
   var schedList = document.getElementById("sched-list");
   var schedSourceLabel = document.getElementById("sched-source-label");
   var schedUpdated = document.getElementById("sched-updated");
-  var dotColors = ["#2ce3ff", "#ff2f92", "#8b5cf6", "#3cf2b4", "#ffcf6b"];
+  // カレンダーのイベント色。虹色をやめて暖色(アンバー)系の弱いバリエーションだけにする。
+  var dotColors = ["#ff8f3f", "#e8954f", "#d98a4a", "#f0a45f", "#c98a5b"];
   var schedAccount = "haruka";
   var schedRefreshBtn = document.getElementById("sched-refresh");
   var schedEventsToday = []; // 通知センターが「本日の残り予定」を出すのに参照

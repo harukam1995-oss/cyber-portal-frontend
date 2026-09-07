@@ -200,10 +200,10 @@
   .notif-foot-btn.is-on{ border-color: var(--ok); color: var(--ok); }
   .profile{ display:flex; align-items:center; gap:10px; cursor:pointer; }
   .avatar{
-    width:34px; height:34px; border-radius:50%;
-    background: linear-gradient(135deg, var(--violet), var(--magenta));
+    width:32px; height:32px; border-radius:2px;
+    background: rgba(255,143,63,0.12); color: var(--accent);
     display:flex; align-items:center; justify-content:center;
-    font-family: var(--font-display); font-size:12px; font-weight:700;
+    font-family: var(--font-mono); font-size:12px; font-weight:500;
     border: 1px solid var(--panel-border);
   }
   .profile-meta .uname{ font-family: var(--font-display); font-size:12px; letter-spacing:1px; }
@@ -348,7 +348,7 @@
     transition: border-color .15s ease, transform .15s ease, background .15s ease;
     position:relative;
   }
-  .quick-tile:hover{ border-color: var(--cyan); background: rgba(255,143,63,0.05); transform: translateY(-2px); }
+  .quick-tile:hover{ border-color: var(--accent); background: rgba(255,143,63,0.05); }
   .quick-tile svg{ width:22px; height:22px; stroke: var(--cyan); }
   .quick-tile span{ font-size:12px; color: var(--text-dim); letter-spacing:.5px; }
   .quick-tile .tile-dot{ position:absolute; top:8px; right:8px; width:6px; height:6px; border-radius:50%; background: var(--magenta); box-shadow:0 0 5px var(--magenta); }
@@ -436,7 +436,7 @@
   .mail-unread-dot{ width:8px; height:8px; border-radius:50%; background: var(--cyan); box-shadow:0 0 5px var(--cyan); flex:none; margin-top:6px; }
   .mail-pager{ display:flex; align-items:center; justify-content:center; gap:16px; padding:12px 20px 16px; border-top:1px solid var(--hairline); }
   .mail-pager[hidden]{ display:none; }
-  .mail-pager .cal-nav-btn{ width:auto; height:auto; padding:7px 16px; font-size:11px; font-family: var(--font-display); letter-spacing:1px; white-space:nowrap; }
+  .mail-pager .cal-nav-btn{ width:auto; height:auto; padding:7px 16px; font-size:10px; font-family: var(--font-mono); letter-spacing:.5px; white-space:nowrap; }
   .mail-pager-info{ font-size:11px; color: var(--text-faint); letter-spacing:.5px; font-family: var(--font-mono); white-space:nowrap; }
   .cal-nav-btn:disabled{ opacity:.35; cursor:default; }
 
@@ -680,10 +680,10 @@
     font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;
     border:1px solid currentColor;
   }
-  .pay-badge.is-furikomi{ color: var(--cyan); background: rgba(255,143,63,.10); }
-  .pay-badge.is-upsider{ color: var(--magenta); background: rgba(255,143,63,.10); }
-  .pay-badge.is-furikae{ color: var(--warn); background: rgba(255,207,107,.10); }
-  .pay-badge.is-other{ color: var(--text-faint); background: rgba(120,110,150,.12); }
+  .pay-badge.is-furikomi{ color: var(--accent); background: rgba(255,143,63,.10); }
+  .pay-badge.is-upsider{ color: var(--ok); background: rgba(94,201,138,.10); }
+  .pay-badge.is-furikae{ color: var(--warn); background: rgba(216,194,74,.10); }
+  .pay-badge.is-other{ color: var(--text-faint); background: rgba(255,255,255,.05); }
 
   .pay-sort-ctrl{ display:flex; gap:6px; align-items:center; }
   .pay-sort-select{
@@ -787,11 +787,11 @@
   .cal-view-btn:last-child{ border-right:none; }
   .cal-view-btn.active{ background: linear-gradient(90deg, rgba(255,143,63,0.2), rgba(255,143,63,0.2)); color: var(--text); }
   .cal-new-btn{
-    padding:8px 16px; border-radius:8px; border:1px solid var(--magenta-dim); background: rgba(255,143,63,0.1);
-    color: var(--text); font-family: var(--font-display); font-size:11px; letter-spacing:1px; cursor:pointer;
+    padding:7px 14px; border-radius:2px; border:1px solid var(--panel-border); background: rgba(255,143,63,0.1);
+    color: var(--accent); font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; cursor:pointer;
     transition: background .15s ease, border-color .15s ease;
   }
-  .cal-new-btn:hover{ background: rgba(255,143,63,0.22); border-color: var(--magenta); }
+  .cal-new-btn:hover{ background: rgba(255,143,63,0.2); border-color: var(--accent); }
 
   .cal-status-bar{ padding:8px 20px; font-size:11px; color: var(--text-faint); letter-spacing:.5px; }
   .cal-status-bar.err{ color: var(--err); }
@@ -872,26 +872,25 @@
     display:flex; flex-direction:column;
     background: var(--panel-solid);
     border: 1px solid var(--panel-border);
-    border-radius: 16px;
-    box-shadow: 0 0 50px rgba(255,143,63,0.18), 0 0 90px rgba(255,143,63,0.10);
+    border-radius: 3px;
     overflow:hidden;
   }
   .event-modal-panel{ width:min(480px, 100%); }
   .modal-head{
     display:flex; align-items:center; justify-content:space-between;
-    padding: 16px 20px; border-bottom: 1px solid var(--hairline); flex:none;
+    padding: 15px 18px; border-bottom: 1px solid var(--hairline); flex:none;
   }
   .modal-head h3{
-    margin:0; font-family: var(--font-display); font-size:13px; letter-spacing:2px;
+    margin:0; font-family: var(--font-display); font-size:13px; letter-spacing:.6px;
     display:flex; align-items:center; gap:10px; font-weight:600;
   }
-  .modal-head h3 .ico{ width:16px; height:16px; stroke: var(--magenta); }
+  .modal-head h3 .ico{ width:15px; height:15px; stroke: var(--accent); }
   .modal-close{
-    width:30px; height:30px; border-radius:50%; border:1px solid var(--panel-border);
-    background: rgba(255,255,255,0.02); cursor:pointer; display:flex; align-items:center; justify-content:center;
-    flex:none; transition: border-color .15s ease;
+    width:28px; height:28px; border-radius:2px; border:1px solid transparent;
+    background: transparent; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    flex:none; transition: border-color .15s ease, background .15s ease;
   }
-  .modal-close:hover{ border-color: var(--magenta); }
+  .modal-close:hover{ border-color: var(--panel-border); background: rgba(255,255,255,0.03); }
   .modal-close svg{ width:14px; height:14px; stroke: var(--text-dim); }
 
   .event-form{ display:flex; flex-direction:column; gap:14px; padding:18px 20px 20px; overflow-y:auto; }
@@ -937,13 +936,13 @@
   .event-form-actions[hidden]{ display:none; } /* same [hidden]-vs-author-display cascade issue as elsewhere in this file */
   .event-form-actions-right{ display:flex; gap:10px; margin-left:auto; }
   .ev-btn{
-    padding:9px 16px; border-radius:8px; border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
-    color: var(--text-dim); font-family: var(--font-body); font-size:13.5px; cursor:pointer;
-    transition: border-color .15s ease, color .15s ease;
+    padding:8px 16px; border-radius:3px; border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
+    color: var(--text-dim); font-family: var(--font-body); font-size:13px; cursor:pointer;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
   }
-  .ev-btn:hover{ border-color: var(--cyan); color: var(--text); }
-  .ev-btn-primary{ background: linear-gradient(90deg, var(--magenta), var(--violet)); border:none; color:#fff; font-weight:600; }
-  .ev-btn-primary:hover{ filter:brightness(1.1); border-color:transparent; color:#fff; }
+  .ev-btn:hover{ border-color: var(--accent); color: var(--text); }
+  .ev-btn-primary{ background: var(--accent); border:1px solid var(--accent); color:#0a0d10; font-weight:600; }
+  .ev-btn-primary:hover{ filter:brightness(1.08); border-color: var(--accent); color:#0a0d10; }
   .ev-btn-primary:disabled{ opacity:.6; cursor:not-allowed; }
   .ev-btn-danger{ border-color: rgba(255,80,80,0.4); color: var(--err); }
   .ev-btn-danger:hover{ border-color:#ff5050; background: rgba(255,60,90,0.08); color: var(--err); }
@@ -1940,3 +1939,22 @@
   .pv-contracts-tab, .pb-tab{ font-family: var(--font-mono); }
   /* Slackダイジェスト: 数字・時刻は等幅で桁揃え(既に mono だが念のため) */
   .pv-slack-time, .pv-slack-channels{ font-variant-numeric: tabular-nums; }
+
+  /* =====================================================================
+     B / AMBER restyle · Phase 4 — 仕上げ(サブ画面 / モーダル / 細部)
+     ===================================================================== */
+  /* カレンダー */
+  .cal-today-btn, .cal-nav-btn{ border-radius: 2px; font-family: var(--font-mono); letter-spacing: .5px; }
+  .cal-today-btn{ font-size: 10px; }
+  .cal-range-label{ font-family: var(--font-display); letter-spacing: .3px; }
+  .cal-event-block{ border-radius: 2px; }
+  .cal-event-block:hover{ filter: brightness(1.12); }
+  .cal-now-line, .cal-now-line::before{ box-shadow: none; background: var(--accent); }
+  .cal-month-cell.today .cal-month-date{ color: var(--accent); }
+  /* フォームのラベル/入力の角も詰める */
+  .event-form input, .event-form select, .event-form textarea,
+  .pv-contracts-q, .pv-contracts-requester, .mail-search-wrap{ border-radius: 2px; }
+  /* クイックタイル・アイコンの色をトークンへ */
+  .quick-tile svg{ stroke: var(--accent); }
+  .quick-tile .tile-dot{ background: var(--accent); }
+  .mail-unread-dot{ background: var(--accent); }
