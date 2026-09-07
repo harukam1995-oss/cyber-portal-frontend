@@ -1604,16 +1604,14 @@
   .pv-hero{ position:relative; overflow:hidden; min-height:260px; border-radius:3px; }
   .pv-hero-img{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:1;
-    filter: brightness(.86) contrast(1.03) saturate(1.02);
+    filter: brightness(1.08) contrast(1.02) saturate(1.04);
   }
   .pv-hero .scanlines, .pv-hero .vignette{ display:none; }
   .pv-hero-vtext{ display:none; }
-  /* 下端を地色へフェード + ごく薄いアンバーの被せ */
+  /* 下端だけ軽く地色へフェード（カードとの境目をなじませる程度） */
   .pv-hero::after{
     content:""; position:absolute; inset:0; pointer-events:none;
-    background:
-      linear-gradient(180deg, rgba(7,9,12,0) 45%, rgba(7,9,12,.62) 100%),
-      linear-gradient(180deg, rgba(255,143,63,.10), rgba(255,143,63,0) 40%);
+    background: linear-gradient(180deg, rgba(7,9,12,0) 62%, rgba(7,9,12,.42) 100%);
   }
 
   @media (max-width: 1080px){
