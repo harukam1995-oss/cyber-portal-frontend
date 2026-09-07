@@ -977,48 +977,66 @@
   }
 
   /* ================= プライベート: サブスク管理 =================
-     users/{uid}/subscriptions を /api/subscriptions で読み書き(tasks/notes と同じ crud)。
-     カードは有効なサブスクを次回課金日順に表示 + 月合計/年合計。管理モーダルは行エディタ。 */
+     「今月の収支」と同じ家計簿スプレッドシートの「サブスク管理」タブが唯一の正。
+     /api/sheets/subscriptions で全行の取得(GET)と全置換(PUT)を行う。
+     モデル: { name, unit:"month"|"year", every, amount, day, month, note }
+       ・unit×every で周期(月×1=毎月 / 月×3=四半期 / 月×6=半年 / 年×1=毎年 / 年×2=2年に1度)
+       ・month は「毎年」または「2ヶ月以上おき」のときの基準月。毎月は day だけ。
+     カードは次回課金日順に表示 + 月合計/年合計。管理モーダルは行エディタ。 */
   var subsState = [];
   var subsSetStatus = makeStatusSetter("pv-subs-status");
   var subsWired = false;
   var subsRows = []; // 管理モーダルの作業コピー
 
   function subYen(n){ return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP"); }
+  function subUnit(s){ return s.unit === "year" ? "year" : "month"; }
+  function subEvery(s){ return Math.min(120, Math.max(1, Math.round(Number(s.every) || 1))); }
+  function subNeedsMonth(s){ return subUnit(s) === "year" || subEvery(s) > 1; }
+  // 1ヶ月あたりに均した金額(月合計の算出用)。半年払い→/6、年払い→/12。
   function subMonthlyAmount(s){
     var a = Number(s.amount) || 0;
-    return s.cycle === "yearly" ? a / 12 : a;
+    var months = subEvery(s) * (subUnit(s) === "year" ? 12 : 1);
+    return a / months;
   }
-  // 次回課金日を YYYYMMDD の整数キーにして返す(並べ替え用)。
-  function subNextKey(s){
+  // 次回課金日を { y, m, d } で返す。基準月(アンカー)から周期ぶんずつ前進して、
+  // 今日以降で最初に来る日を求める。毎月(周期1ヶ月)は当月を基準にできる。
+  function subNextParts(s){
     var p = new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
-      .format(new Date()).split("-");
-    var ty = +p[0], tm = +p[1], td = +p[2];
-    var day = Math.min(31, Math.max(1, Number(s.day) || 1));
-    if (s.cycle === "yearly"){
-      var mo = Math.min(12, Math.max(1, Number(s.month) || 1));
-      var y = ty;
-      if (mo < tm || (mo === tm && day < td)) y = ty + 1;
-      return y * 10000 + mo * 100 + day;
+      .format(new Date()).split("-").map(Number);
+    var todayNum = p[0] * 10000 + p[1] * 100 + p[2];
+    var step = subEvery(s) * (subUnit(s) === "year" ? 12 : 1); // ヶ月単位
+    var day = Math.min(31, Math.max(1, Math.round(Number(s.day) || 1)));
+    var anchorM = step === 1 ? p[1] : Math.min(12, Math.max(1, Math.round(Number(s.month) || p[1])));
+    var cy = p[0] - 2, cm = anchorM; // 2年前のアンカー月から前進
+    for (var i = 0; i < 400; i++){
+      var cd = Math.min(day, new Date(cy, cm, 0).getDate()); // その月の実日数へ丸め
+      if (cy * 10000 + cm * 100 + cd >= todayNum) return { y: cy, m: cm, d: cd };
+      cm += step;
+      while (cm > 12){ cm -= 12; cy += 1; }
     }
-    var y2 = ty, m2 = tm;
-    if (day < td){ m2 = tm + 1; if (m2 > 12){ m2 = 1; y2 = ty + 1; } }
-    return y2 * 10000 + m2 * 100 + day;
+    return { y: cy, m: cm, d: Math.min(day, new Date(cy, cm, 0).getDate()) };
+  }
+  function subNextKey(s){ var n = subNextParts(s); return n.y * 10000 + n.m * 100 + n.d; }
+  function subCadenceWord(s){
+    var n = subEvery(s);
+    if (subUnit(s) === "year") return n === 1 ? "毎年" : n + "年ごと";
+    if (n === 1) return "毎月";
+    if (n === 2) return "隔月";
+    if (n === 6) return "半年ごと";
+    return n + "ヶ月ごと";
   }
   function subWhenLabel(s){
     var day = Math.min(31, Math.max(1, Number(s.day) || 1));
-    if (s.cycle === "yearly"){
-      var mo = Math.min(12, Math.max(1, Number(s.month) || 1));
-      return "毎年" + mo + "/" + day;
-    }
-    return "毎月" + day + "日";
+    if (!subNeedsMonth(s)) return "毎月" + day + "日";
+    var mo = Math.min(12, Math.max(1, Number(s.month) || (new Date().getMonth() + 1)));
+    return subCadenceWord(s) + " " + mo + "/" + day;
   }
 
   function renderSubs(){
     var list = document.getElementById("pv-subs-list");
     var totalEl = document.getElementById("pv-subs-total");
     if (!list) return;
-    var active = subsState.filter(function(s){ return s.active !== false && (s.name || "").trim(); });
+    var active = subsState.filter(function(s){ return (s.name || "").trim(); });
     if (!active.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」からサブスクを登録してください。</div>';
       if (totalEl) totalEl.hidden = true;
@@ -1036,7 +1054,7 @@
       when.className = "pv-sub-when"; when.textContent = subWhenLabel(s);
       var amt = document.createElement("span");
       amt.className = "pv-sub-amount";
-      amt.textContent = subYen(s.amount) + (s.cycle === "yearly" ? "/年" : "");
+      amt.textContent = subYen(s.amount);
       row.appendChild(name); row.appendChild(when); row.appendChild(amt);
       var open = function(){ openSubsModal(); };
       row.addEventListener("click", open);
@@ -1051,19 +1069,37 @@
   }
 
   async function loadSubs(){
+    var mngBtn = document.getElementById("pv-subs-manage");
+    var listEl = document.getElementById("pv-subs-list");
+    var totalEl = document.getElementById("pv-subs-total");
     subsSetStatus("読み込み中…");
     try {
-      var res = await apiFetch("/api/subscriptions");
+      var res = await apiFetch("/api/sheets/subscriptions");
+      if (!res || res.configured === false){
+        subsState = [];
+        if (listEl) listEl.innerHTML = "";
+        if (totalEl) totalEl.hidden = true;
+        if (mngBtn) mngBtn.hidden = true;
+        subsSetStatus("設定 → 家計簿スプレッドシート に共有 URL を登録すると使えます。");
+        return;
+      }
+      if (mngBtn) mngBtn.hidden = false;
       subsState = res.subscriptions || [];
       renderSubs();
       subsSetStatus("");
     } catch(err){
+      if (mngBtn) mngBtn.hidden = false;
       subsSetStatus(apiErrorMessage(err, "サブスク") || "取得に失敗しました", true);
     }
   }
 
   function newSubRow(){
-    return { id: "", name: "", amount: "", cycle: "monthly", month: 1, day: 1, active: true };
+    return { name: "", amount: "", unit: "month", every: 1, month: (new Date().getMonth() + 1), day: 1, note: "" };
+  }
+  // r.unit / r.every に応じて「月」入力の表示可否を切り替える(毎年 or 2ヶ月以上おき で表示)。
+  function subsRowSyncMonth(r, moEl){
+    var need = (r.unit === "year") || (Math.round(Number(r.every) || 1) > 1);
+    moEl.hidden = !need;
   }
   function renderSubsRows(){
     var wrap = document.getElementById("subs-rows");
@@ -1079,7 +1115,7 @@
       // 1行目: 名前 + 削除
       var l1 = document.createElement("div"); l1.className = "subs-row-line";
       var nm = document.createElement("input");
-      nm.type = "text"; nm.maxLength = 60; nm.placeholder = "サービス名"; nm.value = r.name || "";
+      nm.type = "text"; nm.maxLength = 80; nm.placeholder = "サービス名"; nm.value = r.name || "";
       nm.className = "subs-in subs-in-name";
       nm.addEventListener("input", function(){ r.name = nm.value; });
       var del = document.createElement("button");
@@ -1087,34 +1123,44 @@
       del.textContent = "✕";
       del.addEventListener("click", function(){ subsRows.splice(idx, 1); renderSubsRows(); });
       l1.appendChild(nm); l1.appendChild(del);
-      // 2行目: 金額 + 周期 + (月) + 日 + 有効
+      // 2行目: 金額 + 「N」ごとに「月/年」 + 基準月 + 支払日
       var l2 = document.createElement("div"); l2.className = "subs-row-line";
       var amt = document.createElement("input");
       amt.type = "number"; amt.min = "0"; amt.step = "1"; amt.placeholder = "金額"; amt.value = r.amount === "" ? "" : r.amount;
       amt.className = "subs-in subs-in-amt";
       amt.addEventListener("input", function(){ r.amount = amt.value; });
-      var cyc = document.createElement("select");
-      cyc.className = "subs-in subs-in-cyc";
-      cyc.innerHTML = '<option value="monthly">毎月</option><option value="yearly">毎年</option>';
-      cyc.value = r.cycle === "yearly" ? "yearly" : "monthly";
-      var mo = document.createElement("input");
-      mo.type = "number"; mo.min = "1"; mo.max = "12"; mo.placeholder = "月"; mo.value = r.month || 1;
+      var every = document.createElement("input");
+      every.type = "number"; every.min = "1"; every.max = "120"; every.placeholder = "N"; every.value = r.every || 1;
+      every.className = "subs-in subs-in-every";
+      var unit = document.createElement("select");
+      unit.className = "subs-in subs-in-unit";
+      unit.innerHTML = '<option value="month">ヶ月ごと</option><option value="year">年ごと</option>';
+      unit.value = r.unit === "year" ? "year" : "month";
+      var mo = document.createElement("select");
       mo.className = "subs-in subs-in-mo";
-      mo.hidden = cyc.value !== "yearly";
-      mo.addEventListener("input", function(){ r.month = mo.value; });
+      var moHtml = "";
+      for (var mm = 1; mm <= 12; mm++) moHtml += '<option value="' + mm + '">' + mm + '月</option>';
+      mo.innerHTML = moHtml;
+      mo.value = String(Math.min(12, Math.max(1, Number(r.month) || (new Date().getMonth() + 1))));
+      mo.addEventListener("change", function(){ r.month = mo.value; });
       var dy = document.createElement("input");
       dy.type = "number"; dy.min = "1"; dy.max = "31"; dy.placeholder = "日"; dy.value = r.day || 1;
       dy.className = "subs-in subs-in-dy";
       dy.addEventListener("input", function(){ r.day = dy.value; });
-      cyc.addEventListener("change", function(){ r.cycle = cyc.value; mo.hidden = cyc.value !== "yearly"; });
-      var actWrap = document.createElement("label");
-      actWrap.className = "subs-row-active";
-      var act = document.createElement("input");
-      act.type = "checkbox"; act.checked = r.active !== false;
-      act.addEventListener("change", function(){ r.active = act.checked; });
-      actWrap.appendChild(act); actWrap.appendChild(document.createTextNode("有効"));
-      l2.appendChild(amt); l2.appendChild(cyc); l2.appendChild(mo); l2.appendChild(dy); l2.appendChild(actWrap);
+      var dTxt = document.createElement("span"); dTxt.className = "subs-unit-txt"; dTxt.textContent = "日";
+      every.addEventListener("input", function(){ r.every = every.value; subsRowSyncMonth(r, mo); });
+      unit.addEventListener("change", function(){ r.unit = unit.value; subsRowSyncMonth(r, mo); });
+      subsRowSyncMonth(r, mo);
+      l2.appendChild(amt); l2.appendChild(every); l2.appendChild(unit); l2.appendChild(mo); l2.appendChild(dy); l2.appendChild(dTxt);
       box.appendChild(l1); box.appendChild(l2);
+      // 3行目: 備考(任意)
+      var l3 = document.createElement("div"); l3.className = "subs-row-line";
+      var note = document.createElement("input");
+      note.type = "text"; note.maxLength = 200; note.placeholder = "備考(任意)"; note.value = r.note || "";
+      note.className = "subs-in subs-in-note";
+      note.addEventListener("input", function(){ r.note = note.value; });
+      l3.appendChild(note);
+      box.appendChild(l3);
       wrap.appendChild(box);
     });
   }
@@ -1123,13 +1169,13 @@
     if (!modal) return;
     subsRows = subsState.map(function(s){
       return {
-        id: s.id || "",
         name: s.name || "",
         amount: (s.amount === 0 || s.amount) ? s.amount : "",
-        cycle: s.cycle === "yearly" ? "yearly" : "monthly",
-        month: Number(s.month) || 1,
-        day: Number(s.day) || 1,
-        active: s.active !== false
+        unit: s.unit === "year" ? "year" : "month",
+        every: Math.min(120, Math.max(1, Number(s.every) || 1)),
+        month: Number(s.month) || (new Date().getMonth() + 1),
+        day: Math.min(31, Math.max(1, Number(s.day) || 1)),
+        note: s.note || ""
       };
     });
     if (!subsRows.length) subsRows.push(newSubRow());
@@ -1148,28 +1194,28 @@
     var err = document.getElementById("subs-form-error");
     var cleaned = subsRows
       .filter(function(r){ return (r.name || "").trim(); })
-      .map(function(r, idx){
-        var o = {
-          name: String(r.name).trim().slice(0, 60),
+      .map(function(r){
+        var unit = r.unit === "year" ? "year" : "month";
+        var every = Math.min(120, Math.max(1, Math.round(Number(r.every) || 1)));
+        var needMonth = (unit === "year") || (every > 1);
+        return {
+          name: String(r.name).trim().slice(0, 80),
           amount: Math.max(0, Math.round(Number(r.amount) || 0)),
-          cycle: r.cycle === "yearly" ? "yearly" : "monthly",
+          unit: unit,
+          every: every,
           day: Math.min(31, Math.max(1, Number(r.day) || 1)),
-          month: Math.min(12, Math.max(1, Number(r.month) || 1)),
-          active: r.active !== false,
-          order: idx
+          month: needMonth ? Math.min(12, Math.max(1, Number(r.month) || (new Date().getMonth() + 1))) : null,
+          note: String(r.note || "").trim().slice(0, 200)
         };
-        if (r.id) o.id = r.id;
-        return o;
       });
     var saveBtn = document.getElementById("subs-save");
     if (saveBtn) saveBtn.disabled = true;
     try {
-      var res = await apiFetch("/api/subscriptions/bulk", {
+      await apiFetch("/api/sheets/subscriptions", {
         method: "PUT",
         body: JSON.stringify({ subscriptions: cleaned })
       });
-      // 保存後の正データを取り直す(id 採番を反映)
-      await loadSubs();
+      await loadSubs(); // シート(正)から取り直す
       closeSubsModal();
     } catch(e){
       if (err){ err.hidden = false; err.textContent = apiErrorMessage(e, "サブスク") || "保存に失敗しました"; }
