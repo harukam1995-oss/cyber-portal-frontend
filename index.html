@@ -10,7 +10,7 @@
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0b0620">
+<meta name="theme-color" content="#07090c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -39,7 +39,6 @@
 
   <!-- ================= HEADER（HOME/プライベート/ビジネス で共有。app.js が表示中のframe先頭へ移動）================= -->
   <header class="panel topbar" id="app-topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -103,7 +102,6 @@
 
   <!-- ================= HERO ================= -->
   <section class="panel hero">
-    <div class="corner tl"></div><div class="corner br"></div>
 
     <div class="hero-hud">
       <!-- TODAY カード -->
@@ -138,16 +136,6 @@
     <div class="scene" aria-hidden="true" id="hero-scene">
       <canvas id="skyline"></canvas>
       <img class="scene-illustration" id="scene-illustration" alt="">
-      <div class="scanlines"></div>
-      <div class="vignette"></div>
-      <div class="scene-signage">
-        <svg class="mark" viewBox="0 0 40 40" fill="none">
-          <path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#g2)" stroke-width="2.4"/>
-          <defs><linearGradient id="g2" x1="4" y1="3" x2="36" y2="37"><stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>
-        </svg>
-        <div class="word">CYBER<br/>PORTAL</div>
-      </div>
-
     </div>
   </section>
 
@@ -156,7 +144,6 @@
 
     <!-- schedule -->
     <div class="panel">
-      <div class="corner tl"></div><div class="corner br"></div>
       <div class="card-head">
         <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>TODAY'S SCHEDULE</h2>
         <div class="acct-tabs sm" role="tablist" id="sched-acct-tabs">
@@ -186,7 +173,6 @@
 
     <!-- quick access -->
     <div class="panel">
-      <div class="corner tl"></div><div class="corner br"></div>
       <div class="card-head">
         <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>QUICK ACCESS</h2>
       </div>
@@ -204,9 +190,8 @@
 
     <!-- inbox (はるか個人Gmailに接続。SYSLEA側は別アカウントなので未接続) -->
     <div class="panel">
-      <div class="corner tl"></div><div class="corner br"></div>
       <div class="card-head">
-        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>INBOX<span class="placeholder-tag" id="home-inbox-tag">仮データ</span></h2>
+        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>INBOX</h2>
         <span class="more" id="home-inbox-more">すべて見る ›</span>
       </div>
       <div class="card-body">
@@ -233,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.31.0</span>
+      <span>v2.31.1</span>
     </div>
   </footer>
 </div>
@@ -245,7 +230,6 @@
     <div class="pv-col">
       <!-- TODAY -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>TODAY</h2></div>
         <div class="card-body">
           <div class="pv-today-date"><span id="pv-md">--/--</span><span id="pv-dow">---</span><span class="yr" id="pv-yr">----</span></div>
@@ -255,7 +239,6 @@
       </section>
       <!-- WEATHER -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>WEATHER</h2></div>
         <div class="card-body">
           <div class="pv-weather-main"><span id="pv-weather-summary">読み込み中…</span></div>
@@ -265,7 +248,6 @@
       </section>
       <!-- 今月の収支（v1b: 家計簿スプレッドシート連携） -->
       <section class="panel pv-card pv-fin">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>今月の収支</h2>
           <button type="button" class="pv-fin-add" id="pv-fin-add" hidden>＋ 追加</button>
@@ -296,17 +278,12 @@
     </div>
 
     <section class="panel pv-hero">
-      <div class="corner tl"></div><div class="corner br"></div>
       <img class="pv-hero-img" id="pv-hero-img" alt="">
-      <div class="scanlines"></div>
-      <div class="vignette"></div>
-      <div class="pv-hero-vtext">未来は私たちの手の中に</div>
     </section>
 
     <div class="pv-col">
       <!-- 習慣トラッカー（v1c: Firestore、日曜始まり、binary＋count） -->
       <section class="panel pv-card pv-habit">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>習慣トラッカー</h2>
           <button type="button" class="pv-habit-manage" id="pv-habit-manage">管理</button>
@@ -326,7 +303,6 @@
       </section>
       <!-- サブスク管理（users/{uid}/subscriptions） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>サブスク</h2>
           <button type="button" class="pv-habit-manage" id="pv-subs-manage">管理</button>
@@ -342,7 +318,6 @@
     <div class="pv-bottom">
       <!-- UPCOMING EVENTS（右列から左下へ移動） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>UPCOMING EVENTS</h2></div>
         <div class="card-body">
           <ul class="pv-up-list" id="pv-upcoming"><li class="sched-empty">読み込み中…</li></ul>
@@ -350,7 +325,6 @@
       </section>
       <!-- TODAY'S PLAN（v1d: Firestore、曜日別テンプレ、任意時刻、進捗％） -->
       <section class="panel pv-card pv-plan">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>TODAY'S PLAN</h2>
           <button type="button" class="pv-plan-tpl-btn" id="pv-plan-templates">テンプレ</button>
@@ -375,7 +349,6 @@
       </section>
       <!-- クイックアクセス -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>QUICK ACCESS</h2></div>
         <div class="card-body">
           <div class="quick-grid">
@@ -400,7 +373,6 @@
     <div class="pv-col">
       <!-- TODAY -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>TODAY</h2></div>
         <div class="card-body">
           <div class="pv-today-date"><span id="biz-md">--/--</span><span id="biz-dow">---</span><span class="yr" id="biz-yr">----</span></div>
@@ -410,7 +382,6 @@
       </section>
       <!-- 最近のメモ（SYSLEA タグ） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>最近のメモ</h2>
           <button type="button" class="pv-fin-add" id="biz-note-new">＋ 新規メモ</button>
@@ -421,7 +392,6 @@
       </section>
       <!-- 最近のタスク（SYSLEA タグ・未完了） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>最近のタスク</h2>
           <button type="button" class="pv-fin-add" id="biz-task-new">＋ 新規タスク</button>
@@ -433,18 +403,13 @@
     </div>
 
     <section class="panel pv-hero">
-      <div class="corner tl"></div><div class="corner br"></div>
       <img class="pv-hero-img" id="biz-hero-img" alt="">
-      <div class="scanlines"></div>
-      <div class="vignette"></div>
-      <div class="pv-hero-vtext">積み重ねが、力になる</div>
     </section>
 
     <div class="pv-col">
       <!-- プロジェクトボード（旧「イベント／月次トラッカー」。内部は event_trackers。
            事前定義プロジェクトのチェックリストを event-digest がメール＋Slackから自動入力） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>プロジェクトボード</h2>
           <button type="button" class="pv-habit-manage" id="pv-events-manage">管理</button>
@@ -456,7 +421,6 @@
       </section>
       <!-- 契約書トラッカー（カードは2件まで。全件は「管理」から） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head">
           <h2>契約書トラッカー</h2>
           <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
@@ -492,7 +456,6 @@
     <div class="pv-bottom">
       <!-- Slackダイジェスト（フェーズB。Claudeの定期実行タスクが書き込む。カードは最新3件） -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>Slackダイジェスト</h2></div>
         <div class="card-body">
           <div class="pv-slack-list" id="pv-slack-list"></div>
@@ -501,7 +464,6 @@
       </section>
       <!-- クイックアクセス -->
       <section class="panel pv-card">
-        <div class="corner tl"></div><div class="corner br"></div>
         <div class="card-head"><h2>QUICK ACCESS</h2></div>
         <div class="card-body">
           <div class="quick-grid">
@@ -596,7 +558,6 @@
 <div class="frame" id="view-calendar" hidden>
 
   <header class="panel topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -654,7 +615,6 @@
 <div class="frame" id="view-mail" hidden>
 
   <header class="panel topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -697,7 +657,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="search" id="mail-search" placeholder="メールを検索" autocomplete="off" maxlength="200">
       </div>
-      <span class="placeholder-tag" id="mail-tag" hidden>仮データ</span>
     </div>
   </section>
 
@@ -724,7 +683,6 @@
 <div class="frame" id="view-tasks" hidden>
 
   <header class="panel topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -794,7 +752,6 @@
 <div class="frame" id="view-notes" hidden>
 
   <header class="panel topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -845,7 +802,6 @@
 <div class="frame" id="view-ideas" hidden>
 
   <header class="panel topbar">
-    <div class="corner tl"></div><div class="corner br"></div>
     <div class="brand">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">

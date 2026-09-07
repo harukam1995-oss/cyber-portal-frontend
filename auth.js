@@ -39,7 +39,6 @@
   //    ポップアップが使えない環境(ブロック等)のときだけフォールバックで使う。
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  console.log("[auth] init: authDomain=", firebaseConfig.authDomain, "current URL=", location.href);
 
   let signingIn = false;
   signinBtn.addEventListener("click", async () => {
@@ -47,7 +46,6 @@
     signingIn = true;
     statusEl.textContent = "ログイン中…";
     try {
-      console.log("[auth] signInWithPopup: calling...");
       await signInWithPopup(auth, provider);
       // 成功時は onAuthStateChanged がゲートを閉じる。
     } catch (err) {
@@ -60,7 +58,6 @@
         // ポップアップがブロック/未対応の環境 → リダイレクト方式にフォールバック。
         statusEl.textContent = "Googleのログイン画面へ移動します…";
         try {
-          console.log("[auth] falling back to signInWithRedirect...");
           await signInWithRedirect(auth, provider);
         } catch (err2) {
           console.error("[auth] signInWithRedirect failed:", err2);
@@ -75,18 +72,13 @@
   window.__cyberPortalSignOut = () => signOut(auth);
 
   // リダイレクトでGoogleから戻ってきた直後の結果を受け取る(エラー時のメッセージ表示用)。
-  console.log("[auth] calling getRedirectResult...");
   getRedirectResult(auth)
-    .then((result) => {
-      console.log("[auth] getRedirectResult resolved. result=", result, "user=", result && result.user);
-    })
     .catch((err) => {
       console.error("[auth] getRedirectResult failed:", err.code, err.message, err);
       statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
     });
 
   onAuthStateChanged(auth, (user) => {
-    console.log("[auth] onAuthStateChanged fired. user=", user);
     if (user) {
       // 注意: #auth-gate は style="display:flex" をインライン指定しているため、
       // hidden属性だけではUAスタイルシート([hidden]{display:none})が

@@ -4509,9 +4509,7 @@
   var mailActionsEl = document.getElementById("mail-actions");
   var mailActMsg = document.getElementById("mail-act-msg");
   var currentMailThread = null;
-  var mailTag = document.getElementById("mail-tag");
   var mailStatusBar = document.getElementById("mail-status-bar");
-  var homeInboxTag = document.getElementById("home-inbox-tag");
   var homeInboxCountBtn = document.getElementById("home-inbox-count-btn");
   var homeInboxCountNum = document.getElementById("home-inbox-count-num");
   var homeInboxCountLabel = document.getElementById("home-inbox-count-label");
@@ -4803,7 +4801,6 @@
     return mailState.account === "syslea" ? "SYSLEA" : "はるか個人";
   }
   function updateMailHeaderUI(){
-    mailTag.hidden = true;
     var label = mailAccountLabel();
     if (harukaMailError){
       if (harukaMailError.code === "google_not_connected"){
@@ -5832,7 +5829,6 @@
   }
 
   function renderHomeInbox(){
-    homeInboxTag.hidden = true;
     // 連携ボタンは常時表示。未連携なら「連携する」、連携済みなら「再連携」。
     homeGoogleConnectBtn.hidden = false;
     if (!googleConnecting){
