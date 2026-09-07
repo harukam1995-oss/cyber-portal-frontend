@@ -8218,6 +8218,7 @@
     p2El("pay2-edit-body").innerHTML = body;
     p2El("pay2-edit-error").hidden = true;
     p2El("pay2-edit-modal").hidden = false;
+    p2El("pay2-edit-form").scrollTop = 0;
     document.body.style.overflow = "hidden";
 
     function recalc(){
@@ -8346,6 +8347,7 @@
       "</div>";
     p2El("pay2-vendor-error").hidden = true;
     p2El("pay2-vendor-modal").hidden = false;
+    p2El("pay2-vendor-form").scrollTop = 0;
     document.body.style.overflow = "hidden";
   }
   function p2CloseVendor(){ p2El("pay2-vendor-modal").hidden = true; document.body.style.overflow = ""; }
@@ -8453,13 +8455,25 @@
       });
   }
   function p2CloseImport(){ p2El("pay2-import-modal").hidden = true; document.body.style.overflow = ""; }
+  // 差出人が noreply/中継のときは件名の （…） 【…】 からベンダー名を推測する。
+  function p2GuessVendor(from, subject){
+    var f = String(from || "").replace(/\s*via\s+.*$/i, "").replace(/^['"]+|['"]+$/g, "").trim();
+    var junk = /^(do[_-]?not[_-]?reply|no[_-]?reply|noreply|donotreply|info|billing|invoice|mail|accounts?|team|support)$/i;
+    if (f && !junk.test(f)) return f;
+    var s = String(subject || "");
+    var m = s.match(/（([^（）]{2,40})）/) || s.match(/\(([^()]{2,40})\)/);
+    if (m) return m[1].replace(/(から|より|さん|様)$/, "").trim();
+    m = s.match(/[【\[]([^】\]]{2,20})[】\]]/);
+    if (m) return m[1].trim();
+    return f || "";
+  }
   function p2RunImport(){
     var cbs = Array.prototype.slice.call(document.querySelectorAll("#pay2-import-list .pay2-imp-cb:checked"));
     if (!cbs.length) return;
     var items = cbs.map(function(cb){
       return {
         threadId: cb.value,
-        vendorName: cb.getAttribute("data-from") || "",
+        vendorName: p2GuessVendor(cb.getAttribute("data-from"), cb.getAttribute("data-subject")),
         receivedDate: cb.getAttribute("data-date") || "",
         note: cb.getAttribute("data-subject") || "",
         sourceLink: "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#all/" + encodeURIComponent(cb.value)

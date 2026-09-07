@@ -700,7 +700,9 @@
     border:1px solid var(--panel-border); background: var(--panel-solid); color: var(--text);
   }
   .pay2-sel option{ background: var(--panel-solid); color: var(--text); }
-  .pay2-check-inline{ display:inline-flex; align-items:center; gap:5px; font-size:11px; color: var(--text-dim); }
+  .pay2-check-inline{ display:inline-flex; flex-direction:row; align-items:center; gap:5px; font-size:11px; color: var(--text-dim); }
+  /* クラスで display:flex を当てているツールバー群は [hidden] が効かないので明示する */
+  #pay2-detail-tools[hidden], #pay2-vendor-tools[hidden], .pay2-summary[hidden]{ display:none; }
   .pay2-tool-btn{
     padding:5px 11px; font-size:11px; border-radius:6px; cursor:pointer;
     border:1px solid var(--panel-border); background: transparent; color: var(--text-dim);
@@ -756,7 +758,8 @@
   }
   .pay2-fld select option{ background: var(--panel-solid); color: var(--text); }
   .pay2-fld-checks{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:14px; padding-top:2px; }
-  .pay2-fld-checks label{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color: var(--text-dim); }
+  .pay2-fld-checks label{ display:inline-flex; flex-direction:row; align-items:center; gap:5px; font-size:11.5px; color: var(--text-dim); }
+  .pay2-fld-checks input{ width:auto; }
   .pay2-calc{ grid-column:1 / -1; font-size:10.5px; color: var(--text-faint); font-family: var(--font-mono); }
   .pay2-calc.bad{ color: var(--err); }
 
