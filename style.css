@@ -1751,7 +1751,7 @@
     .profile-meta{ display: none; }
 
     .hero{ min-height: 0; }
-    .hero .scene{ display: none; }
+    .hero .scene{ display: none !important; }   /* 640px 以下(スマホ)は HOME ヒーロー帯を出さない */
     .hero-hud{ padding: 16px 14px; border-bottom: none; gap: 14px; }
     .hud-ring{ width: 180px; height: 180px; }
     .hud-clock{ font-size: 30px; }
@@ -1878,11 +1878,21 @@
   .profile-meta .status{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
   .profile-meta .status::before{ background: var(--ok); }
 
-  /* --- ヒーロー → 横長のシステムバンド --- */
-  .hero{ min-height: auto; display: block; border-radius: 3px; }
-  .hero .scene{ display: none; }             /* スカイライン canvas を廃止。中の #lunch-modal は
-                                                既に死コード(ユーザー判断で残置)なので影響なし。
-                                                復活させるならヒーロー設計ごと再考が必要。 */
+  /* --- ヒーロー: 上=システムバンド / 下=横長の実写ヒーロー帯 --- */
+  .hero{ min-height: auto; display: block; border-radius: 3px; overflow: hidden; }
+  /* 生成スカイライン canvas と旧サインは廃止。#scene-illustration(hero1/2.webp)を帯として表示。
+     #lunch-modal は死コードのまま(hidden)。設定で「ヒーロー非表示」なら JS が #hero-scene を display:none。 */
+  .hero .scene{ display: block; position: relative; min-height: 210px; overflow: hidden; }
+  .hero .scene canvas{ display: none; }
+  .hero .scene .scene-signage{ display: none; }
+  .hero .scene .scene-illustration{
+    display: block; opacity: 1; object-position: center 42%;
+    filter: brightness(1.08) contrast(1.02) saturate(1.04);
+  }
+  .hero .scene::after{
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, rgba(7,9,12,0) 58%, rgba(7,9,12,.45) 100%);
+  }
   .hero-hud{
     display: flex; flex-flow: row wrap; align-items: baseline; gap: 6px 18px;
     padding: 13px 18px 15px; border-right: none; position: relative;
