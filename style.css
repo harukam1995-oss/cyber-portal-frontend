@@ -1878,11 +1878,49 @@
   .profile-meta .status{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
   .profile-meta .status::before{ background: var(--ok); }
 
-  /* --- ヒーロー: 上=システムバンド / 下=横長の実写ヒーロー帯 --- */
-  .hero{ min-height: auto; display: block; border-radius: 3px; overflow: hidden; }
-  /* 生成スカイライン canvas と旧サインは廃止。#scene-illustration(hero1/2.webp)を帯として表示。
-     #lunch-modal は死コードのまま(hidden)。設定で「ヒーロー非表示」なら JS が #hero-scene を display:none。 */
-  .hero .scene{ display: block; position: relative; min-height: 210px; overflow: hidden; }
+  /* --- HOME ヒーロー: 左=TODAY/WEATHER カード列 / 右=横長の実写ヒーロー ---
+     プライベート/ビジネスの .pv-grid と同じ考え方。.hero はパネル装飾を捨てて素のグリッドに。 */
+  .hero{
+    min-height: auto; display: grid;
+    grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
+    gap: clamp(12px, 1.6vw, 18px); align-items: stretch;
+    background: transparent; border: none; border-radius: 0; padding: 0;
+    backdrop-filter: none; overflow: visible;
+  }
+  .hero-hud{
+    display: flex; flex-direction: column; gap: clamp(12px, 1.6vw, 18px);
+    padding: 0; border-right: none; position: static;
+  }
+  .hero-hud::after{ display: none; }          /* 帯用アクセントティックは廃止(各カードが枠を持つ) */
+  .hud-card{
+    flex: 1 1 auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .hud-label{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--text-faint); }
+  .hud-date{
+    margin-top: 0; font-family: var(--font-display); font-size: 17px; letter-spacing: .3px;
+    color: var(--text); display: flex; align-items: baseline; gap: 8px;
+  }
+  .hud-date .yr{ color: var(--text-faint); font-size: 11px; }
+  .hud-clock-wrap{ position: static; margin: 2px 0 0; display: block; }
+  .hud-ring{ display: none; }                 /* #ring-progress は tick() のため DOM には残す */
+  .hud-clock{
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-size: 30px; font-weight: 700; letter-spacing: 1px; color: var(--text);
+    display: flex; align-items: baseline; gap: 2px;
+  }
+  .hud-clock .sec{ font-size: .5em; color: var(--accent); }
+  .hud-tz{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); margin-top: 2px; }
+  .hud-quote{ display: none; }
+  .hud-weather{ border-top: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .hud-weather .place{ display: flex; align-items: center; gap: 7px; color: var(--text-dim); }
+  .hud-weather svg{ stroke: var(--text-dim); }
+  .hud-weather .temp{ font-family: var(--font-mono); font-size: 14px; color: var(--text); }
+  .weather-note{ font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+
+  /* HOME 右列: 実写ヒーロー。高さは左のカード列に stretch で追従 */
+  .hero .scene{ display: block; position: relative; min-height: 220px; overflow: hidden; border-radius: 3px; }
   .hero .scene canvas{ display: none; }
   .hero .scene .scene-signage{ display: none; }
   .hero .scene .scene-illustration{
@@ -1891,30 +1929,11 @@
   }
   .hero .scene::after{
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(180deg, rgba(7,9,12,0) 58%, rgba(7,9,12,.45) 100%);
+    background: linear-gradient(180deg, rgba(7,9,12,0) 62%, rgba(7,9,12,.42) 100%);
   }
-  .hero-hud{
-    display: flex; flex-flow: row wrap; align-items: baseline; gap: 6px 18px;
-    padding: 13px 18px 15px; border-right: none; position: relative;
-  }
-  .hero-hud > div:first-child{ display: flex; align-items: baseline; gap: 10px; }
-  .hud-label{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--text-faint); }
-  .hud-date{ margin-top: 0; font-family: var(--font-display); font-size: 16px; letter-spacing: .3px; color: var(--text); gap: 8px; }
-  .hud-date .yr{ font-size: 11px; }
-  .hud-clock-wrap{ margin: 0; display: flex; align-items: baseline; justify-content: flex-start; }
-  .hud-ring{ display: none; }
-  .hud-clock{ font-size: 14px; font-weight: 500; letter-spacing: .5px; color: var(--text-dim); gap: 1px; }
-  .hud-clock .sec{ font-size: .7em; color: var(--text-faint); }
-  .hud-tz{ font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
-  .hud-quote{ display: none; }               /* 格言(AIっぽさの元)は撤去 */
-  .hud-weather{ border-top: none; margin: 0; padding: 0; gap: 10px; font-size: 12px; }
-  .hud-weather svg{ stroke: var(--text-dim); }
-  .hud-weather .place{ gap: 6px; color: var(--text-dim); }
-  .hud-weather .temp{ font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
-  .weather-note{ flex-basis: 100%; font-size: 9px; color: var(--text-faint); margin-top: 2px; }
-  .hero-hud::after{
-    content: ""; position: absolute; left: 18px; right: 18px; bottom: 0; height: 1px;
-    background: linear-gradient(90deg, var(--accent) 0 30px, var(--line) 30px);
+  /* 狭い画面では左カード列とヒーローを縦積み(このブロック内 @media なので上の .hero より後勝ち) */
+  @media (max-width: 900px){
+    .hero{ grid-template-columns: 1fr; }
   }
 
   /* --- フッター(ステータスバー) --- */
