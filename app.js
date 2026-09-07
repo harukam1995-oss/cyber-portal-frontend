@@ -8190,6 +8190,11 @@
     p2El("pay2-edit-del").hidden = !rec;
     var vendorNames = p2.vendors.map(function(v){ return v.name; });
     var body =
+      '<div class="pay2-extract">' +
+        '<button type="button" class="pay2-extract-btn" id="p2f-extract-mail"' + (r.threadId ? "" : " hidden") + ">📄 メールのPDF/本文から読み取り</button>" +
+        '<label class="pay2-extract-file">📎 PDFを選んで読み取り<input type="file" id="p2f-extract-pdf" accept="application/pdf" hidden></label>' +
+        '<div class="pay2-extract-note" id="p2f-extract-note" hidden></div>' +
+      "</div>" +
       '<div class="pay2-form-grid">' +
       p2Field("p2f-receivedDate", "受領日", "date", r.receivedDate) +
       '<div class="pay2-fld"><label>ベンダー</label><input id="p2f-vendorName" list="p2f-vendorlist" value="' + escapeHtml(r.vendorName || "") + '"><datalist id="p2f-vendorlist">' +
@@ -8251,6 +8256,17 @@
       if (!p2El("p2f-payTo").value) p2El("p2f-payTo").value = v.defaultPayTo || "";
       if (!p2El("p2f-regNo").value) p2El("p2f-regNo").value = v.regNo || "";
       if (p2El("p2f-qualified").value === "不明") p2El("p2f-qualified").value = v.qualified || "不明";
+    });
+
+    // PDF/本文からの AI 抽出
+    var extMailBtn = p2El("p2f-extract-mail");
+    if (extMailBtn) extMailBtn.addEventListener("click", function(){
+      p2ExtractFromMail(rec ? rec.threadId : "", rec ? (rec.note || "") : "");
+    });
+    p2El("p2f-extract-pdf").addEventListener("change", function(){
+      var file = this.files && this.files[0];
+      this.value = "";
+      if (file) p2ExtractFromFile(file);
     });
   }
   function p2CloseEdit(){ p2El("pay2-edit-modal").hidden = true; document.body.style.overflow = ""; }
@@ -8505,6 +8521,139 @@
     }).catch(function(err){
       p2Status(apiErrorMessage(err, "CSV書き出し"), "err");
     });
+  }
+
+  /* ---- PDF/本文の AI 抽出（/api/payables/extract） ----
+     pdf.js(extractPdfText) と Gmail 添付取得(mailAttachBytes)は
+     「支払い仕分け」機能のものを再利用する。 */
+  function p2ExtractBusy(on, msg){
+    var b = p2El("p2f-extract-mail");
+    var f = p2El("p2f-extract-pdf");
+    if (b) b.disabled = on;
+    if (f) f.disabled = on;
+    if (on) p2ExtractMsg(msg || "処理中…", false);
+  }
+  function p2ExtractMsg(text, isErr, asHtml){
+    var n = p2El("p2f-extract-note");
+    if (!n) return;
+    n.hidden = false;
+    n.classList.toggle("is-err", !!isErr);
+    if (asHtml) n.innerHTML = text; else n.textContent = text;
+  }
+  function p2FieldLabel(id){
+    return ({
+      "p2f-vendorName": "ベンダー", "p2f-invoiceNo": "請求書番号", "p2f-invoiceDate": "請求日",
+      "p2f-dueDate": "支払期日", "p2f-amountExcl": "税抜", "p2f-tax": "消費税",
+      "p2f-amountIncl": "税込", "p2f-regNo": "登録番号", "p2f-payTo": "振込先"
+    })[id] || id;
+  }
+
+  async function p2ExtractFromMail(threadId, subjectHint){
+    if (!threadId){
+      p2ExtractMsg("このメールにはスレッド情報がありません。「PDFを選んで読み取り」をお使いください。", true);
+      return;
+    }
+    p2ExtractBusy(true, "メールを取得中…");
+    try {
+      var th = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(threadId), "syslea"));
+      var bodyText = (th && th.body) || "";
+      var pdfs = ((th && th.attachments) || []).filter(function(a){
+        return a && ((a.mimeType === "application/pdf") || /\.pdf$/i.test(a.filename || ""));
+      });
+      var pdfText = "";
+      if (pdfs.length){
+        p2ExtractBusy(true, "PDF を読み取り中…（" + pdfs.length + " 件）");
+        for (var i = 0; i < pdfs.length; i++){
+          try {
+            var buf = await mailAttachBytes(pdfs[i]);
+            pdfText += (await extractPdfText(buf)) + "\n";
+          } catch (e){ /* この添付は飛ばす */ }
+        }
+      }
+      if (!pdfText && !bodyText){
+        p2ExtractBusy(false);
+        p2ExtractMsg("読み取れるテキストがありませんでした。", true);
+        return;
+      }
+      await p2RunExtract(pdfText, bodyText, subjectHint);
+    } catch (err){
+      p2ExtractBusy(false);
+      p2ExtractMsg(apiErrorMessage(err, "メール"), true);
+    }
+  }
+
+  async function p2ExtractFromFile(file){
+    p2ExtractBusy(true, "PDF を読み取り中…");
+    try {
+      var buf = await file.arrayBuffer();
+      var pdfText = await extractPdfText(buf);
+      if (!pdfText || !pdfText.trim()){
+        p2ExtractBusy(false);
+        p2ExtractMsg("PDF からテキストを取り出せませんでした（画像だけの PDF の可能性）。", true);
+        return;
+      }
+      await p2RunExtract(pdfText, "", file.name || "");
+    } catch (err){
+      p2ExtractBusy(false);
+      p2ExtractMsg("PDF の読み取りに失敗しました。", true);
+    }
+  }
+
+  async function p2RunExtract(pdfText, bodyText, subject){
+    p2ExtractBusy(true, "AI で抽出中…");
+    try {
+      var res = await apiFetch("/api/payables/extract", { method: "POST", body: JSON.stringify({
+        pdfText: String(pdfText || "").slice(0, 14000),
+        bodyText: String(bodyText || "").slice(0, 4000),
+        subject: String(subject || "").slice(0, 300)
+      }) });
+      p2ApplyExtract(res);
+    } catch (err){
+      p2ExtractBusy(false);
+      p2ExtractMsg(apiErrorMessage(err, "AI抽出"), true);
+    }
+  }
+
+  function p2ApplyExtract(res){
+    p2ExtractBusy(false);
+    var f = (res && res.fields) || {};
+    var map = {
+      "p2f-vendorName": f.vendorName, "p2f-invoiceNo": f.invoiceNo,
+      "p2f-invoiceDate": f.invoiceDate, "p2f-dueDate": f.dueDate,
+      "p2f-amountExcl": f.amountExcl, "p2f-tax": f.tax, "p2f-amountIncl": f.amountIncl,
+      "p2f-regNo": f.regNo, "p2f-payTo": f.payTo
+    };
+    var filled = 0;
+    var conflicts = [];
+    Object.keys(map).forEach(function(id){
+      var v = map[id];
+      if (v == null || v === "") return;
+      var el = p2El(id);
+      if (!el) return;
+      if (!el.value){ el.value = v; filled++; }
+      else if (String(el.value) !== String(v)){
+        conflicts.push(p2FieldLabel(id) + "：現在 " + el.value + " ／ 抽出 " + v);
+      }
+    });
+    if (f.method){
+      var mEl = p2El("p2f-method");
+      if (mEl && (!mEl.value || mEl.value === "その他")) mEl.value = f.method;
+    }
+    if (f.qualified === "適格"){
+      var qEl = p2El("p2f-qualified");
+      if (qEl && qEl.value === "不明") qEl.value = "適格";
+    }
+    var ae = p2El("p2f-amountExcl");
+    if (ae) ae.dispatchEvent(new Event("input"));
+
+    var conf = (res && typeof res.confidence === "number") ? res.confidence : 0.5;
+    var confLabel = conf >= 0.8 ? "高" : (conf >= 0.5 ? "中" : "低");
+    var warns = (res && res.warnings) || [];
+    var html = "<b>AI抽出：信頼度 " + confLabel + "</b>（空欄 " + filled + " 項目に反映）";
+    if (conflicts.length) html += "<br>既存値と相違: " + conflicts.map(escapeHtml).join(" ／ ");
+    if (warns.length) html += "<br>⚠ " + warns.map(escapeHtml).join("<br>⚠ ");
+    html += '<br><span class="pay2-extract-hint">金額・日付・登録番号は必ず原本と突き合わせて確認してください。</span>';
+    p2ExtractMsg(html, false, true);
   }
 
 })();

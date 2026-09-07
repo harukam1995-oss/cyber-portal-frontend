@@ -763,6 +763,22 @@
   .pay2-calc{ grid-column:1 / -1; font-size:10.5px; color: var(--text-faint); font-family: var(--font-mono); }
   .pay2-calc.bad{ color: var(--err); }
 
+  .pay2-extract{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-bottom:2px; }
+  .pay2-extract-btn, .pay2-extract-file{
+    padding:6px 12px; font-size:11.5px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--accent-dim); background: rgba(255,143,63,0.08); color: var(--accent);
+  }
+  .pay2-extract-btn:hover, .pay2-extract-file:hover{ border-color: var(--accent); }
+  .pay2-extract-btn:disabled{ opacity:.5; cursor:default; }
+  .pay2-extract-note{
+    flex:1 1 100%; margin-top:4px; padding:8px 10px; border-radius:6px;
+    border:1px solid var(--panel-border); background: rgba(255,255,255,0.02);
+    font-size:11px; line-height:1.6; color: var(--text-dim);
+  }
+  .pay2-extract-note.is-err{ border-color: var(--err); color: var(--err); }
+  .pay2-extract-note b{ color: var(--text); }
+  .pay2-extract-hint{ color: var(--text-faint); }
+
   .pay2-import-hint{ padding:0 4px 8px; font-size:11.5px; color: var(--text-dim); line-height:1.6; }
   .pay2-import-hint code{ font-family: var(--font-mono); font-size:11px; color: var(--text); }
   .pay2-import-list{ display:flex; flex-direction:column; gap:6px; max-height:46vh; overflow-y:auto; }
