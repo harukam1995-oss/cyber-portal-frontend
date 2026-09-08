@@ -8076,7 +8076,7 @@
   var p2 = {
     payables: [], vendors: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
-    vq: "", vFq: "", vFm: "", vNoEmail: false, vRecurring: false,
+    vq: "", vFq: "", vFm: "", vNoEmail: false, vRecurring: false, vFex: "hide",
     wired: false, editId: null, vendId: null
   };
 
@@ -8163,6 +8163,7 @@
       p2El("pay2-vendor-fm").addEventListener("change", function(){ p2.vFm = this.value; p2RenderVendors(); });
       p2El("pay2-vendor-noemail").addEventListener("change", function(){ p2.vNoEmail = this.checked; p2RenderVendors(); });
       p2El("pay2-vendor-recurring").addEventListener("change", function(){ p2.vRecurring = this.checked; p2RenderVendors(); });
+      p2El("pay2-vendor-fex").addEventListener("change", function(){ p2.vFex = this.value; p2RenderVendors(); });
       // 明細モーダル
       p2El("pay2-edit-close").addEventListener("click", p2CloseEdit);
       p2El("pay2-edit-cancel").addEventListener("click", p2CloseEdit);
@@ -8303,6 +8304,8 @@
   function p2VendorFiltered(){
     var q = (p2.vq || "").trim().toLowerCase();
     return p2.vendors.filter(function(v){
+      if (p2.vFex === "hide" && v.excluded === true) return false;
+      if (p2.vFex === "only" && v.excluded !== true) return false;
       if (p2.vFq && (v.qualified || "不明") !== p2.vFq) return false;
       if (p2.vFm && (v.defaultMethod || "その他") !== p2.vFm) return false;
       if (p2.vNoEmail && String(v.emails || "").trim()) return false;
@@ -8339,8 +8342,8 @@
       ["ベンダー", "メールアドレス", "登録番号", "適格", "既定方式", "支払サイト", "定期", "想定額"]
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") + "</tr></thead>";
     var body = "<tbody>" + rows.map(function(v){
-      return '<tr data-id="' + escapeHtml(v.id) + '">' +
-        '<td class="strong">' + escapeHtml(v.name || "") + "</td>" +
+      return '<tr data-id="' + escapeHtml(v.id) + '"' + (v.excluded ? ' class="pay2-row-excluded"' : "") + ">" +
+        '<td class="strong">' + escapeHtml(v.name || "") + (v.excluded ? ' <span class="pay2-flag">対象外</span>' : "") + "</td>" +
         "<td>" + escapeHtml(v.emails || "") + "</td>" +
         "<td>" + escapeHtml(v.regNo || "") + "</td>" +
         '<td class="center">' + escapeHtml(v.qualified || "不明") + "</td>" +
@@ -8561,7 +8564,10 @@
       p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末）", "text", d.paymentTerms, true) +
       p2Field("p2v-noteLink", "参照リンク（Obsidian 等）", "text", d.noteLink, true) +
       '<div class="pay2-fld wide"><label>メモ</label><textarea id="p2v-note" rows="2">' + escapeHtml(d.note || "") + "</textarea></div>" +
-      '<div class="pay2-fld-checks"><label><input type="checkbox" id="p2v-recurring"' + (d.recurring ? " checked" : "") + "> 毎月出る請求書（定期）</label></div>" +
+      '<div class="pay2-fld-checks">' +
+        '<label><input type="checkbox" id="p2v-recurring"' + (d.recurring ? " checked" : "") + "> 毎月出る請求書（定期）</label>" +
+        '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（請求書管理の対象にしない・このベンダー宛メールは取り込み時に対象外扱い）</label>" +
+      "</div>" +
       "</div>";
     p2El("pay2-vendor-error").hidden = true;
     p2El("pay2-vendor-modal").hidden = false;
@@ -8582,7 +8588,8 @@
       amountHint: p2El("p2v-amountHint").value.trim(),
       noteLink: p2El("p2v-noteLink").value.trim(),
       note: p2El("p2v-note").value.trim(),
-      recurring: p2El("p2v-recurring").checked
+      recurring: p2El("p2v-recurring").checked,
+      excluded: p2El("p2v-excluded").checked
     };
     if (!vals.name){
       var e = p2El("pay2-vendor-error");
