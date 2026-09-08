@@ -8074,7 +8074,7 @@
   var PAY2_SHEET_URL = "https://docs.google.com/spreadsheets/d/" + PAY2_SHEET_ID + "/edit";
 
   var p2 = {
-    payables: [], vendors: [], receipts: [], tab: "detail",
+    payables: [], vendors: [], receipts: [], receiptsUnattributed: 0, tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
     checkOpen: false, _recv: {},
@@ -8109,7 +8109,9 @@
     el.classList.toggle("err", cls === "err");
   }
   function p2CountStatus(){
-    p2Status(p2.payables.length + " 件の請求書 ／ ベンダー " + p2.vendors.length + " 社");
+    var msg = p2.payables.length + " 件の請求書 ／ ベンダー " + p2.vendors.length + " 社";
+    if (p2.receiptsUnattributed) msg += " ／ 仕分け済みで未紐づけ " + p2.receiptsUnattributed + " 件（差出人がベンダー未登録＝受領チェックに出ません）";
+    p2Status(msg);
   }
   function p2Money(n){
     if (n == null || n === "" || !isFinite(n)) return "—";
@@ -8157,13 +8159,18 @@
   }
   // 受領実績インデックス（サーバーで syslea_payables＋payments を threadId 名寄せ済みの
   // p2.receipts から）。vendorId → { last:"YYYY-MM", byMonth: { "YYYY-MM": receipt } }
+  // 各 receipt は month（＝届いた月）と periodMonth（＝何月分）を持つ。両方の月に受領を立てる
+  // ので、9月に届いた「8月分」は 8月・9月 どちらの対象月でも「受領」になる。
   function p2RecvIndex(){
     var idx = {};
     (p2.receipts || []).forEach(function(r){
-      if (!r || !r.vendorId || !r.month) return;
+      if (!r || !r.vendorId) return;
       var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", byMonth: {} });
-      if (!e.byMonth[r.month] || r.source === "payable") e.byMonth[r.month] = r; // 同月は手入力行を優先
-      if (r.month > e.last) e.last = r.month;
+      [r.month, r.periodMonth].forEach(function(m){
+        if (!m) return;
+        if (!e.byMonth[m] || r.source === "payable") e.byMonth[m] = r; // 同月は手入力行を優先
+        if (m > e.last) e.last = m;
+      });
     });
     return idx;
   }
@@ -8260,6 +8267,7 @@
       p2.payables = (res && res.payables) || [];
       p2.vendors = (res && res.vendors) || [];
       p2.receipts = (res && res.receipts) || [];
+      p2.receiptsUnattributed = (res && res.receiptsUnattributed) || 0;
       p2RenderAll();
       p2El("pay2-summary").hidden = (p2.tab !== "detail");
       p2CountStatus();
@@ -8928,6 +8936,7 @@
         p2.payables = (r2 && r2.payables) || p2.payables;
         p2.vendors = (r2 && r2.vendors) || p2.vendors;
         p2.receipts = (r2 && r2.receipts) || p2.receipts;
+        p2.receiptsUnattributed = (r2 && r2.receiptsUnattributed) || 0;
         p2RenderAll();
       });
     }).catch(function(err){
