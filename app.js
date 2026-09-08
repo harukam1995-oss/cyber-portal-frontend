@@ -8077,7 +8077,7 @@
     payables: [], vendors: [], receipts: [], receiptsUnattributed: 0, unlinked: [], unlinkedExcluded: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
-    checkOpen: false, unlinkedOpen: false, _recv: {},
+    checkOpen: false, checkOverdueOnly: false, unlinkedOpen: false, _recv: {},
     wired: false, editId: null, vendId: null
   };
 
@@ -8160,6 +8160,7 @@
   // 受領実績インデックス（サーバーで syslea_payables＋payments を threadId 名寄せ済みの
   // p2.receipts から）。vendorId → { last:"YYYY-MM", byMonth: { "YYYY-MM": receipt } }
   // receipt.month は「支払月」（いつ払うか）。受領チェックはこの支払月で並べる。
+  // 案B: p2.receipts は syslea_payables 由来のみ（source は常に "payable"）。
   function p2RecvIndex(){
     var idx = {};
     (p2.receipts || []).forEach(function(r){
@@ -8225,6 +8226,7 @@
         p2RenderCheck();
       });
       p2El("pay2-check-month").addEventListener("change", p2RenderCheck);
+      p2El("pay2-check-overdue").addEventListener("change", function(){ p2.checkOverdueOnly = this.checked; p2RenderCheck(); });
       p2El("pay2-unlinked-toggle").addEventListener("click", function(){
         p2.unlinkedOpen = !p2.unlinkedOpen;
         p2RenderUnlinked();
@@ -8526,10 +8528,13 @@
     });
   }
 
-  /* ---- 支払月の受領チェック（来た/来てない） ----
-     定期ベンダー（毎月／Nヶ月毎）ごとに、選んだ「支払月」に払う請求書が届いているかを一覧する。
-     receipt.month＝支払月（支払予定日/支払期日→済_YYYY/MM か仕分け日時→手動紐づけ）。
-     受領実績は p2.receipts（syslea_payables ＋ 支払い仕分け台帳をサーバーで名寄せ済み）。 */
+  /* ---- 支払月の受領チェック（③ 未着アラート） ----
+     定期ベンダー（毎月／Nヶ月毎）ごとに、選んだ「支払月」に払う請求書が届いているか一覧。
+     受領実績 p2.receipts は `syslea_payables` 由来（案B）。receipt.month＝支払月
+     （支払予定日→支払期日→受領日→請求日→何月分）。
+     状態: 受領（その支払月の台帳行あり）／未着（到来予定・未受領・当月で想定到着日超 or 過去月）
+     ／待機（到来予定・未受領・想定到着日前）。受領実績ゼロのベンダーは未着にしない。
+     「未着のみ」で欠落だけに絞れる。行クリックで台帳行 or ベンダー編集。 */
   function p2RenderCheck(){
     var wrap = p2El("pay2-check");
     if (!wrap) return;
@@ -8540,19 +8545,20 @@
     var toggle = p2El("pay2-check-toggle");
     if (toggle) toggle.setAttribute("aria-expanded", p2.checkOpen ? "true" : "false");
 
-    var rows = p2.vendors
+    var allRows = p2.vendors
       .filter(function(v){ return !v.excluded && p2ExpectedInMonth(v, month); })
       .map(function(v){ return { v: v, st: p2VendorMonthState(v, month) }; });
+    var rc = 0, oc = 0, wc = 0;
+    allRows.forEach(function(r){ if (r.st === "received") rc++; else if (r.st === "overdue") oc++; else wc++; });
+    var rows = p2.checkOverdueOnly ? allRows.filter(function(r){ return r.st === "overdue"; }) : allRows;
     var rank = { overdue: 0, waiting: 1, received: 2 };
     rows.sort(function(a, b){
       return (rank[a.st] - rank[b.st]) || String(a.v.name || "").localeCompare(String(b.v.name || ""), "ja");
     });
-    var rc = 0, oc = 0, wc = 0;
-    rows.forEach(function(r){ if (r.st === "received") rc++; else if (r.st === "overdue") oc++; else wc++; });
     var sum = p2El("pay2-check-sum");
     if (sum){
-      sum.innerHTML = rows.length
-        ? ("対象 <b>" + rows.length + "</b> 社 ／ <span class=\"ok\">受領 " + rc + "</span>" +
+      sum.innerHTML = allRows.length
+        ? ("対象 <b>" + allRows.length + "</b> 社 ／ <span class=\"ok\">受領 " + rc + "</span>" +
            " ／ <span class=\"warn\">未着 " + oc + "</span> ／ 待機 " + wc)
         : "この支払月に払う予定の定期ベンダーはありません。";
     }
@@ -8561,20 +8567,25 @@
     if (!body) return;
     if (!p2.checkOpen){ body.hidden = true; return; }
     body.hidden = false;
-    if (!rows.length){ body.innerHTML = ""; return; }
+    if (!rows.length){
+      body.innerHTML = p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "";
+      return;
+    }
     body.innerHTML =
-      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>何月分</th><th>想定</th><th>状態</th><th>金額</th></tr></thead><tbody>' +
+      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th></tr></thead><tbody>' +
       rows.map(function(r){
-        var rec = (p2._recv[r.v.id] && p2._recv[r.v.id].byMonth[month]) || null;
+        var e = p2._recv[r.v.id];
+        var rec = (e && e.byMonth[month]) || null;
         var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領</span>'
           : r.st === "overdue" ? '<span class="pay2-flag">未着</span>'
           : '<span class="pay2-muted">待機</span>';
         return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
           '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
           '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
-          '<td class="center">' + escapeHtml((rec && rec.periodMonth) || "") + "</td>" +
+          "<td>" + escapeHtml(String(r.v.paymentTerms || "").slice(0, 18)) + "</td>" +
           '<td class="center">' + escapeHtml(String(p2ExpectDay(r.v)) + "日") + "</td>" +
-          "<td>" + stHtml + (rec && rec.source === "payment" ? ' <span class="pay2-muted">仕分けから</span>' : "") + "</td>" +
+          '<td class="center">' + escapeHtml((e && e.last) || "—") + "</td>" +
+          "<td>" + stHtml + "</td>" +
           '<td class="num">' + (rec && rec.amountIncl != null ? p2Money(rec.amountIncl) : "") + "</td>" +
           "</tr>";
       }).join("") + "</tbody></table>";
