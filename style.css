@@ -725,6 +725,21 @@
   .pay2-summary .warn{ color: var(--warn); }
   .pay2-summary .pay2-sum-muted{ color: var(--text-faint); }
 
+  /* 対象月の受領チェック（来た/来てない） */
+  .pay2-check{ padding:0 6px 12px; }
+  .pay2-check-head{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .pay2-check-toggle{
+    padding:5px 11px; font-size:11px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--panel-border); background: transparent; color: var(--text-dim);
+  }
+  .pay2-check-toggle:hover{ border-color: var(--accent); color: var(--accent); }
+  .pay2-check-toggle[aria-expanded="true"]{ border-color: var(--accent-dim); color: var(--accent); }
+  .pay2-check-sum{ font-family: var(--font-mono); font-size:11.5px; color: var(--text-dim); }
+  .pay2-check-sum b{ color: var(--text); }
+  .pay2-check-sum .ok{ color: var(--ok); }
+  .pay2-check-sum .warn{ color: var(--warn); }
+  .pay2-check-body{ margin-top:10px; overflow-x:auto; }
+
   .pay2-tablewrap{ overflow-x:auto; }
   .pay2-vendor-count{ font-family: var(--font-mono); font-size:11.5px; color: var(--text-faint); padding:2px 4px 10px; }
   .pay2-muted{ color: var(--text-faint); font-size:11px; }

@@ -218,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.32.8</span>
+      <span>v2.33.0</span>
     </div>
   </footer>
 </div>
@@ -830,6 +830,14 @@
 
   <section class="panel cal-body-panel">
     <div class="pay2-summary" id="pay2-summary" hidden></div>
+    <div class="pay2-check" id="pay2-check" hidden>
+      <div class="pay2-check-head">
+        <button type="button" id="pay2-check-toggle" class="pay2-check-toggle" aria-expanded="false">📅 対象月の受領チェック</button>
+        <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="受領チェックの対象月">
+        <span class="pay2-check-sum" id="pay2-check-sum"></span>
+      </div>
+      <div class="pay2-check-body" id="pay2-check-body" hidden></div>
+    </div>
     <div class="pay2-tablewrap" id="pay2-detail-wrap">
       <table class="pay2-table" id="pay2-detail-table"></table>
       <p class="pay2-empty" id="pay2-detail-empty" hidden></p>
