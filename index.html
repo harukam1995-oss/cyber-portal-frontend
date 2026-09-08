@@ -218,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.31.5</span>
+      <span>v2.32.0</span>
     </div>
   </footer>
 </div>
@@ -479,6 +479,70 @@
       </section>
     </div>
   </div>
+</div>
+
+<!-- ================= 契約書トラッカー 一覧ページ（ビジネスカードの「すべて表示」から遷移。
+     状態・フィルタ・行の見た目はビジネスカードと共用。行タップで編集モーダルの詳細へ） ================= -->
+<div class="frame" id="view-contracts" hidden>
+
+  <header class="panel topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#g8)" stroke-width="2.4"/>
+          <path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#g8)" opacity="0.85"/>
+          <defs><linearGradient id="g8" x1="4" y1="3" x2="36" y2="37"><stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="name">契約書トラッカー</div>
+        <div class="tag">CYBER PORTAL</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="profile">
+        <div class="avatar">遥</div>
+        <div class="profile-meta">
+          <div class="uname">HARUKA</div>
+          <div class="status">Online</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="contracts-back" type="button">← 戻る</button>
+      <div class="pv-contracts-tabs" id="contracts-page-tabs" role="tablist">
+        <button type="button" class="pv-contracts-tab pv-contracts-tab-alert" data-tab="alert">アラート</button>
+        <button type="button" class="pv-contracts-tab" data-tab="依頼受領">依頼</button>
+        <button type="button" class="pv-contracts-tab" data-tab="送付済み">送付</button>
+        <button type="button" class="pv-contracts-tab" data-tab="締結済み">締結</button>
+        <button type="button" class="pv-contracts-tab is-active" data-tab="">すべて</button>
+      </div>
+    </div>
+    <div class="cal-toolbar-right">
+      <div class="mail-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="contracts-page-q" placeholder="会社名・依頼者・日付で検索" autocomplete="off" maxlength="80">
+      </div>
+      <select id="contracts-page-requester" class="pv-contracts-requester" aria-label="依頼者で絞り込み">
+        <option value="">依頼者（すべて）</option>
+        <option value="河野">河野</option>
+        <option value="藤井">藤井</option>
+        <option value="船木">船木</option>
+        <option value="竹内">竹内</option>
+        <option value="__other">その他</option>
+      </select>
+      <button type="button" class="cal-new-btn" id="contracts-page-new">＋ 新規</button>
+    </div>
+  </section>
+
+  <section class="panel cal-status-bar" id="contracts-page-status">接続確認中…</section>
+
+  <section class="panel cal-body-panel">
+    <div class="contracts-page-list" id="contracts-page-list"><div class="sched-empty">読み込み中…</div></div>
+  </section>
 </div>
 
 <!-- ================= 契約書トラッカーの管理モーダル ================= -->

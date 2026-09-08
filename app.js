@@ -793,6 +793,7 @@
   var viewNotes = document.getElementById("view-notes");
   var viewIdeas = document.getElementById("view-ideas");
   var viewPayables = document.getElementById("view-payables");
+  var viewContracts = document.getElementById("view-contracts");
   var appTopbar = document.getElementById("app-topbar");
   var navHome = document.getElementById("nav-home");
   var navPrivate = document.getElementById("nav-private");
@@ -806,6 +807,7 @@
   var privateInitialized = false;
   var businessInitialized = false;
   var payablesInitialized = false;
+  var contractsPageInitialized = false;
 
   function showView(name){
     var isDash = name === "home" || name === "private" || name === "business";
@@ -818,6 +820,7 @@
     viewNotes.hidden = name !== "notes";
     viewIdeas.hidden = name !== "ideas";
     if (viewPayables) viewPayables.hidden = name !== "payables";
+    if (viewContracts) viewContracts.hidden = name !== "contracts";
 
     if (isDash){
       currentDashboard = name;
@@ -871,6 +874,10 @@
       payablesInitialized = true;
       initPayables();
     }
+    if (name === "contracts"){
+      if (!contractsPageInitialized){ contractsPageInitialized = true; initContractsPage(); }
+      else renderContractsPage();
+    }
     window.scrollTo(0, 0);
   }
 
@@ -883,7 +890,7 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
@@ -2469,12 +2476,12 @@
   function applyContracts(list){
     contractsState = list || [];
     contractsLoadOk = true;
-    renderContracts();
+    renderContractsAll();
     contractSetStatus("");
   }
   function failContracts(err){
     contractsState = [];
-    renderContracts();
+    renderContractsAll();
     contractSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
   }
   async function loadContracts(){
@@ -2503,18 +2510,10 @@
     return hay.toLowerCase().indexOf(q) !== -1;
   }
 
-  function renderContracts(){
-    var list = document.getElementById("pv-contracts-list");
-    if (!list) return;
-    renderContractsTabs();
-    list.innerHTML = "";
-    if (!contractsState.length){
-      list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
-      return;
-    }
-
+  // タブ / 依頼者 / 検索窓のフィルタ。カードと一覧ページで共用。
+  function filterContracts(){
     var q = contractsQuery.trim().toLowerCase();
-    var filtered = contractsState.filter(function(c){
+    return contractsState.filter(function(c){
       // タブ
       if (contractsTab === "alert"){ if (!contractAlertLabels(c).length) return false; }
       else if (contractsTab === "締結済み"){ if (c.status !== "締結済み" && c.status !== "報告済み") return false; }
@@ -2529,103 +2528,197 @@
       if (q && !contractMatchesQuery(c, q)) return false;
       return true;
     });
+  }
 
+  // 1件ぶんの行 DOM。カード(#pv-contracts-list)と一覧ページ(#contracts-page-list)で共用。
+  // タップで管理モーダルのその契約書の詳細ビューへ直行。
+  function buildContractRow(c){
+    var alerts = contractAlertLabels(c);
+    var pending = c.status !== "締結済み" && c.status !== "報告済み";
+    var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
+    var row = document.createElement("div");
+    row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
+    row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
+
+    var head = document.createElement("div");
+    head.className = "pv-case-head";
+    var name = document.createElement("span");
+    name.className = "pv-case-name";
+    name.textContent = c.client || c.title || "(名称未設定)";
+    head.appendChild(name);
+    if (c.confidential){
+      var lock = document.createElement("span");
+      lock.className = "pv-case-lock";
+      lock.textContent = "🔒";
+      lock.title = "機密案件";
+      head.appendChild(lock);
+    }
+    if (alerts.length){
+      alerts.forEach(function(t){
+        var a = document.createElement("span");
+        a.className = "pv-contract-alert" + (t === "⚠ 期限超過" ? " is-err" : "");
+        a.textContent = t;
+        head.appendChild(a);
+      });
+    } else if (pending){
+      var alertEl = document.createElement("span");
+      alertEl.className = "pv-contract-alert";
+      alertEl.textContent = "⚠ 未締結";
+      head.appendChild(alertEl);
+    }
+    var status = document.createElement("span");
+    status.className = "pv-case-status-badge";
+    status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
+    status.textContent = c.status;
+    head.appendChild(status);
+    if (c.source === "slack"){
+      var slackBadge = document.createElement("span");
+      slackBadge.className = "pv-contract-slack-badge";
+      slackBadge.textContent = "Slack検知";
+      slackBadge.title = "Slackダイジェストが自動検知・更新した項目です。内容を確認してください。";
+      head.appendChild(slackBadge);
+    }
+    row.appendChild(head);
+
+    // 契約書名が会社名と別なら、小さくサブ行に出す。
+    if (c.title && c.title !== c.client){
+      var sub = document.createElement("div");
+      sub.className = "pv-contract-subtitle";
+      sub.textContent = c.title;
+      row.appendChild(sub);
+    }
+
+    var metaLine = [];
+    if (c.requestedDate) metaLine.push("依頼 " + contractMD(c.requestedDate));
+    if (c.sentDate) metaLine.push("送付 " + contractMD(c.sentDate));
+    if (c.signedDate) metaLine.push("締結 " + contractMD(c.signedDate));
+    if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
+    if (c.dueDate) metaLine.push("期限 " + contractMD(c.dueDate) + " まで");
+    if (metaLine.length){
+      var meta = document.createElement("div");
+      meta.className = "pv-case-client";
+      meta.textContent = metaLine.join(" ・ ");
+      row.appendChild(meta);
+    }
+
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    (function(id){
+      function open(){ openContractModal(id); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); }
+      });
+    })(c.id);
+
+    return row;
+  }
+
+  // カードとページの両方を更新する(フィルタ状態は共用なので片方を触ったらもう片方も揃える)。
+  function renderContractsAll(){ renderContracts(); renderContractsPage(); }
+
+  function renderContracts(){
+    var list = document.getElementById("pv-contracts-list");
+    if (!list) return;
+    renderContractsTabs();
+    list.innerHTML = "";
+    if (!contractsState.length){
+      list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
+      return;
+    }
+    var filtered = filterContracts();
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
     }
-    // カードは2件まで。残りは「…ほか N件」で示し、全件は「管理」モーダルで見る。
+    // カードは2件まで。残りは「すべて表示」で一覧ページ(#view-contracts)へ。
     var CONTRACTS_CARD_MAX = 2;
-    filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){
-      var alerts = contractAlertLabels(c);
-      var pending = c.status !== "締結済み" && c.status !== "報告済み";
-      var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
-      var row = document.createElement("div");
-      row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
-      row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
-
-      var head = document.createElement("div");
-      head.className = "pv-case-head";
-      var name = document.createElement("span");
-      name.className = "pv-case-name";
-      name.textContent = c.client || c.title || "(名称未設定)";
-      head.appendChild(name);
-      if (c.confidential){
-        var lock = document.createElement("span");
-        lock.className = "pv-case-lock";
-        lock.textContent = "🔒";
-        lock.title = "機密案件";
-        head.appendChild(lock);
-      }
-      if (alerts.length){
-        alerts.forEach(function(t){
-          var a = document.createElement("span");
-          a.className = "pv-contract-alert" + (t === "⚠ 期限超過" ? " is-err" : "");
-          a.textContent = t;
-          head.appendChild(a);
-        });
-      } else if (pending){
-        var alertEl = document.createElement("span");
-        alertEl.className = "pv-contract-alert";
-        alertEl.textContent = "⚠ 未締結";
-        head.appendChild(alertEl);
-      }
-      var status = document.createElement("span");
-      status.className = "pv-case-status-badge";
-      status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
-      status.textContent = c.status;
-      head.appendChild(status);
-      if (c.source === "slack"){
-        var slackBadge = document.createElement("span");
-        slackBadge.className = "pv-contract-slack-badge";
-        slackBadge.textContent = "Slack検知";
-        slackBadge.title = "Slackダイジェストが自動検知・更新した項目です。内容を確認してください。";
-        head.appendChild(slackBadge);
-      }
-      row.appendChild(head);
-
-      // 契約書名が会社名と別なら、小さくサブ行に出す。
-      if (c.title && c.title !== c.client){
-        var sub = document.createElement("div");
-        sub.className = "pv-contract-subtitle";
-        sub.textContent = c.title;
-        row.appendChild(sub);
-      }
-
-      var metaLine = [];
-      if (c.requestedDate) metaLine.push("依頼 " + contractMD(c.requestedDate));
-      if (c.sentDate) metaLine.push("送付 " + contractMD(c.sentDate));
-      if (c.signedDate) metaLine.push("締結 " + contractMD(c.signedDate));
-      if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
-      if (c.dueDate) metaLine.push("期限 " + contractMD(c.dueDate) + " まで");
-      if (metaLine.length){
-        var meta = document.createElement("div");
-        meta.className = "pv-case-client";
-        meta.textContent = metaLine.join(" ・ ");
-        row.appendChild(meta);
-      }
-
-      // 一覧のカードを直接タップ → 管理モーダルを開いてその契約書の詳細ビューへ直行。
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-      (function(id){
-        function open(){ openContractModal(id); }
-        row.addEventListener("click", open);
-        row.addEventListener("keydown", function(e){
-          if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); }
-        });
-      })(c.id);
-
-      list.appendChild(row);
-    });
+    filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){ list.appendChild(buildContractRow(c)); });
     if (filtered.length > CONTRACTS_CARD_MAX){
       var more = document.createElement("button");
       more.type = "button";
       more.className = "pv-list-more";
-      more.textContent = "…ほか " + (filtered.length - CONTRACTS_CARD_MAX) + " 件（「管理」で全件）";
-      more.addEventListener("click", function(){ openContractModal(); });
+      more.textContent = "すべて表示（ほか " + (filtered.length - CONTRACTS_CARD_MAX) + " 件）";
+      more.addEventListener("click", function(){ showView("contracts"); });
       list.appendChild(more);
     }
+  }
+
+  /* ---- 契約書トラッカー 一覧ページ (#view-contracts) ---- */
+  var contractsPageSetStatus = makeStatusSetter("contracts-page-status");
+  var contractsPageWired = false;
+
+  function renderContractsPageTabs(){
+    var bar = document.getElementById("contracts-page-tabs");
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll(".pv-contracts-tab"), function(btn){
+      btn.classList.toggle("is-active", btn.getAttribute("data-tab") === contractsTab);
+    });
+  }
+
+  function renderContractsPage(){
+    var list = document.getElementById("contracts-page-list");
+    if (!list) return;
+    renderContractsPageTabs();
+    var q = document.getElementById("contracts-page-q");
+    if (q && q.value !== contractsQuery) q.value = contractsQuery;
+    var reqSel = document.getElementById("contracts-page-requester");
+    if (reqSel && reqSel.value !== contractsRequester) reqSel.value = contractsRequester;
+
+    list.innerHTML = "";
+    if (!contractsLoadOk && !contractsState.length){
+      list.innerHTML = '<div class="sched-empty">読み込み中…</div>';
+      contractsPageSetStatus("読み込み中…");
+      return;
+    }
+    if (!contractsState.length){
+      list.innerHTML = '<div class="pv-habit-empty">契約書がまだありません。「＋ 新規」から追加できます。</div>';
+      contractsPageSetStatus("0 件");
+      return;
+    }
+    var filtered = filterContracts();
+    if (!filtered.length){
+      list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
+      contractsPageSetStatus("0 / " + contractsState.length + " 件");
+      return;
+    }
+    filtered.forEach(function(c){ list.appendChild(buildContractRow(c)); });
+    contractsPageSetStatus(
+      filtered.length === contractsState.length
+        ? (contractsState.length + " 件")
+        : (filtered.length + " / " + contractsState.length + " 件（絞り込み中）")
+    );
+  }
+
+  function wireContractsPage(){
+    if (contractsPageWired) return;
+    contractsPageWired = true;
+    var tabs = document.getElementById("contracts-page-tabs");
+    if (tabs) tabs.addEventListener("click", function(e){
+      var btn = e.target.closest(".pv-contracts-tab");
+      if (!btn) return;
+      contractsTab = btn.getAttribute("data-tab") || "";
+      renderContractsAll();
+    });
+    var q = document.getElementById("contracts-page-q");
+    if (q) q.addEventListener("input", function(){ contractsQuery = q.value; renderContractsAll(); });
+    var reqSel = document.getElementById("contracts-page-requester");
+    if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContractsAll(); });
+    var newBtn = document.getElementById("contracts-page-new");
+    if (newBtn) newBtn.addEventListener("click", function(){
+      openContractModal();
+      if (contractsLoadOk){
+        contractEditRows.push(contractNewRow());
+        contractDetailIdx = contractEditRows.length - 1;
+        renderContractModal();
+      }
+    });
+  }
+
+  function initContractsPage(){
+    wireContractsPage();
+    if (!contractsLoadOk) loadContracts(); // 成功時 applyContracts → renderContractsAll
+    else renderContractsPage();
   }
 
   /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
@@ -2877,12 +2970,12 @@
       var btn = e.target.closest(".pv-contracts-tab");
       if (!btn) return;
       contractsTab = btn.getAttribute("data-tab") || "";
-      renderContracts();
+      renderContractsAll();
     });
     var qInput = document.getElementById("pv-contracts-q");
-    if (qInput) qInput.addEventListener("input", function(){ contractsQuery = qInput.value; renderContracts(); });
+    if (qInput) qInput.addEventListener("input", function(){ contractsQuery = qInput.value; renderContractsAll(); });
     var reqSel = document.getElementById("pv-contracts-requester");
-    if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContracts(); });
+    if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContractsAll(); });
 
     // 検索窓は既定で畳んでおき、「すべて」右の虫めがねで開閉する。
     // 畳むときは絞り込みを解除する(隠れたフィルタを残さない)。
@@ -2899,7 +2992,7 @@
         contractsRequester = "";
         if (qInput) qInput.value = "";
         if (reqSel) reqSel.value = "";
-        renderContracts();
+        renderContractsAll();
       }
     });
 

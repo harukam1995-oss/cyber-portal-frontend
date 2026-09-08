@@ -1481,6 +1481,18 @@
   /* タブ切替で件数が変わってもカード高が動かないよう固定高。件数が少ないと余白が出る */
   .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:210px; overflow-y:auto; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
+
+  /* 契約書トラッカー 一覧ページ（#view-contracts）。カードの .pv-contract-row をそのまま使い、
+     高さ固定をやめて全件を素直に縦積みする。広い画面では2カラム。 */
+  .cal-toolbar .pv-contracts-tabs{ margin-bottom:0; border-bottom:none; }
+  .contracts-page-list{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));
+    gap:10px; align-content:start;
+  }
+  .contracts-page-list .pv-contract-row{ height:auto; }
+  .contracts-page-list .sched-empty,
+  .contracts-page-list .pv-habit-empty{ grid-column:1 / -1; }
+  @media (max-width: 560px){ .contracts-page-list{ grid-template-columns:1fr; } }
   /* カード内リストの「…ほか N件」行(契約書=クリックで管理モーダル、Slack=ただの表記) */
   .pv-list-more{
     align-self:flex-start; background:transparent; border:0; padding:2px 0;
