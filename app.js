@@ -8234,6 +8234,8 @@
       p2El("pay2-backfill-btn").addEventListener("click", p2BackfillEmails);
       p2El("pay2-csv-btn").addEventListener("click", function(){ p2Csv("syslea_payables"); });
       p2El("pay2-sheet-btn").addEventListener("click", p2SheetSync);
+      p2El("pay2-sheetpull-btn").addEventListener("click", p2SheetPull);
+      p2El("pay2-vendor-sheetpull-btn").addEventListener("click", p2SheetPull);
       p2El("pay2-vendor-new-btn").addEventListener("click", function(){ p2OpenVendor(null); });
       p2El("pay2-vendor-csv-btn").addEventListener("click", function(){ p2Csv("syslea_vendors"); });
       p2El("pay2-vendor-sheet-btn").addEventListener("click", p2SheetSync);
@@ -9152,6 +9154,36 @@
         p2Status(apiErrorMessage(err, "スプレッドシート"), "err");
       })
       .finally(function(){ btns.forEach(function(b){ if (b) b.disabled = false; }); });
+  }
+
+  /* ---- Google スプレッドシートから取り込み（↓スプシから取り込み） ---- */
+  function p2SheetPullSummary(o){
+    o = o || {};
+    return "更新 " + (o.updated || 0) + " ／ 新規 " + (o.created || 0) + " ／ スキップ " + (o.skipped || 0);
+  }
+  function p2SheetPull(){
+    if (!window.confirm("「SYSLEA支払管理」スプシの 支払明細／ベンダーマスタ タブの内容で、ポータルの台帳を更新します。\n\n※ 先に「↑ スプシ」で最新化してから編集してください（空セルはその項目のみ現状維持ですが、チェック列は空＝OFF になります）。\n\nまず件数プレビューを出します。よろしいですか？")) return;
+    var btns = Array.prototype.slice.call(document.querySelectorAll(".pay2-sheetpull-btn"));
+    btns.forEach(function(b){ b.disabled = true; });
+    p2Status("スプシを読み込み中…");
+    apiFetch("/api/payables/sheet-pull", { method: "POST", body: JSON.stringify({ sheetId: PAY2_SHEET_ID, dryRun: true }) })
+      .then(function(res){
+        var p = (res && res.payables) || {}, v = (res && res.vendors) || {};
+        var errs = (p.errors || []).concat(v.errors || []);
+        var msg = "プレビュー\n支払明細: " + p2SheetPullSummary(p) + "\nベンダー: " + p2SheetPullSummary(v);
+        if (errs.length) msg += "\n\n注意:\n・" + errs.slice(0, 12).join("\n・");
+        if (!window.confirm(msg + "\n\nこの内容で適用しますか？")){ p2Status("スプシ取り込みを中止しました。"); return; }
+        p2Status("スプシから取り込み中…");
+        return apiFetch("/api/payables/sheet-pull", { method: "POST", body: JSON.stringify({ sheetId: PAY2_SHEET_ID, dryRun: false }) })
+          .then(function(r2){
+            var p2r = (r2 && r2.payables) || {}, v2r = (r2 && r2.vendors) || {};
+            return p2Load().then(function(){
+              p2Status("スプシ取り込み完了 — 明細 " + p2SheetPullSummary(p2r) + "、ベンダー " + p2SheetPullSummary(v2r));
+            });
+          });
+      })
+      .catch(function(err){ p2Status(apiErrorMessage(err, "スプシ取り込み"), "err"); })
+      .finally(function(){ document.querySelectorAll(".pay2-sheetpull-btn").forEach(function(b){ b.disabled = false; }); });
   }
 
   /* ---- CSV ダウンロード ---- */
