@@ -2578,6 +2578,17 @@
       slackBadge.title = "Slackダイジェストが自動検知・更新した項目です。内容を確認してください。";
       head.appendChild(slackBadge);
     }
+    if (c.slackUrl && /^https:\/\//i.test(c.slackUrl)){
+      var slackLink = document.createElement("a");
+      slackLink.className = "pv-contract-slack-link";
+      slackLink.href = c.slackUrl;
+      slackLink.target = "_blank";
+      slackLink.rel = "noopener noreferrer";
+      slackLink.textContent = "Slack ↗";
+      slackLink.title = "Slackスレッドを開く";
+      slackLink.addEventListener("click", function(e){ e.stopPropagation(); });
+      head.appendChild(slackLink);
+    }
     row.appendChild(head);
 
     // 契約書名が会社名と別なら、小さくサブ行に出す。
@@ -2738,6 +2749,7 @@
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
         requestedDate: c.requestedDate || "", sentDate: c.sentDate || "", signedDate: c.signedDate || "",
         dueDate: c.dueDate || "", confidential: c.confidential === true,
+        slackUrl: c.slackUrl || "",
         source: c.source === "slack" ? "slack" : "manual"
       };
     });
@@ -2759,7 +2771,7 @@
     else closeContractModal();
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, source: "manual" };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
@@ -2907,6 +2919,20 @@
       body.appendChild(line);
     });
 
+    var slackWrap = document.createElement("div");
+    slackWrap.className = "habit-block-line";
+    var slackLbl = document.createElement("span");
+    slackLbl.className = "pv-contract-field-label";
+    slackLbl.textContent = "Slackスレッド（任意）";
+    var slackInp = document.createElement("input");
+    slackInp.type = "url"; slackInp.className = "habit-edit-name"; slackInp.maxLength = 500;
+    slackInp.placeholder = "https://＜workspace＞.slack.com/archives/…";
+    slackInp.value = r.slackUrl || "";
+    slackInp.setAttribute("aria-label", "Slackスレッドのリンク（任意）");
+    slackInp.addEventListener("input", function(){ r.slackUrl = slackInp.value; r.source = "manual"; });
+    slackWrap.appendChild(slackLbl); slackWrap.appendChild(slackInp);
+    body.appendChild(slackWrap);
+
     var lineMisc = document.createElement("div");
     lineMisc.className = "habit-block-line";
     var conf = document.createElement("label");
@@ -2940,6 +2966,7 @@
         status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
         requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
         dueDate: r.dueDate || "", confidential: r.confidential === true,
+        slackUrl: (r.slackUrl || "").trim().slice(0, 500),
         source: r.source === "slack" ? "slack" : "manual"
       });
     }
