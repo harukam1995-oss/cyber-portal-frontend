@@ -7949,6 +7949,9 @@
   var PAY_QUALIFIED = ["適格", "非適格", "不明"];
   var PAY_RECONCILED = ["未", "一致", "不一致"];
   var SYSLEA_MAIL_ADDR = "haruka.masumitsu@syslea.io";
+  // 書き出し先スプレッドシート（本人の「SYSLEA支払管理」。SYSLEA 側のものではない）
+  var PAY2_SHEET_ID = "1ri3pOCzWgh_PVpRqIWYJotlqCvBWgWUCYU43vWPwEYU";
+  var PAY2_SHEET_URL = "https://docs.google.com/spreadsheets/d/" + PAY2_SHEET_ID + "/edit";
 
   var p2 = {
     payables: [], vendors: [], tab: "detail",
@@ -8006,8 +8009,10 @@
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
       p2El("pay2-csv-btn").addEventListener("click", function(){ p2Csv("syslea_payables"); });
+      p2El("pay2-sheet-btn").addEventListener("click", p2SheetSync);
       p2El("pay2-vendor-new-btn").addEventListener("click", function(){ p2OpenVendor(null); });
       p2El("pay2-vendor-csv-btn").addEventListener("click", function(){ p2Csv("syslea_vendors"); });
+      p2El("pay2-vendor-sheet-btn").addEventListener("click", p2SheetSync);
       // 明細モーダル
       p2El("pay2-edit-close").addEventListener("click", p2CloseEdit);
       p2El("pay2-edit-cancel").addEventListener("click", p2CloseEdit);
@@ -8507,6 +8512,21 @@
       var e = p2El("pay2-import-error");
       e.hidden = false; e.textContent = apiErrorMessage(err, "取り込み");
     }).finally(function(){ btn.disabled = false; btn.textContent = "選択を取り込む"; });
+  }
+
+  /* ---- Google スプレッドシートへ書き出し ---- */
+  function p2SheetSync(){
+    var btns = [p2El("pay2-sheet-btn"), p2El("pay2-vendor-sheet-btn")];
+    btns.forEach(function(b){ if (b) b.disabled = true; });
+    p2Status("スプレッドシートへ書き出し中…");
+    apiFetch("/api/payables/sheet-sync", { method: "POST", body: JSON.stringify({ sheetId: PAY2_SHEET_ID }) })
+      .then(function(res){
+        p2Status("スプシへ書き出し完了：明細 " + ((res && res.payables) || 0) + " 件 ／ ベンダー " + ((res && res.vendors) || 0) + " 社（SYSLEA支払管理）");
+      })
+      .catch(function(err){
+        p2Status(apiErrorMessage(err, "スプレッドシート"), "err");
+      })
+      .finally(function(){ btns.forEach(function(b){ if (b) b.disabled = false; }); });
   }
 
   /* ---- CSV ダウンロード ---- */
