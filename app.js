@@ -8076,6 +8076,7 @@
   var p2 = {
     payables: [], vendors: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
+    vq: "", vFq: "", vFm: "", vNoEmail: false, vRecurring: false,
     wired: false, editId: null, vendId: null
   };
 
@@ -8156,6 +8157,12 @@
       p2El("pay2-vendor-new-btn").addEventListener("click", function(){ p2OpenVendor(null); });
       p2El("pay2-vendor-csv-btn").addEventListener("click", function(){ p2Csv("syslea_vendors"); });
       p2El("pay2-vendor-sheet-btn").addEventListener("click", p2SheetSync);
+      // ベンダーマスタの検索・フィルタ
+      p2El("pay2-vendor-q").addEventListener("input", function(){ p2.vq = this.value; p2RenderVendors(); });
+      p2El("pay2-vendor-fq").addEventListener("change", function(){ p2.vFq = this.value; p2RenderVendors(); });
+      p2El("pay2-vendor-fm").addEventListener("change", function(){ p2.vFm = this.value; p2RenderVendors(); });
+      p2El("pay2-vendor-noemail").addEventListener("change", function(){ p2.vNoEmail = this.checked; p2RenderVendors(); });
+      p2El("pay2-vendor-recurring").addEventListener("change", function(){ p2.vRecurring = this.checked; p2RenderVendors(); });
       // 明細モーダル
       p2El("pay2-edit-close").addEventListener("click", p2CloseEdit);
       p2El("pay2-edit-cancel").addEventListener("click", p2CloseEdit);
@@ -8293,14 +8300,38 @@
     });
   }
 
+  function p2VendorFiltered(){
+    var q = (p2.vq || "").trim().toLowerCase();
+    return p2.vendors.filter(function(v){
+      if (p2.vFq && (v.qualified || "不明") !== p2.vFq) return false;
+      if (p2.vFm && (v.defaultMethod || "その他") !== p2.vFm) return false;
+      if (p2.vNoEmail && String(v.emails || "").trim()) return false;
+      if (p2.vRecurring && v.recurring !== true) return false;
+      if (q){
+        var hay = [v.name, v.aliases, v.emails, v.regNo, v.defaultPayTo, v.paymentTerms, v.amountHint, v.note]
+          .join(" ").toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
   function p2RenderVendors(){
-    var rows = p2.vendors.slice().sort(function(a, b){ return String(a.name || "").localeCompare(String(b.name || "")); });
+    var rows = p2VendorFiltered().slice().sort(function(a, b){ return String(a.name || "").localeCompare(String(b.name || "")); });
     var table = p2El("pay2-vendor-table");
     var empty = p2El("pay2-vendor-empty");
+    var countEl = p2El("pay2-vendor-count");
+    if (countEl){
+      countEl.textContent = p2.vendors.length
+        ? (rows.length === p2.vendors.length ? p2.vendors.length + " 社" : rows.length + " / " + p2.vendors.length + " 社（絞り込み中）")
+        : "";
+    }
     if (!rows.length){
       table.innerHTML = "";
       empty.hidden = false;
-      empty.textContent = "ベンダー未登録です。「＋ ベンダー追加」から登録してください。";
+      empty.textContent = p2.vendors.length
+        ? "この条件に合うベンダーはありません。"
+        : "ベンダー未登録です。「＋ ベンダー追加」から登録してください。";
       return;
     }
     empty.hidden = true;

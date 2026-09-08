@@ -218,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.32.5</span>
+      <span>v2.32.6</span>
     </div>
   </footer>
 </div>
@@ -799,6 +799,22 @@
       <button type="button" class="pay2-tool-btn pay2-tool-primary" id="pay2-new-btn">＋ 新規</button>
     </div>
     <div class="cal-toolbar-right" id="pay2-vendor-tools" hidden>
+      <input type="search" id="pay2-vendor-q" class="pay2-q" placeholder="社名・メール・登録番号・メモで検索" autocomplete="off" maxlength="80">
+      <select id="pay2-vendor-fq" class="pay2-sel" aria-label="適格区分で絞り込み">
+        <option value="">適格（すべて）</option>
+        <option value="適格">適格</option>
+        <option value="非適格">非適格</option>
+        <option value="不明">不明</option>
+      </select>
+      <select id="pay2-vendor-fm" class="pay2-sel" aria-label="既定の支払方式で絞り込み">
+        <option value="">方式（すべて）</option>
+        <option value="銀行振込">銀行振込</option>
+        <option value="UPSIDER">UPSIDER</option>
+        <option value="口座振替">口座振替</option>
+        <option value="その他">その他</option>
+      </select>
+      <label class="pay2-check-inline"><input type="checkbox" id="pay2-vendor-noemail"> メール未設定のみ</label>
+      <label class="pay2-check-inline"><input type="checkbox" id="pay2-vendor-recurring"> 定期のみ</label>
       <button type="button" class="pay2-tool-btn" id="pay2-vendor-sheet-btn">↑ スプシ</button>
       <button type="button" class="pay2-tool-btn" id="pay2-vendor-csv-btn">↓ CSV</button>
       <button type="button" class="pay2-tool-btn pay2-tool-primary" id="pay2-vendor-new-btn">＋ ベンダー追加</button>
@@ -814,6 +830,7 @@
       <p class="pay2-empty" id="pay2-detail-empty" hidden></p>
     </div>
     <div class="pay2-tablewrap" id="pay2-vendor-wrap" hidden>
+      <div class="pay2-vendor-count" id="pay2-vendor-count"></div>
       <table class="pay2-table" id="pay2-vendor-table"></table>
       <p class="pay2-empty" id="pay2-vendor-empty" hidden></p>
     </div>

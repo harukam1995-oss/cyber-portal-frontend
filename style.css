@@ -726,6 +726,7 @@
   .pay2-summary .pay2-sum-muted{ color: var(--text-faint); }
 
   .pay2-tablewrap{ overflow-x:auto; }
+  .pay2-vendor-count{ font-family: var(--font-mono); font-size:11.5px; color: var(--text-faint); padding:2px 4px 10px; }
   .pay2-table{ width:100%; border-collapse:collapse; font-size:11.5px; white-space:nowrap; }
   .pay2-table th{
     text-align:left; padding:7px 9px; color: var(--text-faint); font-weight:600;
