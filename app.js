@@ -8076,7 +8076,7 @@
   var p2 = {
     payables: [], vendors: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
-    vq: "", vFq: "", vFm: "", vNoEmail: false, vRecurring: false, vFex: "hide",
+    vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
     wired: false, editId: null, vendId: null
   };
 
@@ -8126,6 +8126,45 @@
       return '<option value="' + escapeHtml(v) + '"' + (v === cur ? " selected" : "") + ">" + escapeHtml(v) + "</option>";
     }).join("");
   }
+
+  var PAY_CATEGORIES = ["業務委託", "SaaS", "その他"];
+  // 周期（何ヶ月ごと）: 0=スポット / 1=毎月 / 12=毎年 / N=Nヶ月ごと。旧 recurring(真偽) は 1/0 へ。
+  function p2CadenceOf(v){
+    var m = Number(v && v.cadenceMonths);
+    if (isFinite(m) && m >= 0) return Math.round(m);
+    return (v && v.recurring === true) ? 1 : 0;
+  }
+  function p2CadenceLabel(m){
+    if (!m) return "スポット";
+    if (m === 1) return "毎月";
+    if (m === 12) return "毎年";
+    return m + "ヶ月ごと";
+  }
+  function p2Mkey(s){ s = String(s || ""); return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : ""; }
+  function p2MonthsDiff(a, b){ // b - a（月数）。a,b = "YYYY-MM"
+    var x = a.split("-").map(Number), y = b.split("-").map(Number);
+    return (y[0] - x[0]) * 12 + (y[1] - x[1]);
+  }
+  // vendorId → { last:"YYYY-MM", count } を台帳から作る。請求月→請求日→受領日 の順で月を採る。
+  function p2VendorRecvMap(){
+    var m = {};
+    (p2.payables || []).forEach(function(p){
+      if (!p.vendorId || p.excluded) return;
+      var mo = p2Mkey(p.periodMonth) || p2Mkey(p.invoiceDate) || p2Mkey(p.receivedDate);
+      if (!mo) return;
+      var e = m[p.vendorId] || (m[p.vendorId] = { last: "", count: 0 });
+      e.count++;
+      if (mo > e.last) e.last = mo;
+    });
+    return m;
+  }
+  function p2VendorOverdue(v, recvMap){
+    var cm = p2CadenceOf(v);
+    if (cm < 1) return false;             // スポットは対象外
+    var r = recvMap[v.id];
+    if (!r || !r.last) return false;      // 受領実績なしは静かに（未着扱いにしない）
+    return p2MonthsDiff(r.last, p2Mkey(jstDateKey(new Date()))) >= cm;
+  }
   function p2AmountFlag(r){
     if (r.amountExcl != null && r.tax != null && r.amountIncl != null){
       if (Math.abs((Number(r.amountExcl) + Number(r.tax)) - Number(r.amountIncl)) > 1){
@@ -8159,10 +8198,10 @@
       p2El("pay2-vendor-sheet-btn").addEventListener("click", p2SheetSync);
       // ベンダーマスタの検索・フィルタ
       p2El("pay2-vendor-q").addEventListener("input", function(){ p2.vq = this.value; p2RenderVendors(); });
-      p2El("pay2-vendor-fq").addEventListener("change", function(){ p2.vFq = this.value; p2RenderVendors(); });
       p2El("pay2-vendor-fm").addEventListener("change", function(){ p2.vFm = this.value; p2RenderVendors(); });
+      p2El("pay2-vendor-fcat").addEventListener("change", function(){ p2.vFcat = this.value; p2RenderVendors(); });
       p2El("pay2-vendor-noemail").addEventListener("change", function(){ p2.vNoEmail = this.checked; p2RenderVendors(); });
-      p2El("pay2-vendor-recurring").addEventListener("change", function(){ p2.vRecurring = this.checked; p2RenderVendors(); });
+      p2El("pay2-vendor-overdue").addEventListener("change", function(){ p2.vOverdue = this.checked; p2RenderVendors(); });
       p2El("pay2-vendor-fex").addEventListener("change", function(){ p2.vFex = this.value; p2RenderVendors(); });
       // 明細モーダル
       p2El("pay2-edit-close").addEventListener("click", p2CloseEdit);
@@ -8268,7 +8307,7 @@
     }
     empty.hidden = true;
     var head = "<thead><tr>" +
-      ["受領日", "ベンダー", "請求書番号", "請求日", "支払期日", "税込", "方式", "支払予定", "状態", "備考"]
+      ["受領日", "ベンダー", "請求書番号", "請求日", "請求月", "支払期日", "税込", "方式", "支払予定", "状態", "備考"]
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") +
       "</tr></thead>";
     var body = "<tbody>" + rows.map(function(r){
@@ -8284,6 +8323,7 @@
         '<td class="strong">' + escapeHtml(r.vendorName || "—") + "</td>" +
         "<td>" + escapeHtml(r.invoiceNo || "") + "</td>" +
         "<td>" + escapeHtml(r.invoiceDate || "") + "</td>" +
+        "<td>" + escapeHtml(r.periodMonth || "") + "</td>" +
         "<td>" + escapeHtml(r.dueDate || "") + "</td>" +
         '<td class="num">' + (r.amountIncl != null ? p2Money(r.amountIncl) : "") + "</td>" +
         "<td>" + p2MethodBadge(r.method) + "</td>" +
@@ -8303,15 +8343,16 @@
 
   function p2VendorFiltered(){
     var q = (p2.vq || "").trim().toLowerCase();
+    var recv = p2.vOverdue ? p2VendorRecvMap() : null;
     return p2.vendors.filter(function(v){
       if (p2.vFex === "hide" && v.excluded === true) return false;
       if (p2.vFex === "only" && v.excluded !== true) return false;
-      if (p2.vFq && (v.qualified || "不明") !== p2.vFq) return false;
       if (p2.vFm && (v.defaultMethod || "その他") !== p2.vFm) return false;
+      if (p2.vFcat && (v.category || "その他") !== p2.vFcat) return false;
       if (p2.vNoEmail && String(v.emails || "").trim()) return false;
-      if (p2.vRecurring && v.recurring !== true) return false;
+      if (p2.vOverdue && !p2VendorOverdue(v, recv)) return false;
       if (q){
-        var hay = [v.name, v.aliases, v.emails, v.regNo, v.defaultPayTo, v.paymentTerms, v.amountHint, v.note]
+        var hay = [v.name, v.contact, v.aliases, v.emails, v.paymentTerms, v.category, v.note]
           .join(" ").toLowerCase();
         if (hay.indexOf(q) === -1) return false;
       }
@@ -8338,19 +8379,31 @@
       return;
     }
     empty.hidden = true;
+    var recv = p2VendorRecvMap();
+    var hasLedger = (p2.payables || []).length > 0;
     var head = "<thead><tr>" +
-      ["ベンダー", "メールアドレス", "登録番号", "適格", "既定方式", "支払サイト", "定期", "想定額"]
+      ["ベンダー", "担当者", "メールアドレス", "支払方法", "支払サイト", "周期", "区分", "最終受領"]
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") + "</tr></thead>";
     var body = "<tbody>" + rows.map(function(v){
+      var cm = p2CadenceOf(v);
+      var recCell = "";
+      if (hasLedger){
+        var r = recv[v.id];
+        if (r && r.last){
+          recCell = escapeHtml(r.last) + (p2VendorOverdue(v, recv) ? ' <span class="pay2-flag">未着</span>' : "");
+        } else if (cm >= 1){
+          recCell = '<span class="pay2-muted">受領なし</span>';
+        }
+      }
       return '<tr data-id="' + escapeHtml(v.id) + '"' + (v.excluded ? ' class="pay2-row-excluded"' : "") + ">" +
         '<td class="strong">' + escapeHtml(v.name || "") + (v.excluded ? ' <span class="pay2-flag">対象外</span>' : "") + "</td>" +
+        "<td>" + escapeHtml(v.contact || "") + "</td>" +
         "<td>" + escapeHtml(v.emails || "") + "</td>" +
-        "<td>" + escapeHtml(v.regNo || "") + "</td>" +
-        '<td class="center">' + escapeHtml(v.qualified || "不明") + "</td>" +
         "<td>" + p2MethodBadge(v.defaultMethod) + "</td>" +
         "<td>" + escapeHtml(v.paymentTerms || "") + "</td>" +
-        '<td class="center">' + (v.recurring ? "毎月" : "") + "</td>" +
-        "<td>" + escapeHtml(v.amountHint || "") + "</td>" +
+        '<td class="center">' + escapeHtml(p2CadenceLabel(cm)) + "</td>" +
+        '<td class="center">' + escapeHtml(v.category || "その他") + "</td>" +
+        '<td class="center">' + recCell + "</td>" +
         "</tr>";
     }).join("") + "</tbody>";
     table.innerHTML = head + body;
@@ -8394,6 +8447,8 @@
       p2Field("p2f-fromEmail", "メールアドレス（差出人）", "email", r.fromEmail, true) +
       p2Field("p2f-invoiceNo", "請求書番号", "text", r.invoiceNo) +
       p2Field("p2f-invoiceDate", "請求日", "date", r.invoiceDate) +
+      '<div class="pay2-fld"><label>請求月（何月分）</label><input type="month" id="p2f-periodMonth" value="' +
+        escapeHtml(p2Mkey(r.periodMonth) || p2Mkey(r.invoiceDate) || p2Mkey(r.receivedDate)) + '"></div>' +
       p2Field("p2f-dueDate", "支払期日", "date", r.dueDate) +
       p2Field("p2f-scheduledDate", "支払予定日", "date", r.scheduledDate) +
       p2Field("p2f-amountExcl", "税抜", "number", r.amountExcl) +
@@ -8490,6 +8545,7 @@
       excluded: p2El("p2f-excluded").checked,
       invoiceNo: p2El("p2f-invoiceNo").value.trim(),
       invoiceDate: p2El("p2f-invoiceDate").value,
+      periodMonth: p2El("p2f-periodMonth").value,
       dueDate: p2El("p2f-dueDate").value,
       scheduledDate: p2El("p2f-scheduledDate").value,
       amountExcl: p2NumOrNull("p2f-amountExcl"),
@@ -8551,24 +8607,39 @@
     var d = v || {};
     p2El("pay2-vendor-title").textContent = v ? "ベンダーの編集" : "ベンダーの登録";
     p2El("pay2-vendor-del").hidden = !v;
+    var cm = p2CadenceOf(d);
+    var cadSel = cm === 1 ? "monthly" : cm === 12 ? "yearly" : cm === 0 ? "spot" : "everyN";
+    var nOn = cadSel === "everyN";
     p2El("pay2-vendor-body").innerHTML =
       '<div class="pay2-form-grid">' +
       p2Field("p2v-name", "ベンダー名（必須）", "text", d.name, true) +
-      p2Field("p2v-emails", "メールアドレス（| 区切りで複数可・取り込みの照合キー）", "text", d.emails, true) +
-      p2Field("p2v-aliases", "表記ゆれ候補（| 区切り）", "text", d.aliases, true) +
-      p2Field("p2v-regNo", "インボイス登録番号", "text", d.regNo) +
-      p2SelectField("p2v-qualified", "適格区分", PAY_QUALIFIED, d.qualified || "不明") +
-      p2SelectField("p2v-defaultMethod", "既定の支払方式", PAY_METHODS, d.defaultMethod || "その他") +
-      p2Field("p2v-amountHint", "想定金額／レンジ", "text", d.amountHint) +
-      p2Field("p2v-defaultPayTo", "既定の振込先", "text", d.defaultPayTo, true) +
+      p2Field("p2v-contact", "担当者", "text", d.contact) +
+      p2Field("p2v-emails", "メールアドレス（, 区切りで複数可・照合キー）", "text", d.emails, true) +
+      p2Field("p2v-aliases", "別名・表記ゆれ（, 区切り・任意）", "text", d.aliases, true) +
+      p2SelectField("p2v-defaultMethod", "支払方法", PAY_METHODS, d.defaultMethod || "その他") +
+      p2SelectField("p2v-category", "区分", PAY_CATEGORIES, d.category || "その他") +
       p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末）", "text", d.paymentTerms, true) +
-      p2Field("p2v-noteLink", "参照リンク（Obsidian 等）", "text", d.noteLink, true) +
+      '<div class="pay2-fld"><label>周期</label><div class="pay2-cad-row">' +
+        '<select id="p2v-cadence">' +
+          '<option value="monthly"' + (cadSel === "monthly" ? " selected" : "") + ">毎月</option>" +
+          '<option value="everyN"' + (cadSel === "everyN" ? " selected" : "") + ">Nヶ月ごと</option>" +
+          '<option value="yearly"' + (cadSel === "yearly" ? " selected" : "") + ">毎年</option>" +
+          '<option value="spot"' + (cadSel === "spot" ? " selected" : "") + ">スポット</option>" +
+        "</select>" +
+        '<input type="number" id="p2v-cadence-n" min="2" max="60" value="' + (nOn ? cm : 3) + '"' + (nOn ? "" : " hidden") + ">" +
+        '<span class="pay2-cad-unit" id="p2v-cadence-unit"' + (nOn ? "" : " hidden") + ">ヶ月ごと</span>" +
+      "</div></div>" +
       '<div class="pay2-fld wide"><label>メモ</label><textarea id="p2v-note" rows="2">' + escapeHtml(d.note || "") + "</textarea></div>" +
       '<div class="pay2-fld-checks">' +
-        '<label><input type="checkbox" id="p2v-recurring"' + (d.recurring ? " checked" : "") + "> 毎月出る請求書（定期）</label>" +
-        '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（請求書管理の対象にしない・このベンダー宛メールは取り込み時に対象外扱い）</label>" +
+        '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（このベンダー宛メールは取り込み時に対象外扱い）</label>" +
       "</div>" +
       "</div>";
+    var cadEl = p2El("p2v-cadence");
+    cadEl.addEventListener("change", function(){
+      var on = this.value === "everyN";
+      p2El("p2v-cadence-n").hidden = !on;
+      p2El("p2v-cadence-unit").hidden = !on;
+    });
     p2El("pay2-vendor-error").hidden = true;
     p2El("pay2-vendor-modal").hidden = false;
     p2El("pay2-vendor-form").scrollTop = 0;
@@ -8576,19 +8647,19 @@
   }
   function p2CloseVendor(){ p2El("pay2-vendor-modal").hidden = true; document.body.style.overflow = ""; }
   function p2SaveVendor(){
+    var cad = p2El("p2v-cadence").value;
+    var cadN = Math.max(2, Math.min(60, parseInt(p2El("p2v-cadence-n").value, 10) || 3));
+    var cadenceMonths = cad === "monthly" ? 1 : cad === "yearly" ? 12 : cad === "spot" ? 0 : cadN;
     var vals = {
       name: p2El("p2v-name").value.trim(),
+      contact: p2El("p2v-contact").value.trim(),
       emails: p2El("p2v-emails").value.trim(),
       aliases: p2El("p2v-aliases").value.trim(),
-      regNo: p2El("p2v-regNo").value.trim(),
-      qualified: p2El("p2v-qualified").value,
       defaultMethod: p2El("p2v-defaultMethod").value,
-      defaultPayTo: p2El("p2v-defaultPayTo").value.trim(),
+      category: p2El("p2v-category").value,
       paymentTerms: p2El("p2v-paymentTerms").value.trim(),
-      amountHint: p2El("p2v-amountHint").value.trim(),
-      noteLink: p2El("p2v-noteLink").value.trim(),
+      cadenceMonths: cadenceMonths,
       note: p2El("p2v-note").value.trim(),
-      recurring: p2El("p2v-recurring").checked,
       excluded: p2El("p2v-excluded").checked
     };
     if (!vals.name){
