@@ -8367,6 +8367,7 @@
       if (!r.checked && !r.excluded) st.push('<span class="pay2-flag">未確認</span>');
       if (!r.excluded) st.push(r.paid ? '<span class="pay2-flag ok">支払済</span>' : '<span class="pay2-flag">未払い</span>');
       if (r.reconciled === "不一致") st.push('<span class="pay2-flag">照合NG</span>');
+      if (r.payToMismatch && !r.payToChecked && !r.excluded) st.push('<span class="pay2-flag">⚠口座変更</span>');
       var af = p2AmountFlag(r);
       if (af && !r.excluded) st.push(af);
       return '<tr data-id="' + escapeHtml(r.id) + '" class="' + (r.excluded ? "pay2-row-excluded" : r.paid ? "pay2-row-paid" : "") + '">' +
@@ -8623,6 +8624,28 @@
       "<label>" + label + "</label>" +
       '<select id="' + id + '">' + p2Opt(list, cur) + "</select></div>";
   }
+  // 振込先（構造化5項目＋振込名）。明細モーダル(pfx="p2f-")・ベンダーモーダル(pfx="p2v-")で共用。
+  var PAY_ACCT_TYPES = ["", "普通", "当座", "その他"];
+  function p2PayToFields(pfx, d){
+    d = d || {};
+    return p2Field(pfx + "payToBank", "銀行名", "text", d.payToBank) +
+      p2Field(pfx + "payToBranch", "支店名", "text", d.payToBranch) +
+      p2SelectField(pfx + "payToType", "種別", PAY_ACCT_TYPES, d.payToType || "") +
+      p2Field(pfx + "payToNumber", "口座番号", "text", d.payToNumber) +
+      p2Field(pfx + "payToName", "口座名義", "text", d.payToName, true) +
+      p2Field(pfx + "remitName", "振込名（振込依頼人名の指定）", "text", d.remitName, true);
+  }
+  function p2PayToValues(pfx){
+    return {
+      payToBank: p2El(pfx + "payToBank").value.trim(),
+      payToBranch: p2El(pfx + "payToBranch").value.trim(),
+      payToType: p2El(pfx + "payToType").value,
+      payToNumber: p2El(pfx + "payToNumber").value.trim(),
+      payToName: p2El(pfx + "payToName").value.trim(),
+      remitName: p2El(pfx + "remitName").value.trim()
+    };
+  }
+  var P2_PAYTO_KEYS = ["payToBank", "payToBranch", "payToType", "payToNumber", "payToName", "remitName"];
 
   function p2OpenEdit(rec){
     p2.editId = rec ? rec.id : null;
@@ -8654,7 +8677,9 @@
       p2Field("p2f-regNo", "インボイス登録番号", "text", r.regNo) +
       p2SelectField("p2f-qualified", "適格区分", PAY_QUALIFIED, r.qualified || "不明") +
       p2SelectField("p2f-method", "支払方式", PAY_METHODS, r.method || "その他") +
-      p2Field("p2f-payTo", "振込先", "text", r.payTo, true) +
+      '<div class="pay2-fld wide"><label>振込先</label></div>' +
+      p2PayToFields("p2f-", r) +
+      '<div class="pay2-fld wide" id="p2f-payto-check"></div>' +
       p2SelectField("p2f-reconciled", "SYSLEA照合", PAY_RECONCILED, r.reconciled || "未") +
       p2Field("p2f-sourceLink", "原本リンク", "text", r.sourceLink, true) +
       '<div class="pay2-fld wide"><label>備考</label><textarea id="p2f-note" rows="2">' + escapeHtml(r.note || "") + "</textarea></div>" +
@@ -8662,6 +8687,7 @@
         '<label><input type="checkbox" id="p2f-checked"' + (r.checked ? " checked" : "") + "> 確認済</label>" +
         '<label><input type="checkbox" id="p2f-paid"' + (r.paid ? " checked" : "") + "> 支払済</label>" +
         '<label><input type="checkbox" id="p2f-filed"' + (r.filed ? " checked" : "") + "> 済フォルダ移動</label>" +
+        '<label><input type="checkbox" id="p2f-payToChecked"' + (r.payToChecked ? " checked" : "") + "> 口座を確認した</label>" +
         '<label><input type="checkbox" id="p2f-excluded"' + (r.excluded ? " checked" : "") + "> 支払対象外（請求書ではない）</label>" +
       "</div>" +
       "</div>";
@@ -8692,20 +8718,73 @@
     });
     recalc();
 
-    // ベンダーが確定したら未入力欄を既定値で補完
-    // （振込先・登録番号・適格区分は v2.32.8 でベンダーマスタから撤去済み。請求書ごとに埋める）
+    // ベンダーが確定したら未入力欄を既定値で補完（方式＋いつもの振込先）
     function fillFromVendor(v){
       if (!v) return;
       if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
       if (!p2El("p2f-method").value || p2El("p2f-method").value === "その他") p2El("p2f-method").value = v.defaultMethod || "その他";
+      P2_PAYTO_KEYS.forEach(function(k){
+        var el = p2El("p2f-" + k);
+        if (el && !el.value && v[k]) el.value = v[k];
+      });
+      p2RenderPayToCheck();
     }
     p2El("p2f-vendorName").addEventListener("change", function(){
-      fillFromVendor(p2VendorByName(this.value));
+      fillFromVendor(p2VendorByName(this.value)); p2RenderPayToCheck();
     });
     // メールアドレス一致を優先（差出人アドレス → ベンダーマスタの emails）
     p2El("p2f-fromEmail").addEventListener("change", function(){
-      fillFromVendor(p2VendorByEmail(this.value));
+      fillFromVendor(p2VendorByEmail(this.value)); p2RenderPayToCheck();
     });
+
+    // 口座チェック（目標4）: 入力中の口座 vs ベンダー登録の口座を比べて表示。
+    function p2CurVendor(){
+      return p2VendorByEmail(p2El("p2f-fromEmail").value.trim()) || p2VendorByName(p2El("p2f-vendorName").value.trim());
+    }
+    function p2RenderPayToCheck(){
+      var box = p2El("p2f-payto-check");
+      if (!box) return;
+      var v = p2CurVendor();
+      var pv = p2PayToValues("p2f-");
+      var pNum = String(pv.payToNumber).normalize("NFKC").replace(/\D+/g, "");
+      var vNum = v ? String(v.payToNumber || "").normalize("NFKC").replace(/\D+/g, "") : "";
+      box.className = "pay2-fld wide";
+      if (!v){ box.innerHTML = ""; return; }
+      if (!vNum){
+        box.innerHTML = pNum
+          ? '<div class="pay2-payto-note">この口座は「' + escapeHtml(v.name || "") + '」に未登録です。'
+            + ' <button type="button" class="pay2-tool-btn" id="p2f-payto-register">この口座をベンダーに登録</button></div>'
+          : "";
+      } else if (pNum && pNum !== vNum){
+        box.innerHTML = '<div class="pay2-payto-warn">⚠ この請求書の口座は「' + escapeHtml(v.name || "") + '」の登録と違います。'
+          + '<br>登録: ' + escapeHtml(v.payToBank || "") + " " + escapeHtml(v.payToBranch || "") + " " + escapeHtml(v.payToType || "") + " " + escapeHtml(v.payToNumber || "")
+          + '<br>今回: ' + escapeHtml(pv.payToBank) + " " + escapeHtml(pv.payToBranch) + " " + escapeHtml(pv.payToType) + " " + escapeHtml(pv.payToNumber)
+          + ' <button type="button" class="pay2-tool-btn" id="p2f-payto-update">ベンダーの口座を更新</button>'
+          + ' <span class="pay2-muted">（正規の変更なら更新／怪しければ「口座を確認した」を外したまま保留）</span></div>';
+      } else {
+        box.innerHTML = '<div class="pay2-payto-ok">口座は「' + escapeHtml(v.name || "") + '」の登録と一致</div>';
+      }
+      var reg = p2El("p2f-payto-register");
+      if (reg) reg.addEventListener("click", function(){ p2SavePayToToVendor(v.id); });
+      var upd = p2El("p2f-payto-update");
+      if (upd) upd.addEventListener("click", function(){ p2SavePayToToVendor(v.id); });
+    }
+    function p2SavePayToToVendor(vid){
+      var vv = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+      if (!vv) return;
+      var body = Object.assign({}, vv, p2PayToValues("p2f-"));
+      p2Status("ベンダーの口座を更新中…");
+      apiFetch("/api/payables/vendors/" + encodeURIComponent(vid), { method: "PUT", body: JSON.stringify(body) })
+        .then(function(){ return p2Load(); })
+        .then(function(){ p2Status("ベンダーの口座を更新しました。"); })
+        .catch(function(err){ p2Status(apiErrorMessage(err, "ベンダー口座"), "err"); });
+    }
+    P2_PAYTO_KEYS.forEach(function(k){
+      var el = p2El("p2f-" + k);
+      if (el) el.addEventListener("input", p2RenderPayToCheck);
+      if (el) el.addEventListener("change", p2RenderPayToCheck);
+    });
+    p2RenderPayToCheck();
 
     // PDF/本文からの AI 抽出
     var extMailBtn = p2El("p2f-extract-mail");
@@ -8731,7 +8810,7 @@
     var email = p2El("p2f-fromEmail").value.trim();
     // 該当ベンダーはメールアドレス一致を優先し、無ければ名前一致
     var v = p2VendorByEmail(email) || p2VendorByName(name);
-    return {
+    var vals = {
       receivedDate: p2El("p2f-receivedDate").value,
       vendorName: name,
       vendorId: v ? v.id : "",
@@ -8748,14 +8827,19 @@
       regNo: p2El("p2f-regNo").value.trim(),
       qualified: p2El("p2f-qualified").value,
       method: p2El("p2f-method").value,
-      payTo: p2El("p2f-payTo").value.trim(),
       reconciled: p2El("p2f-reconciled").value,
       sourceLink: p2El("p2f-sourceLink").value.trim(),
       note: p2El("p2f-note").value.trim(),
       checked: p2El("p2f-checked").checked,
       paid: p2El("p2f-paid").checked,
-      filed: p2El("p2f-filed").checked
+      filed: p2El("p2f-filed").checked,
+      payToChecked: p2El("p2f-payToChecked") ? p2El("p2f-payToChecked").checked : false
     };
+    var pt = p2PayToValues("p2f-");
+    Object.assign(vals, pt);
+    // 表示用の1行（構造化から生成）
+    vals.payTo = [pt.payToBank, pt.payToBranch, pt.payToType, pt.payToNumber, pt.payToName].filter(Boolean).join(" ");
+    return vals;
   }
   function p2SaveEdit(){
     var vals = p2EditValues();
@@ -8824,6 +8908,8 @@
         '<span class="pay2-cad-unit" id="p2v-cadence-unit"' + (nOn ? "" : " hidden") + ">ヶ月ごと</span>" +
       "</div></div>" +
       p2Field("p2v-expectDay", "想定到着日（1〜28・未着判定に使用）", "number", d.expectDay == null ? 25 : d.expectDay) +
+      '<div class="pay2-fld wide"><label>いつもの振込先（口座変更検知に使用）</label></div>' +
+      p2PayToFields("p2v-", d) +
       '<div class="pay2-fld wide"><label>メモ</label><textarea id="p2v-note" rows="2">' + escapeHtml(d.note || "") + "</textarea></div>" +
       '<div class="pay2-fld-checks">' +
         '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（このベンダー宛メールは取り込み時に対象外扱い）</label>" +
@@ -8859,6 +8945,7 @@
       note: p2El("p2v-note").value.trim(),
       excluded: p2El("p2v-excluded").checked
     };
+    Object.assign(vals, p2PayToValues("p2v-"));
     if (!vals.name){
       var e = p2El("pay2-vendor-error");
       e.hidden = false; e.textContent = "ベンダー名は必須です。";

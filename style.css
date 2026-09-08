@@ -795,6 +795,16 @@
   .pay2-calc{ grid-column:1 / -1; font-size:10.5px; color: var(--text-faint); font-family: var(--font-mono); }
   .pay2-calc.bad{ color: var(--err); }
 
+  /* 口座チェック（明細モーダル内） */
+  #p2f-payto-check:empty{ display:none; }
+  .pay2-payto-note{ font-size:11px; color: var(--text-dim); line-height:1.6; }
+  .pay2-payto-ok{ font-size:11px; color: var(--ok); }
+  .pay2-payto-warn{
+    font-size:11px; color: var(--warn); line-height:1.7;
+    border:1px solid var(--warn); border-radius:6px; padding:7px 9px; background: rgba(216,194,74,.08);
+  }
+  .pay2-payto-warn .pay2-tool-btn, .pay2-payto-note .pay2-tool-btn{ margin-left:4px; }
+
   .pay2-extract{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-bottom:2px; }
   .pay2-extract-btn, .pay2-extract-file{
     padding:6px 12px; font-size:11.5px; border-radius:6px; cursor:pointer;
