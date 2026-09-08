@@ -8690,18 +8690,29 @@
     }).finally(function(){ btn.disabled = false; btn.textContent = "選択を取り込む"; });
   }
 
-  /* ---- 01.payment メールから既存行のメールアドレスを補完 ---- */
+  /* ---- 01.payment メールを走査してメールアドレスを補完 ----
+     ①既存台帳行の空 fromEmail を補完 ②分類済み行のベンダー emails に追記
+     ③台帳に無くても 差出人の表示名/ドメインがベンダー名に一致すれば emails に追記
+     （1社に絞れたものだけ。フリーメール・曖昧は除外＝要目視）。冪等。 */
   function p2BackfillEmails(){
-    if (!window.confirm("SYSLEA の 01.payment メールを走査して、既存の請求書行の空いているメールアドレスを補完します（分類済みの行はベンダーの照合キーにも追記）。よろしいですか？")) return;
+    if (!window.confirm("SYSLEA の 01.payment メールを全走査して、差出人メールアドレスをベンダーマスタ／既存の請求書行に追記します。\n\nベンダー名・エイリアス・ドメインで自動照合します（1社に絞れたものだけ・フリーメール／人名は対象外）。結果は必ずベンダーマスタの「メールアドレス」列を目視で確認してください。\n\n実行しますか？")) return;
     var btn = p2El("pay2-backfill-btn");
     btn.disabled = true; btn.textContent = "補完中…";
-    p2Status("メールを走査してメールアドレスを補完中…");
+    p2Status("01.payment を走査中…（メール数によっては数十秒かかります）");
     apiFetch("/api/payables/backfill-emails", { method: "POST", body: "{}" }).then(function(res){
+      res = res || {};
+      var parts = [];
+      if (res.emailsAdded) parts.push("ベンダー " + res.vendorsUpdated + " 社に " + res.emailsAdded + " アドレス追記");
+      if (res.filledPayables) parts.push("台帳 " + res.filledPayables + " 行に補完");
+      if (!parts.length) parts.push("追記対象なし");
+      var tail = [];
+      if (res.ambiguousSenders) tail.push("複数社に一致 " + res.ambiguousSenders);
+      if (res.unmatchedSenders) tail.push("未一致 " + res.unmatchedSenders);
+      if (res.freeMailSkipped) tail.push("フリーメール除外 " + res.freeMailSkipped);
       p2Status(
-        "メールアドレス補完: " + ((res && res.filledPayables) || 0) + " 行に追記 ／ ベンダー " +
-        ((res && res.updatedVendors) || 0) + " 社に照合キー追記" +
-        (res && res.unmatched ? "（メール未特定 " + res.unmatched + " 行）" : "") +
-        "（走査 " + ((res && res.scannedMails) || 0) + " 通）"
+        "アドレス補完: " + parts.join(" ／ ") +
+        "（差出人 " + (res.uniqueSenders || 0) + " 種 / 走査 " + (res.scannedMails || 0) + " 通" +
+        (tail.length ? " ・ " + tail.join(" / ") : "") + "）。ベンダーマスタの「メールアドレス」列を目視確認してください。"
       );
       return apiFetch("/api/payables").then(function(r2){
         p2.payables = (r2 && r2.payables) || p2.payables;
@@ -8709,7 +8720,7 @@
         p2RenderAll();
       });
     }).catch(function(err){
-      p2Status(apiErrorMessage(err, "メールアドレス補完"), "err");
+      p2Status(apiErrorMessage(err, "アドレス補完"), "err");
     }).finally(function(){ btn.disabled = false; btn.textContent = "✉ アドレス補完"; });
   }
 
