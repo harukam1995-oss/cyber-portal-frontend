@@ -8703,12 +8703,13 @@
       res = res || {};
       var parts = [];
       if (res.emailsAdded) parts.push("ベンダー " + res.vendorsUpdated + " 社に " + res.emailsAdded + " アドレス追記");
+      if (res.prunedEmails) parts.push("自社ドメイン " + res.prunedEmails + " 件を除去");
       if (res.filledPayables) parts.push("台帳 " + res.filledPayables + " 行に補完");
       if (!parts.length) parts.push("追記対象なし");
       var tail = [];
       if (res.ambiguousSenders) tail.push("複数社に一致 " + res.ambiguousSenders);
       if (res.unmatchedSenders) tail.push("未一致 " + res.unmatchedSenders);
-      if (res.freeMailSkipped) tail.push("フリーメール除外 " + res.freeMailSkipped);
+      if (res.freeMailSkipped) tail.push("フリーメール/自社除外 " + res.freeMailSkipped);
       p2Status(
         "アドレス補完: " + parts.join(" ／ ") +
         "（差出人 " + (res.uniqueSenders || 0) + " 種 / 走査 " + (res.scannedMails || 0) + " 通" +
