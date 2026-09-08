@@ -8159,18 +8159,14 @@
   }
   // 受領実績インデックス（サーバーで syslea_payables＋payments を threadId 名寄せ済みの
   // p2.receipts から）。vendorId → { last:"YYYY-MM", byMonth: { "YYYY-MM": receipt } }
-  // 各 receipt は month（＝届いた月）と periodMonth（＝何月分）を持つ。両方の月に受領を立てる
-  // ので、9月に届いた「8月分」は 8月・9月 どちらの対象月でも「受領」になる。
+  // receipt.month は「支払月」（いつ払うか）。受領チェックはこの支払月で並べる。
   function p2RecvIndex(){
     var idx = {};
     (p2.receipts || []).forEach(function(r){
-      if (!r || !r.vendorId) return;
+      if (!r || !r.vendorId || !r.month) return;
       var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", byMonth: {} });
-      [r.month, r.periodMonth].forEach(function(m){
-        if (!m) return;
-        if (!e.byMonth[m] || r.source === "payable") e.byMonth[m] = r; // 同月は手入力行を優先
-        if (m > e.last) e.last = m;
-      });
+      if (!e.byMonth[r.month] || r.source === "payable") e.byMonth[r.month] = r; // 同月は手入力行を優先
+      if (r.month > e.last) e.last = r.month;
     });
     return idx;
   }
@@ -8465,8 +8461,9 @@
     });
   }
 
-  /* ---- 対象月の受領チェック（来た/来てない） ----
-     定期ベンダー（毎月／Nヶ月毎）ごとに、選んだ月の請求書が届いているかを一覧する。
+  /* ---- 支払月の受領チェック（来た/来てない） ----
+     定期ベンダー（毎月／Nヶ月毎）ごとに、選んだ「支払月」に払う請求書が届いているかを一覧する。
+     receipt.month＝支払月（支払予定日/支払期日→済_YYYY/MM か仕分け日時→手動紐づけ）。
      受領実績は p2.receipts（syslea_payables ＋ 支払い仕分け台帳をサーバーで名寄せ済み）。 */
   function p2RenderCheck(){
     var wrap = p2El("pay2-check");
@@ -8492,7 +8489,7 @@
       sum.innerHTML = rows.length
         ? ("対象 <b>" + rows.length + "</b> 社 ／ <span class=\"ok\">受領 " + rc + "</span>" +
            " ／ <span class=\"warn\">未着 " + oc + "</span> ／ 待機 " + wc)
-        : "この月に到来予定の定期ベンダーはありません。";
+        : "この支払月に払う予定の定期ベンダーはありません。";
     }
 
     var body = p2El("pay2-check-body");
@@ -8501,7 +8498,7 @@
     body.hidden = false;
     if (!rows.length){ body.innerHTML = ""; return; }
     body.innerHTML =
-      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>想定</th><th>状態</th><th>金額</th></tr></thead><tbody>' +
+      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>何月分</th><th>想定</th><th>状態</th><th>金額</th></tr></thead><tbody>' +
       rows.map(function(r){
         var rec = (p2._recv[r.v.id] && p2._recv[r.v.id].byMonth[month]) || null;
         var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領</span>'
@@ -8510,6 +8507,7 @@
         return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
           '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
           '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
+          '<td class="center">' + escapeHtml((rec && rec.periodMonth) || "") + "</td>" +
           '<td class="center">' + escapeHtml(String(p2ExpectDay(r.v)) + "日") + "</td>" +
           "<td>" + stHtml + (rec && rec.source === "payment" ? ' <span class="pay2-muted">仕分けから</span>' : "") + "</td>" +
           '<td class="num">' + (rec && rec.amountIncl != null ? p2Money(rec.amountIncl) : "") + "</td>" +
@@ -8549,7 +8547,7 @@
     if (!p2.unlinkedOpen || !list.length){ body.hidden = true; return; }
     body.hidden = false;
     body.innerHTML =
-      '<table class="pay2-table"><thead><tr><th>件名 / 差出人</th><th>何月分</th><th>ベンダー</th><th></th></tr></thead><tbody>' +
+      '<table class="pay2-table"><thead><tr><th>件名 / 差出人</th><th>支払月</th><th>ベンダー</th><th></th></tr></thead><tbody>' +
       list.map(function(u, i){
         return '<tr data-thread="' + escapeHtml(u.threadId) + '">' +
           '<td><div class="strong">' + escapeHtml(String(u.subject || "(件名なし)").slice(0, 60)) + "</div>" +
