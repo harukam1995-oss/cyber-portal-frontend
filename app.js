@@ -8150,6 +8150,7 @@
       // ボタン
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
+      p2El("pay2-backfill-btn").addEventListener("click", p2BackfillEmails);
       p2El("pay2-csv-btn").addEventListener("click", function(){ p2Csv("syslea_payables"); });
       p2El("pay2-sheet-btn").addEventListener("click", p2SheetSync);
       p2El("pay2-vendor-new-btn").addEventListener("click", function(){ p2OpenVendor(null); });
@@ -8687,6 +8688,29 @@
       var e = p2El("pay2-import-error");
       e.hidden = false; e.textContent = apiErrorMessage(err, "取り込み");
     }).finally(function(){ btn.disabled = false; btn.textContent = "選択を取り込む"; });
+  }
+
+  /* ---- 01.payment メールから既存行のメールアドレスを補完 ---- */
+  function p2BackfillEmails(){
+    if (!window.confirm("SYSLEA の 01.payment メールを走査して、既存の請求書行の空いているメールアドレスを補完します（分類済みの行はベンダーの照合キーにも追記）。よろしいですか？")) return;
+    var btn = p2El("pay2-backfill-btn");
+    btn.disabled = true; btn.textContent = "補完中…";
+    p2Status("メールを走査してメールアドレスを補完中…");
+    apiFetch("/api/payables/backfill-emails", { method: "POST", body: "{}" }).then(function(res){
+      p2Status(
+        "メールアドレス補完: " + ((res && res.filledPayables) || 0) + " 行に追記 ／ ベンダー " +
+        ((res && res.updatedVendors) || 0) + " 社に照合キー追記" +
+        (res && res.unmatched ? "（メール未特定 " + res.unmatched + " 行）" : "") +
+        "（走査 " + ((res && res.scannedMails) || 0) + " 通）"
+      );
+      return apiFetch("/api/payables").then(function(r2){
+        p2.payables = (r2 && r2.payables) || p2.payables;
+        p2.vendors = (r2 && r2.vendors) || p2.vendors;
+        p2RenderAll();
+      });
+    }).catch(function(err){
+      p2Status(apiErrorMessage(err, "メールアドレス補完"), "err");
+    }).finally(function(){ btn.disabled = false; btn.textContent = "✉ アドレス補完"; });
   }
 
   /* ---- Google スプレッドシートへ書き出し ---- */
