@@ -8075,7 +8075,7 @@
 
   var p2 = {
     payables: [], vendors: [], receipts: [], receiptsUnattributed: 0, unlinked: [], unlinkedExcluded: [], tab: "detail",
-    fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQ: "", fExcluded: false,
+    fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
     checkOpen: false, unlinkedOpen: false, _recv: {},
     wired: false, editId: null, vendId: null
@@ -8214,6 +8214,7 @@
       // フィルタ
       p2El("pay2-month").addEventListener("change", function(){ p2.fMonth = this.value; p2RenderDetail(); });
       p2El("pay2-method").addEventListener("change", function(){ p2.fMethod = this.value; p2RenderDetail(); });
+      p2El("pay2-queue").addEventListener("change", function(){ p2.fQueue = this.checked; p2RenderDetail(); });
       p2El("pay2-unpaid").addEventListener("change", function(){ p2.fUnpaid = this.checked; p2RenderDetail(); });
       p2El("pay2-need-input").addEventListener("change", function(){ p2.fNeedInput = this.checked; p2RenderDetail(); });
       p2El("pay2-q").addEventListener("input", function(){ p2.fQ = this.value; p2RenderDetail(); });
@@ -8320,6 +8321,7 @@
       if (p2.fMonth && p2Ym(r.receivedDate) !== p2.fMonth) return false;
       if (p2.fMethod && r.method !== p2.fMethod) return false;
       if (p2.fUnpaid && r.paid) return false;
+      if (p2.fQueue && (r.paid || r.excluded)) return false;
       if (p2.fNeedInput && !(r.amountIncl == null || !r.dueDate)) return false;
       if (q){
         var hay = [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo].join(" ").toLowerCase();
@@ -8330,69 +8332,126 @@
   }
 
   function p2RenderDetail(){
-    var rows = p2Filtered().slice().sort(function(a, b){
-      return String(b.receivedDate || "").localeCompare(String(a.receivedDate || ""));
-    });
-    var sumIncl = 0, unpaidN = 0, unpaidSum = 0, needCheck = 0, exclN = 0;
-    p2Filtered().forEach(function(r){
-      if (r.excluded){ exclN++; return; } // 対象外は合計・未払い・未確認に含めない
-      if (r.amountIncl != null) sumIncl += Number(r.amountIncl);
-      if (!r.paid){ unpaidN++; if (r.amountIncl != null) unpaidSum += Number(r.amountIncl); }
-      if (!r.checked) needCheck++;
-    });
+    var today = jstDateKey(new Date());
+    var soon = jstDateKey(new Date(Date.now() + 7 * 864e5));
+    var isOverdue = function(r){ return !r.paid && r.dueDate && r.dueDate < today; };
+    var filtered = p2Filtered();
+    var rows = filtered.slice();
+    if (p2.fQueue){
+      // 支払キュー: 期限切れ→期日順（期日なしは末尾）
+      rows.sort(function(a, b){
+        var ao = isOverdue(a) ? 0 : 1, bo = isOverdue(b) ? 0 : 1;
+        if (ao !== bo) return ao - bo;
+        var ad = a.dueDate || "9999-99-99", bd = b.dueDate || "9999-99-99";
+        return ad.localeCompare(bd) || String(a.vendorName || "").localeCompare(String(b.vendorName || ""), "ja");
+      });
+    } else {
+      rows.sort(function(a, b){ return String(b.receivedDate || "").localeCompare(String(a.receivedDate || "")); });
+    }
+
     var s = p2El("pay2-summary");
-    s.innerHTML =
-      "対象 <b>" + (rows.length - exclN) + "</b> 件" +
-      (exclN ? ' <span class="pay2-sum-muted">（対象外 ' + exclN + " 件）</span>" : "") +
-      " ／ 税込合計 <b>" + p2Money(sumIncl) + "</b>" +
-      ' ／ <span class="warn">未払い ' + unpaidN + " 件 " + p2Money(unpaidSum) + "</span>" +
-      ' ／ <span class="warn">未確認 ' + needCheck + " 件</span>";
+    if (p2.fQueue){
+      var qN = 0, qSum = 0, odN = 0, odSum = 0, soonN = 0, soonSum = 0;
+      rows.forEach(function(r){
+        var amt = r.amountIncl != null ? Number(r.amountIncl) : 0;
+        qN++; qSum += amt;
+        if (isOverdue(r)){ odN++; odSum += amt; }
+        else if (r.dueDate && r.dueDate <= soon){ soonN++; soonSum += amt; }
+      });
+      s.innerHTML =
+        "支払予定 <b>" + qN + "</b> 件 ／ 合計 <b>" + p2Money(qSum) + "</b>" +
+        ' ／ <span class="warn">⚠ 期限切れ ' + odN + " 件 " + p2Money(odSum) + "</span>" +
+        " ／ 7日以内 " + soonN + " 件 " + p2Money(soonSum);
+    } else {
+      var sumIncl = 0, unpaidN = 0, unpaidSum = 0, needCheck = 0, exclN = 0;
+      filtered.forEach(function(r){
+        if (r.excluded){ exclN++; return; }
+        if (r.amountIncl != null) sumIncl += Number(r.amountIncl);
+        if (!r.paid){ unpaidN++; if (r.amountIncl != null) unpaidSum += Number(r.amountIncl); }
+        if (!r.checked) needCheck++;
+      });
+      s.innerHTML =
+        "対象 <b>" + (rows.length - exclN) + "</b> 件" +
+        (exclN ? ' <span class="pay2-sum-muted">（対象外 ' + exclN + " 件）</span>" : "") +
+        " ／ 税込合計 <b>" + p2Money(sumIncl) + "</b>" +
+        ' ／ <span class="warn">未払い ' + unpaidN + " 件 " + p2Money(unpaidSum) + "</span>" +
+        ' ／ <span class="warn">未確認 ' + needCheck + " 件</span>";
+    }
 
     var table = p2El("pay2-detail-table");
     var empty = p2El("pay2-detail-empty");
     if (!rows.length){
       table.innerHTML = "";
       empty.hidden = false;
-      empty.textContent = p2.payables.length
-        ? "この条件に合う請求書はありません。"
+      empty.textContent = p2.fQueue ? "未払いの請求書はありません。"
+        : p2.payables.length ? "この条件に合う請求書はありません。"
         : "まだ請求書がありません。「＋ 新規」か「✉ メール取り込み」で追加してください。";
       return;
     }
     empty.hidden = true;
     var head = "<thead><tr>" +
-      ["受領日", "ベンダー", "請求書番号", "請求日", "請求月", "支払期日", "税込", "方式", "支払予定", "状態", "備考"]
+      ["済", "支払期日", "ベンダー", "請求書番号", "税込", "方式", "支払予定", "何月分", "状態", "備考"]
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") +
       "</tr></thead>";
     var body = "<tbody>" + rows.map(function(r){
       var st = [];
       if (r.excluded) st.push('<span class="pay2-flag">対象外</span>');
       if (!r.checked && !r.excluded) st.push('<span class="pay2-flag">未確認</span>');
-      if (!r.excluded) st.push(r.paid ? '<span class="pay2-flag ok">支払済</span>' : '<span class="pay2-flag">未払い</span>');
       if (r.reconciled === "不一致") st.push('<span class="pay2-flag">照合NG</span>');
       if (r.payToMismatch && !r.payToChecked && !r.excluded) st.push('<span class="pay2-flag">⚠口座変更</span>');
       var af = p2AmountFlag(r);
       if (af && !r.excluded) st.push(af);
-      return '<tr data-id="' + escapeHtml(r.id) + '" class="' + (r.excluded ? "pay2-row-excluded" : r.paid ? "pay2-row-paid" : "") + '">' +
-        "<td>" + escapeHtml(r.receivedDate || "—") + "</td>" +
+      var cls = r.excluded ? "pay2-row-excluded" : isOverdue(r) ? "pay2-row-overdue" : r.paid ? "pay2-row-paid" : "";
+      return '<tr data-id="' + escapeHtml(r.id) + '" class="' + cls + '">' +
+        '<td class="center"><input type="checkbox" class="p2-paid-cb" data-id="' + escapeHtml(r.id) + '"' + (r.paid ? " checked" : "") + '></td>' +
+        "<td>" + escapeHtml(r.dueDate || "—") + (isOverdue(r) ? ' <span class="pay2-flag">期限切れ</span>' : "") + "</td>" +
         '<td class="strong">' + escapeHtml(r.vendorName || "—") + "</td>" +
         "<td>" + escapeHtml(r.invoiceNo || "") + "</td>" +
-        "<td>" + escapeHtml(r.invoiceDate || "") + "</td>" +
-        "<td>" + escapeHtml(r.periodMonth || "") + "</td>" +
-        "<td>" + escapeHtml(r.dueDate || "") + "</td>" +
         '<td class="num">' + (r.amountIncl != null ? p2Money(r.amountIncl) : "") + "</td>" +
         "<td>" + p2MethodBadge(r.method) + "</td>" +
         "<td>" + escapeHtml(r.scheduledDate || "") + "</td>" +
+        "<td>" + escapeHtml(r.periodMonth || "") + "</td>" +
         "<td>" + st.join(" ") + "</td>" +
         "<td>" + escapeHtml(String(r.note || "").slice(0, 24)) + "</td>" +
         "</tr>";
     }).join("") + "</tbody>";
     table.innerHTML = head + body;
+    table.querySelectorAll(".p2-paid-cb").forEach(function(cb){
+      cb.addEventListener("click", function(e){ e.stopPropagation(); });
+      cb.addEventListener("change", function(){
+        var id = cb.getAttribute("data-id");
+        var r = p2.payables.filter(function(x){ return x.id === id; })[0];
+        if (!r) return;
+        if (cb.checked && r.payToMismatch && !r.payToChecked){
+          if (!window.confirm("この請求書は振込先がベンダー登録と違います（⚠口座変更）。確認済みですか？\nOK で「口座を確認した」＋「支払済」にします。")){
+            cb.checked = false; return;
+          }
+          p2TogglePaid(id, true, true);
+        } else {
+          p2TogglePaid(id, cb.checked, false);
+        }
+      });
+    });
     table.querySelectorAll("tbody tr").forEach(function(tr){
       tr.addEventListener("click", function(){
         var rec = p2.payables.filter(function(x){ return x.id === tr.getAttribute("data-id"); })[0];
         if (rec) p2OpenEdit(rec);
       });
     });
+  }
+  function p2TogglePaid(id, paid, alsoPayToChecked){
+    var row = p2.payables.filter(function(x){ return x.id === id; })[0];
+    if (!row) return;
+    var body = Object.assign({}, row, { paid: paid });
+    if (alsoPayToChecked) body.payToChecked = true;
+    apiFetch("/api/payables/payables/" + encodeURIComponent(id), { method: "PUT", body: JSON.stringify(body) })
+      .then(function(res){
+        var saved = (res && res.payable) || {};
+        p2.payables = p2.payables.map(function(x){ return x.id === id ? Object.assign({}, x, saved) : x; });
+        p2RenderAll();
+        p2CountStatus();
+      })
+      .catch(function(err){ p2Status(apiErrorMessage(err, "支払済"), "err"); p2RenderDetail(); });
   }
 
   function p2VendorFiltered(){

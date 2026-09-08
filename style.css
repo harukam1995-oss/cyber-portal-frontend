@@ -763,6 +763,9 @@
   .pay2-table .strong{ color: var(--text); }
   .pay2-row-paid td{ opacity:.5; }
   .pay2-row-excluded td{ opacity:.4; font-style:italic; }
+  .pay2-row-overdue td{ background: rgba(216,74,74,.12); }
+  .pay2-row-overdue td:first-child{ box-shadow: inset 3px 0 0 var(--err, #d84a4a); }
+  .p2-paid-cb{ width:auto; cursor:pointer; }
 
   .pay2-badge{
     display:inline-block; padding:1px 7px; border-radius:999px; font-size:10px; letter-spacing:.3px;
