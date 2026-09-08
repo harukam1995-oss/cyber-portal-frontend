@@ -218,7 +218,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.32.1</span>
+      <span>v2.32.2</span>
     </div>
   </footer>
 </div>
@@ -781,6 +781,7 @@
       </div>
     </div>
     <div class="cal-toolbar-right" id="pay2-detail-tools">
+      <input type="search" id="pay2-q" class="pay2-q" placeholder="ベンダー・番号・メール・備考で検索" autocomplete="off" maxlength="80">
       <select id="pay2-month" class="pay2-sel" aria-label="対象月で絞り込み"><option value="">全期間</option></select>
       <select id="pay2-method" class="pay2-sel" aria-label="支払方式で絞り込み">
         <option value="">方式（すべて）</option>
@@ -790,6 +791,7 @@
         <option value="その他">その他</option>
       </select>
       <label class="pay2-check-inline"><input type="checkbox" id="pay2-unpaid"> 未払いのみ</label>
+      <label class="pay2-check-inline"><input type="checkbox" id="pay2-show-excluded"> 対象外も表示</label>
       <button type="button" class="pay2-tool-btn" id="pay2-import-btn">✉ メール取り込み</button>
       <button type="button" class="pay2-tool-btn" id="pay2-sheet-btn">↑ スプシ</button>
       <button type="button" class="pay2-tool-btn" id="pay2-csv-btn">↓ CSV</button>

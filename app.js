@@ -8075,11 +8075,31 @@
 
   var p2 = {
     payables: [], vendors: [], tab: "detail",
-    fMonth: "", fMethod: "", fUnpaid: false,
+    fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
     wired: false, editId: null, vendId: null
   };
 
   function p2El(id){ return document.getElementById(id); }
+  // 差出人アドレスの正規化（"Name <a@b.com>" なら <> の中身、以降 小文字）
+  function p2EmailKey(v){
+    var s = String(v == null ? "" : v).trim();
+    var m = s.match(/<([^>]+)>/);
+    if (m) s = m[1].trim();
+    return s.toLowerCase();
+  }
+  function p2VendorEmails(v){
+    return String((v && v.emails) || "").split(/[\s,|;]+/).map(p2EmailKey).filter(Boolean);
+  }
+  function p2VendorByEmail(email){
+    var k = p2EmailKey(email);
+    if (!k) return null;
+    return p2.vendors.filter(function(x){ return p2VendorEmails(x).indexOf(k) !== -1; })[0] || null;
+  }
+  function p2VendorByName(name){
+    var n = String(name || "").trim();
+    if (!n) return null;
+    return p2.vendors.filter(function(x){ return (x.name || "").trim() === n; })[0] || null;
+  }
   function p2Status(msg, cls){
     var el = p2El("pay2-status");
     if (!el) return;
@@ -8125,6 +8145,8 @@
       p2El("pay2-month").addEventListener("change", function(){ p2.fMonth = this.value; p2RenderDetail(); });
       p2El("pay2-method").addEventListener("change", function(){ p2.fMethod = this.value; p2RenderDetail(); });
       p2El("pay2-unpaid").addEventListener("change", function(){ p2.fUnpaid = this.checked; p2RenderDetail(); });
+      p2El("pay2-q").addEventListener("input", function(){ p2.fQ = this.value; p2RenderDetail(); });
+      p2El("pay2-show-excluded").addEventListener("change", function(){ p2.fExcluded = this.checked; p2RenderDetail(); });
       // ボタン
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
@@ -8192,10 +8214,16 @@
   }
 
   function p2Filtered(){
+    var q = (p2.fQ || "").trim().toLowerCase();
     return p2.payables.filter(function(r){
+      if (!p2.fExcluded && r.excluded) return false;
       if (p2.fMonth && p2Ym(r.receivedDate) !== p2.fMonth) return false;
       if (p2.fMethod && r.method !== p2.fMethod) return false;
       if (p2.fUnpaid && r.paid) return false;
+      if (q){
+        var hay = [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo].join(" ").toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
       return true;
     });
   }
@@ -8204,15 +8232,17 @@
     var rows = p2Filtered().slice().sort(function(a, b){
       return String(b.receivedDate || "").localeCompare(String(a.receivedDate || ""));
     });
-    var sumIncl = 0, unpaidN = 0, unpaidSum = 0, needCheck = 0;
+    var sumIncl = 0, unpaidN = 0, unpaidSum = 0, needCheck = 0, exclN = 0;
     p2Filtered().forEach(function(r){
+      if (r.excluded){ exclN++; return; } // 対象外は合計・未払い・未確認に含めない
       if (r.amountIncl != null) sumIncl += Number(r.amountIncl);
       if (!r.paid){ unpaidN++; if (r.amountIncl != null) unpaidSum += Number(r.amountIncl); }
       if (!r.checked) needCheck++;
     });
     var s = p2El("pay2-summary");
     s.innerHTML =
-      "対象 <b>" + rows.length + "</b> 件" +
+      "対象 <b>" + (rows.length - exclN) + "</b> 件" +
+      (exclN ? ' <span class="pay2-sum-muted">（対象外 ' + exclN + " 件）</span>" : "") +
       " ／ 税込合計 <b>" + p2Money(sumIncl) + "</b>" +
       ' ／ <span class="warn">未払い ' + unpaidN + " 件 " + p2Money(unpaidSum) + "</span>" +
       ' ／ <span class="warn">未確認 ' + needCheck + " 件</span>";
@@ -8234,12 +8264,13 @@
       "</tr></thead>";
     var body = "<tbody>" + rows.map(function(r){
       var st = [];
-      if (!r.checked) st.push('<span class="pay2-flag">未確認</span>');
-      st.push(r.paid ? '<span class="pay2-flag ok">支払済</span>' : '<span class="pay2-flag">未払い</span>');
+      if (r.excluded) st.push('<span class="pay2-flag">対象外</span>');
+      if (!r.checked && !r.excluded) st.push('<span class="pay2-flag">未確認</span>');
+      if (!r.excluded) st.push(r.paid ? '<span class="pay2-flag ok">支払済</span>' : '<span class="pay2-flag">未払い</span>');
       if (r.reconciled === "不一致") st.push('<span class="pay2-flag">照合NG</span>');
       var af = p2AmountFlag(r);
-      if (af) st.push(af);
-      return '<tr data-id="' + escapeHtml(r.id) + '"' + (r.paid ? ' class="pay2-row-paid"' : "") + ">" +
+      if (af && !r.excluded) st.push(af);
+      return '<tr data-id="' + escapeHtml(r.id) + '" class="' + (r.excluded ? "pay2-row-excluded" : r.paid ? "pay2-row-paid" : "") + '">' +
         "<td>" + escapeHtml(r.receivedDate || "—") + "</td>" +
         '<td class="strong">' + escapeHtml(r.vendorName || "—") + "</td>" +
         "<td>" + escapeHtml(r.invoiceNo || "") + "</td>" +
@@ -8273,11 +8304,12 @@
     }
     empty.hidden = true;
     var head = "<thead><tr>" +
-      ["ベンダー", "登録番号", "適格", "既定方式", "支払サイト", "定期", "想定額"]
+      ["ベンダー", "メールアドレス", "登録番号", "適格", "既定方式", "支払サイト", "定期", "想定額"]
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") + "</tr></thead>";
     var body = "<tbody>" + rows.map(function(v){
       return '<tr data-id="' + escapeHtml(v.id) + '">' +
         '<td class="strong">' + escapeHtml(v.name || "") + "</td>" +
+        "<td>" + escapeHtml(v.emails || "") + "</td>" +
         "<td>" + escapeHtml(v.regNo || "") + "</td>" +
         '<td class="center">' + escapeHtml(v.qualified || "不明") + "</td>" +
         "<td>" + p2MethodBadge(v.defaultMethod) + "</td>" +
@@ -8324,6 +8356,7 @@
       p2Field("p2f-receivedDate", "受領日", "date", r.receivedDate) +
       '<div class="pay2-fld"><label>ベンダー</label><input id="p2f-vendorName" list="p2f-vendorlist" value="' + escapeHtml(r.vendorName || "") + '"><datalist id="p2f-vendorlist">' +
         vendorNames.map(function(n){ return '<option value="' + escapeHtml(n) + '">'; }).join("") + "</datalist></div>" +
+      p2Field("p2f-fromEmail", "メールアドレス（差出人）", "email", r.fromEmail, true) +
       p2Field("p2f-invoiceNo", "請求書番号", "text", r.invoiceNo) +
       p2Field("p2f-invoiceDate", "請求日", "date", r.invoiceDate) +
       p2Field("p2f-dueDate", "支払期日", "date", r.dueDate) +
@@ -8343,6 +8376,7 @@
         '<label><input type="checkbox" id="p2f-checked"' + (r.checked ? " checked" : "") + "> 確認済</label>" +
         '<label><input type="checkbox" id="p2f-paid"' + (r.paid ? " checked" : "") + "> 支払済</label>" +
         '<label><input type="checkbox" id="p2f-filed"' + (r.filed ? " checked" : "") + "> 済フォルダ移動</label>" +
+        '<label><input type="checkbox" id="p2f-excluded"' + (r.excluded ? " checked" : "") + "> 支払対象外（請求書ではない）</label>" +
       "</div>" +
       "</div>";
     p2El("pay2-edit-body").innerHTML = body;
@@ -8372,15 +8406,21 @@
     });
     recalc();
 
-    // ベンダー名が一致したら未入力欄を既定値で補完
-    p2El("p2f-vendorName").addEventListener("change", function(){
-      var name = this.value.trim();
-      var v = p2.vendors.filter(function(x){ return (x.name || "").trim() === name; })[0];
+    // ベンダーが確定したら未入力欄を既定値で補完
+    function fillFromVendor(v){
       if (!v) return;
+      if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
       if (!p2El("p2f-method").value || p2El("p2f-method").value === "その他") p2El("p2f-method").value = v.defaultMethod || "その他";
       if (!p2El("p2f-payTo").value) p2El("p2f-payTo").value = v.defaultPayTo || "";
       if (!p2El("p2f-regNo").value) p2El("p2f-regNo").value = v.regNo || "";
       if (p2El("p2f-qualified").value === "不明") p2El("p2f-qualified").value = v.qualified || "不明";
+    }
+    p2El("p2f-vendorName").addEventListener("change", function(){
+      fillFromVendor(p2VendorByName(this.value));
+    });
+    // メールアドレス一致を優先（差出人アドレス → ベンダーマスタの emails）
+    p2El("p2f-fromEmail").addEventListener("change", function(){
+      fillFromVendor(p2VendorByEmail(this.value));
     });
 
     // PDF/本文からの AI 抽出
@@ -8404,11 +8444,15 @@
   }
   function p2EditValues(){
     var name = p2El("p2f-vendorName").value.trim();
-    var v = p2.vendors.filter(function(x){ return (x.name || "").trim() === name; })[0];
+    var email = p2El("p2f-fromEmail").value.trim();
+    // 該当ベンダーはメールアドレス一致を優先し、無ければ名前一致
+    var v = p2VendorByEmail(email) || p2VendorByName(name);
     return {
       receivedDate: p2El("p2f-receivedDate").value,
       vendorName: name,
       vendorId: v ? v.id : "",
+      fromEmail: email,
+      excluded: p2El("p2f-excluded").checked,
       invoiceNo: p2El("p2f-invoiceNo").value.trim(),
       invoiceDate: p2El("p2f-invoiceDate").value,
       dueDate: p2El("p2f-dueDate").value,
@@ -8475,6 +8519,7 @@
     p2El("pay2-vendor-body").innerHTML =
       '<div class="pay2-form-grid">' +
       p2Field("p2v-name", "ベンダー名（必須）", "text", d.name, true) +
+      p2Field("p2v-emails", "メールアドレス（| 区切りで複数可・取り込みの照合キー）", "text", d.emails, true) +
       p2Field("p2v-aliases", "表記ゆれ候補（| 区切り）", "text", d.aliases, true) +
       p2Field("p2v-regNo", "インボイス登録番号", "text", d.regNo) +
       p2SelectField("p2v-qualified", "適格区分", PAY_QUALIFIED, d.qualified || "不明") +
@@ -8495,6 +8540,7 @@
   function p2SaveVendor(){
     var vals = {
       name: p2El("p2v-name").value.trim(),
+      emails: p2El("p2v-emails").value.trim(),
       aliases: p2El("p2v-aliases").value.trim(),
       regNo: p2El("p2v-regNo").value.trim(),
       qualified: p2El("p2v-qualified").value,
@@ -8570,14 +8616,18 @@
         listEl.innerHTML = msgs.map(function(m){
           var dup = !!known[m.threadId];
           var dstr = m.date ? jstDateKey(new Date(m.date)) : "";
+          var addr = m.fromAddress || m.from || "";
+          var vmatch = p2VendorByEmail(addr);
           return '<label class="pay2-import-row' + (dup ? " dup" : "") + '">' +
             '<input type="checkbox" class="pay2-imp-cb" value="' + escapeHtml(m.threadId || m.id) + '"' +
               (dup ? " disabled" : "") +
               ' data-from="' + escapeHtml(m.from || "") +
+              '" data-fromemail="' + escapeHtml(addr) +
               '" data-subject="' + escapeHtml(m.subject || "") +
               '" data-date="' + escapeHtml(dstr) + '">' +
             '<span class="pay2-import-meta">' +
-              '<span class="pay2-import-from">' + escapeHtml(m.from || "(不明)") + (dup ? "（登録済み）" : "") + "</span>" +
+              '<span class="pay2-import-from">' + escapeHtml(m.from || "(不明)") +
+                (dup ? "（登録済み）" : vmatch ? "（→ " + escapeHtml(vmatch.name) + "）" : "") + "</span>" +
               '<span class="pay2-import-subj">' + escapeHtml(m.subject || "") + "</span>" +
               '<span class="pay2-import-date">' + escapeHtml(dstr) + "</span>" +
             "</span></label>";
@@ -8612,9 +8662,14 @@
     var cbs = Array.prototype.slice.call(document.querySelectorAll("#pay2-import-list .pay2-imp-cb:checked"));
     if (!cbs.length) return;
     var items = cbs.map(function(cb){
+      var addr = cb.getAttribute("data-fromemail") || "";
+      var vmatch = p2VendorByEmail(addr);
       return {
         threadId: cb.value,
-        vendorName: p2GuessVendor(cb.getAttribute("data-from"), cb.getAttribute("data-subject")),
+        fromEmail: addr,
+        // メールアドレスがベンダーマスタに一致すればその名前、無ければ差出人/件名から推測
+        vendorName: vmatch ? vmatch.name : p2GuessVendor(cb.getAttribute("data-from"), cb.getAttribute("data-subject")),
+        vendorId: vmatch ? vmatch.id : "",
         receivedDate: cb.getAttribute("data-date") || "",
         note: cb.getAttribute("data-subject") || "",
         sourceLink: "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#all/" + encodeURIComponent(cb.value)

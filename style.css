@@ -700,6 +700,12 @@
     border:1px solid var(--panel-border); background: var(--panel-solid); color: var(--text);
   }
   .pay2-sel option{ background: var(--panel-solid); color: var(--text); }
+  .pay2-q{
+    padding:5px 9px; font-size:11px; border-radius:6px; width:200px; max-width:38vw;
+    border:1px solid var(--panel-border); background: var(--panel-solid); color: var(--text);
+  }
+  .pay2-q::placeholder{ color: var(--text-faint); }
+  .pay2-q:focus{ outline:none; border-color: var(--accent); }
   .pay2-check-inline{ display:inline-flex; flex-direction:row; align-items:center; gap:5px; font-size:11px; color: var(--text-dim); }
   /* クラスで display:flex を当てているツールバー群は [hidden] が効かないので明示する */
   #pay2-detail-tools[hidden], #pay2-vendor-tools[hidden], .pay2-summary[hidden]{ display:none; }
@@ -717,6 +723,7 @@
   }
   .pay2-summary b{ color: var(--text); }
   .pay2-summary .warn{ color: var(--warn); }
+  .pay2-summary .pay2-sum-muted{ color: var(--text-faint); }
 
   .pay2-tablewrap{ overflow-x:auto; }
   .pay2-table{ width:100%; border-collapse:collapse; font-size:11.5px; white-space:nowrap; }
@@ -731,6 +738,7 @@
   .pay2-table .center{ text-align:center; }
   .pay2-table .strong{ color: var(--text); }
   .pay2-row-paid td{ opacity:.5; }
+  .pay2-row-excluded td{ opacity:.4; font-style:italic; }
 
   .pay2-badge{
     display:inline-block; padding:1px 7px; border-radius:999px; font-size:10px; letter-spacing:.3px;
