@@ -8075,7 +8075,7 @@
 
   var p2 = {
     payables: [], vendors: [], receipts: [], receiptsUnattributed: 0, unlinked: [], unlinkedExcluded: [], tab: "detail",
-    fMonth: "", fMethod: "", fUnpaid: false, fQ: "", fExcluded: false,
+    fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQ: "", fExcluded: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
     checkOpen: false, unlinkedOpen: false, _recv: {},
     wired: false, editId: null, vendId: null
@@ -8215,6 +8215,7 @@
       p2El("pay2-month").addEventListener("change", function(){ p2.fMonth = this.value; p2RenderDetail(); });
       p2El("pay2-method").addEventListener("change", function(){ p2.fMethod = this.value; p2RenderDetail(); });
       p2El("pay2-unpaid").addEventListener("change", function(){ p2.fUnpaid = this.checked; p2RenderDetail(); });
+      p2El("pay2-need-input").addEventListener("change", function(){ p2.fNeedInput = this.checked; p2RenderDetail(); });
       p2El("pay2-q").addEventListener("input", function(){ p2.fQ = this.value; p2RenderDetail(); });
       p2El("pay2-show-excluded").addEventListener("change", function(){ p2.fExcluded = this.checked; p2RenderDetail(); });
       // 対象月の受領チェック
@@ -8317,6 +8318,7 @@
       if (p2.fMonth && p2Ym(r.receivedDate) !== p2.fMonth) return false;
       if (p2.fMethod && r.method !== p2.fMethod) return false;
       if (p2.fUnpaid && r.paid) return false;
+      if (p2.fNeedInput && !(r.amountIncl == null || !r.dueDate)) return false;
       if (q){
         var hay = [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo].join(" ").toLowerCase();
         if (hay.indexOf(q) === -1) return false;
@@ -8912,27 +8914,34 @@
     })
       .then(function(res){
         var msgs = (res && res.messages) || [];
-        var known = {};
-        p2.payables.forEach(function(r){ if (r.threadId) known[r.threadId] = 1; });
+        var knownMsg = {}, knownThread = {};
+        p2.payables.forEach(function(r){
+          if (r.messageId) knownMsg[r.messageId] = 1;
+          if (r.threadId) knownThread[r.threadId] = 1;
+        });
         if (!msgs.length){
           listEl.innerHTML = '<p class="pay2-empty">01.payment に未処理メールはありません。</p>';
           return;
         }
         listEl.innerHTML = msgs.map(function(m){
-          var dup = !!known[m.threadId];
+          var dup = !!(knownMsg[m.id] || knownThread[m.threadId]);
           var dstr = m.date ? jstDateKey(new Date(m.date)) : "";
           var addr = m.fromAddress || m.from || "";
           var vmatch = p2VendorByEmail(addr);
+          var pmGuess = p2PeriodFromSubject(m.subject || "");
           return '<label class="pay2-import-row' + (dup ? " dup" : "") + '">' +
-            '<input type="checkbox" class="pay2-imp-cb" value="' + escapeHtml(m.threadId || m.id) + '"' +
+            '<input type="checkbox" class="pay2-imp-cb" value="' + escapeHtml(m.id) + '"' +
               (dup ? " disabled" : "") +
-              ' data-from="' + escapeHtml(m.from || "") +
+              ' data-messageid="' + escapeHtml(m.id) +
+              '" data-threadid="' + escapeHtml(m.threadId || "") +
+              '" data-from="' + escapeHtml(m.from || "") +
               '" data-fromemail="' + escapeHtml(addr) +
               '" data-subject="' + escapeHtml(m.subject || "") +
               '" data-date="' + escapeHtml(dstr) + '">' +
             '<span class="pay2-import-meta">' +
               '<span class="pay2-import-from">' + escapeHtml(m.from || "(不明)") +
-                (dup ? "（登録済み）" : vmatch ? "（→ " + escapeHtml(vmatch.name) + "）" : "") + "</span>" +
+                (dup ? "（登録済み）" : vmatch ? "（→ " + escapeHtml(vmatch.name) + "）" : "") +
+                (pmGuess ? " ・" + escapeHtml(pmGuess) + "分" : "") + "</span>" +
               '<span class="pay2-import-subj">' + escapeHtml(m.subject || "") + "</span>" +
               '<span class="pay2-import-date">' + escapeHtml(dstr) + "</span>" +
             "</span></label>";
@@ -8963,21 +8972,31 @@
     if (m) return m[1].trim();
     return f || "";
   }
+  // 件名の「2026年8月分」「8月分」→ "YYYY-MM"（サーバー側と同じ規則。表示用の当たりだけ）
+  function p2PeriodFromSubject(subj){
+    var s = String(subj || "");
+    var m = s.match(/(20\d{2})\s*年\s*0?(\d{1,2})\s*月分?/);
+    if (m && +m[2] >= 1 && +m[2] <= 12) return m[1] + "-" + ("0" + m[2]).slice(-2);
+    m = s.match(/0?(\d{1,2})\s*月分/);
+    if (m && +m[1] >= 1 && +m[1] <= 12) return (new Date().getFullYear()) + "-" + ("0" + m[1]).slice(-2);
+    return "";
+  }
   function p2RunImport(){
     var cbs = Array.prototype.slice.call(document.querySelectorAll("#pay2-import-list .pay2-imp-cb:checked"));
     if (!cbs.length) return;
+    // サーバー側で ベンダー照合／方式／何月分 を埋める。フロントは生の情報だけ渡す。
     var items = cbs.map(function(cb){
-      var addr = cb.getAttribute("data-fromemail") || "";
-      var vmatch = p2VendorByEmail(addr);
+      var tid = cb.getAttribute("data-threadid") || "";
       return {
-        threadId: cb.value,
-        fromEmail: addr,
-        // メールアドレスがベンダーマスタに一致すればその名前、無ければ差出人/件名から推測
-        vendorName: vmatch ? vmatch.name : p2GuessVendor(cb.getAttribute("data-from"), cb.getAttribute("data-subject")),
-        vendorId: vmatch ? vmatch.id : "",
+        messageId: cb.getAttribute("data-messageid") || cb.value,
+        threadId: tid,
+        fromEmail: cb.getAttribute("data-fromemail") || "",
+        from: cb.getAttribute("data-from") || "",
+        subject: cb.getAttribute("data-subject") || "",
         receivedDate: cb.getAttribute("data-date") || "",
-        note: cb.getAttribute("data-subject") || "",
-        sourceLink: "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#all/" + encodeURIComponent(cb.value)
+        sourceLink: tid
+          ? "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#all/" + encodeURIComponent(tid)
+          : ""
       };
     });
     var btn = p2El("pay2-import-run");
