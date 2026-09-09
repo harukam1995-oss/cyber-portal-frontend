@@ -1563,9 +1563,12 @@
   /* 契約書トラッカー 一覧ページ（#view-contracts）。カードの .pv-contract-row をそのまま使い、
      高さ固定をやめて全件を1列で素直に縦積みする。 */
   .cal-toolbar .pv-contracts-tabs{ margin-bottom:0; border-bottom:none; }
+  /* 幅は狭めたまま、余白を左右に均等配分してページ中央に置く（`margin:0 auto`）。
+     以前は左寄せで右側が大きく空いていた。プロジェクトボード一覧(.projects-page-list)と
+     max-width も揃えて、ビジネスの2つの全件ページで列幅が変わらないようにする。 */
   .contracts-page-list{
     display:flex; flex-direction:column; gap:10px;
-    max-width:760px;
+    max-width:840px; margin:0 auto; padding:4px 0 8px;
   }
   .contracts-page-list .pv-contract-row{ height:auto; }
 
