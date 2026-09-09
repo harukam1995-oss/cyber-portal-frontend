@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 107;
+  var BUILD_V = 108;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3028,6 +3028,10 @@
   var mailActionsEl = document.getElementById("mail-actions");
   var mailActMsg = document.getElementById("mail-act-msg");
   var currentMailThread = null;
+  // 返信・転送の材料。スレッド取得(GET /gmail/threads/:id)のレスポンスから受け取る。
+  var currentMailReply = null;    // { to, cc, subject, forwardSubject, inReplyTo, references, ... }
+  var currentMailBodyText = "";   // 引用に使う本文
+  var currentMailInfo = null;     // 一覧行(from / time / subject)
   var mailStatusBar = document.getElementById("mail-status-bar");
   var homeInboxCountBtn = document.getElementById("home-inbox-count-btn");
   var homeInboxCountNum = document.getElementById("home-inbox-count-num");
@@ -3463,9 +3467,14 @@
     mailDetailBody.innerHTML = "";
     if (mailActMsg){ mailActMsg.textContent = ""; }
     currentMailThread = mail.threadId || null;
+    currentMailReply = null;
+    currentMailBodyText = "";
+    currentMailInfo = mail;
     if (mailActionsEl){
       mailActionsEl.hidden = !mail.threadId;   // 仮データ(threadId無し)には操作を出さない
       mailActionsEl.querySelectorAll(".mail-act-btn").forEach(function(b){ b.disabled = false; });
+      // 返信系は reply メタ(宛先・In-Reply-To)が届くまで押させない
+      setMailReplyEnabled(false);
     }
 
     if (mail.threadId){
@@ -3481,6 +3490,9 @@
         var res = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId), mailState.account));
         bodyEl.textContent = res.body || mail.snippet || "(本文がありません)";
         renderMailAttachments(res.attachments || []);
+        currentMailBodyText = res.body || "";
+        currentMailReply = res.reply || null;
+        setMailReplyEnabled(!!currentMailReply);
       } catch(err){
         bodyEl.textContent = apiErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
       }
@@ -3654,10 +3666,206 @@
     }
   }
   if (mailActionsEl){
-    mailActionsEl.querySelectorAll(".mail-act-btn").forEach(function(btn){
+    mailActionsEl.querySelectorAll(".mail-act-btn[data-mail-action]").forEach(function(btn){
       btn.addEventListener("click", function(){ runMailAction(btn.getAttribute("data-mail-action")); });
     });
   }
+
+  /* ================= メール作成(新規 / 返信 / 全員に返信 / 転送) =================
+     送信は POST /api/google/gmail/send。必要スコープは users.messages.send の
+     許可スコープに含まれる gmail.modify で足りるので、既存のトークンのまま送れる
+     (再連携・GCP 同意画面の変更は不要)。本文はプレーンテキストのみ。
+     宛先・件名・In-Reply-To/References はバックエンドがスレッドから導出したものを使う。 */
+  var mailComposeModal = document.getElementById("mail-compose-modal");
+  var mailComposeForm = document.getElementById("mail-compose-form");
+  var mailComposeTitle = document.getElementById("mail-compose-title");
+  var mailComposeFrom = document.getElementById("mail-compose-from");
+  var mailComposeTo = document.getElementById("mail-compose-to");
+  var mailComposeCc = document.getElementById("mail-compose-cc");
+  var mailComposeBcc = document.getElementById("mail-compose-bcc");
+  var mailComposeSubject = document.getElementById("mail-compose-subject");
+  var mailComposeBody = document.getElementById("mail-compose-body");
+  var mailComposeError = document.getElementById("mail-compose-error");
+  var mailComposeSend = document.getElementById("mail-compose-send");
+  var mailComposeDraft = document.getElementById("mail-compose-draft");
+  var mailReplyBtn = document.getElementById("mail-reply-btn");
+  var mailReplyAllBtn = document.getElementById("mail-reply-all-btn");
+  var mailForwardBtn = document.getElementById("mail-forward-btn");
+  // 送信中の付随情報(スレッドにぶら下げるための threadId と返信ヘッダ)
+  var composeCtx = { threadId: "", inReplyTo: "", references: "", account: "haruka" };
+
+  var MAIL_ACCOUNT_LABEL = { haruka: "はるか（個人）", syslea: "SYSLEA" };
+
+  function setMailReplyEnabled(on){
+    [mailReplyBtn, mailReplyAllBtn, mailForwardBtn].forEach(function(b){
+      if (b) b.disabled = !on;
+    });
+  }
+
+  function mailComposeSetError(msg){
+    if (!mailComposeError) return;
+    mailComposeError.textContent = msg || "";
+    mailComposeError.hidden = !msg;
+  }
+
+  // 引用ブロック。Gmail と同じく "> " 前置き。
+  function mailQuote(text){
+    return String(text || "")
+      .split(/\r?\n/)
+      .map(function(line){ return "> " + line; })
+      .join("\n");
+  }
+
+  function mailQuoteIntro(meta, mail){
+    var who = (meta && meta.originalFrom) || (mail && mail.from) || "";
+    var when = (mail && mail.time) || (meta && meta.originalDate) || "";
+    if (!who && !when) return "";
+    return (when ? when + " " : "") + who + " のメール:";
+  }
+
+  function openMailCompose(mode){
+    if (!mailComposeModal) return;
+    var meta = currentMailReply;
+    var mail = currentMailInfo;
+    composeCtx = { threadId: "", inReplyTo: "", references: "", account: mailState.account };
+
+    if (mode === "reply" || mode === "replyAll"){
+      if (!meta) return;
+      mailComposeTitle.textContent = mode === "replyAll" ? "全員に返信" : "返信";
+      mailComposeTo.value = meta.to || "";
+      mailComposeCc.value = mode === "replyAll" ? (meta.cc || "") : "";
+      mailComposeSubject.value = meta.subject || "";
+      mailComposeBody.value = "\n\n" + mailQuoteIntro(meta, mail) + "\n" + mailQuote(currentMailBodyText);
+      // 同じスレッドにぶら下げる(Gmail 上でも会話が分かれない)
+      composeCtx.threadId = currentMailThread || "";
+      composeCtx.inReplyTo = meta.inReplyTo || "";
+      composeCtx.references = meta.references || "";
+    } else if (mode === "forward"){
+      if (!meta) return;
+      mailComposeTitle.textContent = "転送";
+      mailComposeTo.value = "";
+      mailComposeCc.value = "";
+      mailComposeSubject.value = meta.forwardSubject || "";
+      mailComposeBody.value =
+        "\n\n---------- 転送メッセージ ----------\n" +
+        "From: " + (meta.originalFrom || "") + "\n" +
+        "Date: " + (meta.originalDate || (mail && mail.time) || "") + "\n" +
+        "Subject: " + (meta.originalSubject || "") + "\n" +
+        "To: " + (meta.originalTo || "") + "\n\n" +
+        currentMailBodyText;
+      // 転送は元スレッドにぶら下げない(別の会話として送る)
+    } else {
+      mailComposeTitle.textContent = "新規メール";
+      mailComposeTo.value = "";
+      mailComposeCc.value = "";
+      mailComposeSubject.value = "";
+      mailComposeBody.value = "";
+    }
+    mailComposeBcc.value = "";
+    mailComposeSetError("");
+    mailComposeFrom.innerHTML =
+      "差出人: <b>" + escapeHtml(MAIL_ACCOUNT_LABEL[composeCtx.account] || composeCtx.account) + "</b> のアカウントから送信します";
+    mailComposeSend.disabled = false;
+    if (mailComposeDraft) mailComposeDraft.disabled = false;
+
+    mailComposeModal.hidden = false;
+    document.body.style.overflow = "hidden";
+    // 返信は本文にすぐ書き始めたい / 新規は宛先から
+    var focusEl = (mode === "new" || mode === "forward") ? mailComposeTo : mailComposeBody;
+    setTimeout(function(){
+      focusEl.focus();
+      if (focusEl === mailComposeBody) mailComposeBody.setSelectionRange(0, 0);
+    }, 30);
+  }
+
+  function closeMailCompose(){
+    if (!mailComposeModal) return;
+    mailComposeModal.hidden = true;
+    // 詳細モーダルが開いたままなら body のスクロール止めは維持する
+    if (mailModal && mailModal.hidden) document.body.style.overflow = "";
+  }
+
+  function mailComposePayload(){
+    return {
+      to: mailComposeTo.value.trim(),
+      cc: mailComposeCc.value.trim(),
+      bcc: mailComposeBcc.value.trim(),
+      subject: mailComposeSubject.value.trim(),
+      body: mailComposeBody.value,
+      threadId: composeCtx.threadId,
+      inReplyTo: composeCtx.inReplyTo,
+      references: composeCtx.references
+    };
+  }
+
+  async function submitMailCompose(){
+    var payload = mailComposePayload();
+    if (!payload.to){
+      mailComposeSetError("宛先(To)を入力してください。");
+      mailComposeTo.focus();
+      return;
+    }
+    // 送信は取り消せないので、宛先と件名を確認してから送る
+    var confirmMsg =
+      "このメールを送信します。\n\n" +
+      "差出人: " + (MAIL_ACCOUNT_LABEL[composeCtx.account] || composeCtx.account) + "\n" +
+      "宛先: " + payload.to + (payload.cc ? "\nCc: " + payload.cc : "") + (payload.bcc ? "\nBcc: " + payload.bcc : "") + "\n" +
+      "件名: " + (payload.subject || "(件名なし)");
+    if (!window.confirm(confirmMsg)) return;
+
+    mailComposeSetError("");
+    mailComposeSend.disabled = true;
+    if (mailComposeDraft) mailComposeDraft.disabled = true;
+    try{
+      await apiFetch(acctPath("/api/google/gmail/send", composeCtx.account), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      closeMailCompose();
+      if (mailActMsg) mailActMsg.textContent = "送信しました。";
+      // 返信でスレッドが伸びるので一覧を取り直す
+      fetchMailPage();
+    } catch(err){
+      mailComposeSetError(apiErrorMessage(err, "Gmail") || "送信に失敗しました。");
+      mailComposeSend.disabled = false;
+      if (mailComposeDraft) mailComposeDraft.disabled = false;
+    }
+  }
+
+  async function saveMailDraft(){
+    mailComposeSetError("");
+    mailComposeSend.disabled = true;
+    mailComposeDraft.disabled = true;
+    try{
+      await apiFetch(acctPath("/api/google/gmail/drafts", composeCtx.account), {
+        method: "POST",
+        body: JSON.stringify(mailComposePayload())
+      });
+      closeMailCompose();
+      if (mailActMsg) mailActMsg.textContent = "下書きに保存しました。";
+    } catch(err){
+      mailComposeSetError(apiErrorMessage(err, "Gmail") || "下書きの保存に失敗しました。");
+    }
+    mailComposeSend.disabled = false;
+    mailComposeDraft.disabled = false;
+  }
+
+  if (mailComposeForm){
+    mailComposeForm.addEventListener("submit", function(e){ e.preventDefault(); submitMailCompose(); });
+    document.getElementById("mail-compose-close").addEventListener("click", closeMailCompose);
+    document.getElementById("mail-compose-cancel").addEventListener("click", closeMailCompose);
+    mailComposeDraft.addEventListener("click", saveMailDraft);
+    mailComposeModal.addEventListener("click", function(e){ if (e.target === mailComposeModal) closeMailCompose(); });
+    // Ctrl/Cmd + Enter で送信(本文に入ったまま送れるように)
+    mailComposeBody.addEventListener("keydown", function(e){
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter"){ e.preventDefault(); submitMailCompose(); }
+    });
+  }
+  if (mailReplyBtn) mailReplyBtn.addEventListener("click", function(){ openMailCompose("reply"); });
+  if (mailReplyAllBtn) mailReplyAllBtn.addEventListener("click", function(){ openMailCompose("replyAll"); });
+  if (mailForwardBtn) mailForwardBtn.addEventListener("click", function(){ openMailCompose("forward"); });
+  var mailComposeNewBtn = document.getElementById("mail-compose-new");
+  if (mailComposeNewBtn) mailComposeNewBtn.addEventListener("click", function(){ openMailCompose("new"); });
 
   /* ================= 支払い仕分け(SYSLEA 01.payment 専用) =================
      01.payment に溜まった請求書メールを、本文＋添付PDFのテキストから
@@ -5394,6 +5602,7 @@
     var byId = function(id){ return document.getElementById(id); };
     var stack = [
       { el: eventModal,    close: closeEventModal },
+      { el: mailComposeModal, close: closeMailCompose },  // メール詳細より手前に開く
       { el: mailModal,     close: closeMailModal },
       { el: noteModal,     close: closeNoteModal },
       { el: taskModal,     close: closeTaskModal },

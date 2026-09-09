@@ -227,7 +227,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.26</span>
+      <span>v2.33.27</span>
     </div>
   </footer>
 </div>
@@ -732,6 +732,7 @@
       </div>
     </div>
     <div class="cal-toolbar-right">
+      <button type="button" class="mail-compose-btn" id="mail-compose-new">✉ 新規作成</button>
       <button type="button" class="mail-sort-btn" id="mail-sort-btn" hidden>⚡ 支払い仕分け</button>
       <div class="mail-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1028,6 +1029,18 @@
       </button>
     </div>
     <div class="mail-actions" id="mail-actions" hidden>
+      <button type="button" class="mail-act-btn mail-act-reply" id="mail-reply-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+        <span>返信</span>
+      </button>
+      <button type="button" class="mail-act-btn" id="mail-reply-all-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>
+        <span>全員に返信</span>
+      </button>
+      <button type="button" class="mail-act-btn" id="mail-forward-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+        <span>転送</span>
+      </button>
       <button type="button" class="mail-act-btn" data-mail-action="archive">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
         <span>アーカイブ</span>
@@ -1043,6 +1056,44 @@
       <span class="mail-act-msg" id="mail-act-msg"></span>
     </div>
     <div class="mail-detail" id="mail-detail-body"></div>
+  </div>
+</div>
+
+<!-- ================= MAIL COMPOSE MODAL ================= -->
+<div class="modal-overlay" id="mail-compose-modal" hidden role="dialog" aria-modal="true" aria-labelledby="mail-compose-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="mail-compose-title">新規メール</h3>
+      <button class="modal-close" type="button" id="mail-compose-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="mail-compose-form">
+      <div class="mail-compose-from" id="mail-compose-from"></div>
+      <label>宛先（To）
+        <input type="text" id="mail-compose-to" autocomplete="off" placeholder="name@example.com（複数はカンマ区切り）">
+      </label>
+      <label>Cc（任意）
+        <input type="text" id="mail-compose-cc" autocomplete="off" placeholder="複数はカンマ区切り">
+      </label>
+      <label>Bcc（任意）
+        <input type="text" id="mail-compose-bcc" autocomplete="off" placeholder="複数はカンマ区切り">
+      </label>
+      <label>件名
+        <input type="text" id="mail-compose-subject" maxlength="300">
+      </label>
+      <label>本文
+        <textarea id="mail-compose-body" rows="12" placeholder="本文を入力…"></textarea>
+      </label>
+      <div class="event-form-error" id="mail-compose-error" hidden></div>
+      <div class="event-form-actions">
+        <button type="button" id="mail-compose-draft" class="ev-btn">下書き保存</button>
+        <div class="event-form-actions-right">
+          <button type="button" id="mail-compose-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="mail-compose-send" class="ev-btn ev-btn-primary">送信</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 

@@ -1929,6 +1929,27 @@
   .mail-act-btn:disabled{ opacity:.5; cursor:default; }
   .mail-act-btn.mail-act-danger:hover:not(:disabled){ border-color:#ff5050; color: var(--err); }
   .mail-act-msg{ font-size:11px; color: var(--text-faint); }
+  /* 返信は主動線なのでアンバーで前に出す(グラデ・発光は使わない = B/アンバー) */
+  .mail-act-btn.mail-act-reply{ border-color: var(--cyan-dim); color: var(--text); }
+  .mail-act-btn.mail-act-reply:hover:not(:disabled){ border-color: var(--cyan); }
+
+  /* ---------- メール作成(新規/返信/転送) ---------- */
+  .mail-compose-btn{
+    font-family: var(--font-body); font-size:12.5px; letter-spacing:.03em;
+    padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap;
+    background: rgba(255,143,63,.14); color: var(--text); border:1px solid var(--cyan-dim);
+    transition: border-color .15s;
+  }
+  .mail-compose-btn:hover:not(:disabled){ border-color: var(--cyan); }
+  .mail-compose-btn:disabled{ opacity:.5; cursor:default; }
+  /* 差出人アカウント(はるか / SYSLEA)。誤送信防止のためフォーム最上段に必ず出す */
+  .mail-compose-from{
+    font-family: var(--font-mono); font-size:11.5px; letter-spacing:.04em;
+    color: var(--text-dim); background: rgba(255,255,255,0.02);
+    border:1px solid var(--hairline); border-radius:8px; padding:8px 10px;
+  }
+  .mail-compose-from b{ color: var(--accent); font-weight:600; }
+  .event-form textarea#mail-compose-body{ min-height:220px; line-height:1.7; }
 
   /* ================= モバイル(<=640px) =================
      このポータルは基本デスクトップ前提。スマホでは:
