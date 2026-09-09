@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const sw = readFileSync("sw.js", "utf8");
 const html = readFileSync("index.html", "utf8");
+const app = readFileSync("app.js", "utf8");
 
 const curCache = Number((sw.match(/cyber-portal-shell-v(\d+)/) || [])[1]);
 const curVer = (html.match(/<span>v(\d+\.\d+\.\d+)<\/span>/) || [])[1];
@@ -29,6 +30,10 @@ if (a2 && /^\d+$/.test(a2) && a3 && /^\d+\.\d+\.\d+$/.test(a3)) {
 
 writeFileSync("sw.js", sw.replace(/cyber-portal-shell-v\d+/, `cyber-portal-shell-v${nextCache}`));
 writeFileSync("index.html", html.replace(/<span>v\d+\.\d+\.\d+<\/span>/, `<span>v${nextVer}</span>`));
+// BUILD_V も sw CACHE と同じ番号に揃える(app.business.js/app.payables.js の
+// オンデマンド読み込みに ?v= を付けて、CDN/ブラウザキャッシュの max-age=600 を毎回突破する)。
+writeFileSync("app.js", app.replace(/var BUILD_V = \d+;/, `var BUILD_V = ${nextCache};`));
 console.log(`sw CACHE  v${curCache} -> v${nextCache}`);
 console.log(`footer    v${curVer} -> v${nextVer}`);
-console.log("→ 変更した index.html / sw.js（と app.js/style.css 等）をアップロードしてください。");
+console.log(`BUILD_V   -> ${nextCache}（app.js）`);
+console.log("→ 変更した index.html / sw.js / app.js（と style.css 等）をアップロードしてください。");

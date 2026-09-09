@@ -1,6 +1,13 @@
 (function(){
   "use strict";
 
+  // オンデマンドモジュール(app.business.js/app.payables.js)のキャッシュ busting 用。
+  // SHELL に無いこの2ファイルは {cache:"reload"} プリフェッチの対象外なので、素の
+  // <script src> だとブラウザ HTTP キャッシュ／CDN エッジの max-age=600 に従ってしまい、
+  // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
+  // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
+  // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
+  var BUILD_V = 107;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -667,7 +674,7 @@
     if (_moduleLoads[src]) return _moduleLoads[src];
     _moduleLoads[src] = new Promise(function(resolve, reject){
       var s = document.createElement("script");
-      s.src = src;
+      s.src = src + "?v=" + BUILD_V; // キャッシュ busting(上のコメント参照)
       s.async = true;
       s.onload = function(){
         if (window.__CP && typeof window.__CP[readyKey] === "function") resolve();
