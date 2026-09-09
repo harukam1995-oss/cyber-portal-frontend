@@ -1633,7 +1633,7 @@
   .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(255,143,63,0.10); }
 
   /* ---------- ビジネス: プロジェクトボード(内部は event_trackers・旧イベント／月次トラッカー) ---------- */
-  .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:160px; overflow-y:auto; }
+  .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:190px; overflow-y:auto; }
   .pv-events-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-events-status.is-err{ color: var(--err); }
   .pv-event-row{
@@ -1649,8 +1649,12 @@
   .pv-event-autooff{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint);
     border:1px dashed var(--panel-border); border-radius:4px; padding:1px 5px; flex:none; }
   .pv-event-progress{ height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
-  .pv-event-progress-fill{ height:100%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); border-radius:3px; transition: width .25s; }
+  .pv-event-progress-fill{ height:100%; background: var(--accent); border-radius:3px; transition: width .25s; }
   .pv-event-digest{ font-size:11px; color: var(--text-dim); line-height:1.55; }
+  /* 「次にやること」= 未完了の先頭項目。進捗メタより上・明るい色で主役に。 */
+  .pv-event-next{ font-size:12px; color: var(--text); line-height:1.5; }
+  .pv-event-next.is-done{ color: var(--ok); }
+  .pv-events-list .pv-event-next{ font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pv-event-field-label{ font-size:11px; letter-spacing:.4px; color: var(--text-faint); margin:12px 0 4px; }
   .pv-event-items{ display:flex; flex-direction:column; gap:6px; }
   .pv-event-item-line{ display:flex; align-items:center; gap:7px; }
@@ -1664,6 +1668,16 @@
     background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:6px; color: var(--text-dim);
     box-sizing:border-box; }
   .pv-event-digest-list{ margin:0; padding-left:18px; font-size:11.5px; color: var(--text-dim); line-height:1.6; }
+
+  /* ---- プロジェクトボード 一覧ページ (#view-projects) ---- */
+  .projects-page-list{ max-width:840px; margin:0 auto; display:flex; flex-direction:column; gap:12px; padding:4px 0 8px; }
+  .pv-event-row.is-page{ padding:12px 14px 13px; gap:7px; }
+  .pv-event-row.is-archived{ opacity:.55; }
+  .pv-event-checklist{ list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:2px;
+    font-size:11.5px; color: var(--text-dim); line-height:1.5; }
+  .pv-event-checklist li.is-done{ color: var(--text-faint); text-decoration:line-through; }
+  .pv-event-checklist li.is-overdue{ color: var(--err); }
+  .pv-event-checklist li.is-more{ color: var(--text-faint); font-style:italic; }
 
   /* プロジェクトボード管理モーダル: タブ / アーカイブ / 照合条件の折りたたみ */
   .pb-tabs{ display:flex; gap:2px; margin:2px 0 10px; border-bottom:1px solid var(--panel-border); }
@@ -2279,7 +2293,7 @@
     /* 契約書リストは枠内では最大3件＋「すべて表示」だけなので固定高スクロールをやめる。 */
     html.fixed-aspect #view-business:not([hidden]) .pv-contracts-list{ height: auto; overflow: visible; }
     html.fixed-aspect #view-business:not([hidden]) .pv-slack-list{ max-height: 150px; }
-    html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 132px; }
+    html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 150px; }
     html.fixed-aspect #view-business:not([hidden]) .biz-note-list,
     html.fixed-aspect #view-business:not([hidden]) .biz-task-list{ max-height: 88px; }
     html.fixed-aspect #view-business:not([hidden]) .pv-today-clock{ font-size: clamp(26px, 2.6vw, 32px); }

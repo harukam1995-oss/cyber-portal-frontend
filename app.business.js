@@ -707,17 +707,65 @@
     var today = jstDateKey(new Date());
     return (t.items || []).filter(function(it){ return it.dueDate && !it.done && it.dueDate < today; });
   }
+  // 未完了の先頭項目(期限が近いものを優先)。カード/一覧ページの「▶ 次」表示に使う。
+  function eventNextItem(t){
+    var items = (t.items || []).filter(function(it){ return !it.done && (it.text || "").trim(); });
+    if (!items.length) return null;
+    items.sort(function(a, b){
+      var ad = a.dueDate || "9999-99-99", bd = b.dueDate || "9999-99-99";
+      return ad < bd ? -1 : ad > bd ? 1 : 0;
+    });
+    return items[0];
+  }
+  var EVENT_STATUS_COLOR = { "計画中": "var(--text-faint)", "進行中": "var(--accent)", "完了": "var(--ok)" };
+
+  /* ---- タブ / 検索 / 並び順。カード(#pv-events-list)と一覧ページ(#view-projects)で共用 ---- */
+  var eventTab = "";        // "" = すべて(アクティブ) / "進行中" / "計画中" / "完了" / "alert" / "archived"
+  var eventQuery = "";
+  var eventPageSort = "order";
+  function eventHasAlert(t){
+    var today = jstDateKey(new Date());
+    var done = t.status === "完了" || eventProgress(t) >= 100;
+    if (t.dueDate && t.dueDate < today && !done) return true;
+    return eventOverdueItems(t).length > 0;
+  }
+  function eventMatchesQuery(t, q){
+    var hay = [t.name, t.status, (t.digest || []).join(" ")].join(" ");
+    (t.items || []).forEach(function(it){ hay += " " + (it.text || "") + " " + (it.note || ""); });
+    return hay.toLowerCase().indexOf(q) !== -1;
+  }
+  function filterEventTrackers(withSort){
+    var q = eventQuery.trim().toLowerCase();
+    var arr = eventTrackersState.filter(function(t){
+      if (eventTab === "archived"){ if (!t.archived) return false; }
+      else if (t.archived) return false;
+      if (eventTab === "alert"){ if (!eventHasAlert(t)) return false; }
+      else if (eventTab && eventTab !== "archived"){ if (t.status !== eventTab) return false; }
+      if (q && !eventMatchesQuery(t, q)) return false;
+      return true;
+    });
+    if (withSort){
+      if (eventPageSort === "due"){
+        arr.sort(function(a, b){ return (a.dueDate || "9999") < (b.dueDate || "9999") ? -1 : (a.dueDate || "9999") > (b.dueDate || "9999") ? 1 : 0; });
+      } else if (eventPageSort === "updated"){
+        arr.sort(function(a, b){ return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      } else if (eventPageSort === "progress"){
+        arr.sort(function(a, b){ return eventProgress(a) - eventProgress(b); });
+      }
+    }
+    return arr;
+  }
 
   function applyEventTrackers(list, templates){
     eventTrackersState = list || [];
     if (templates !== undefined) eventTemplatesState = templates || [];
     eventTrackersLoadOk = true;
-    renderEventTrackers();
+    renderEventTrackersAll();
     eventSetStatus("");
   }
   function failEventTrackers(err){
     eventTrackersState = [];
-    renderEventTrackers();
+    renderEventTrackersAll();
     eventSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
   }
   async function loadEventTrackers(){
@@ -730,90 +778,220 @@
     } catch (err){ failEventTrackers(err); }
   }
 
-  function renderEventTrackers(){
+  // 1件ぶんの行 DOM。カード(page=false・コンパクト)と一覧ページ(page=true・チェックリスト付き)で共用。
+  function buildEventRow(t, page){
+    var pct = eventProgress(t);
+    var done = t.status === "完了" || pct >= 100;
+    var today = jstDateKey(new Date());
+    var overdue = t.dueDate && t.dueDate < today && !done;
+    var overdueItems = eventOverdueItems(t);
+    var next = eventNextItem(t);
+
+    var row = document.createElement("div");
+    row.className = "pv-event-row" + (done ? " is-done" : "") + (overdue ? " is-overdue" : "") +
+      (t.archived ? " is-archived" : "") + (page ? " is-page" : "");
+    if (!done && !overdue) row.style.borderLeftColor = EVENT_STATUS_COLOR[t.status] || "var(--accent)";
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+
+    var head = document.createElement("div");
+    head.className = "pv-case-head";
+    var name = document.createElement("span");
+    name.className = "pv-case-name";
+    name.textContent = t.name || "（名称未設定）";
+    head.appendChild(name);
+    if (t.confidential){
+      var lk = document.createElement("span"); lk.className = "pv-case-lock"; lk.textContent = "🔒"; lk.title = "機密"; head.appendChild(lk);
+    }
+    var kind = document.createElement("span");
+    kind.className = "pv-event-kind";
+    kind.textContent = eventKindLabel(t.kind);
+    head.appendChild(kind);
+    if (overdue){
+      var od = document.createElement("span"); od.className = "pv-contract-alert is-err"; od.textContent = "⚠ 期限超過"; head.appendChild(od);
+    }
+    if (overdueItems.length){
+      var oi = document.createElement("span"); oi.className = "pv-contract-alert is-err";
+      oi.textContent = "⚠ 項目期限切れ " + overdueItems.length;
+      oi.title = overdueItems.map(function(it){ return it.text; }).join("\n");
+      head.appendChild(oi);
+    }
+    var st = document.createElement("span");
+    st.className = "pv-case-status-badge";
+    st.textContent = t.archived ? "アーカイブ" : t.status;
+    head.appendChild(st);
+    if (t.autoIngest === false){
+      var ao = document.createElement("span"); ao.className = "pv-event-autooff"; ao.textContent = "自動オフ"; ao.title = "event-digest の対象外"; head.appendChild(ao);
+    } else if (t.digest && t.digest.length){
+      var ab = document.createElement("span"); ab.className = "pv-contract-slack-badge"; ab.textContent = "自動反映"; ab.title = "メール／Slackから自動入力された進捗があります"; head.appendChild(ab);
+    }
+    row.appendChild(head);
+
+    // 「次にやること」= 未完了の先頭項目。進捗メタより上・明るい色で主役にする。
+    var nx = document.createElement("div");
+    nx.className = "pv-event-next" + (done ? " is-done" : "");
+    if (done) nx.textContent = "✓ 全項目完了";
+    else if (next) nx.textContent = "▶ 次: " + next.text + (next.dueDate ? "（期限 " + mdLabel(next.dueDate) + "）" : "");
+    else nx.textContent = "項目が未登録です";
+    row.appendChild(nx);
+
+    var bar = document.createElement("div");
+    bar.className = "pv-event-progress";
+    var fill = document.createElement("div");
+    fill.className = "pv-event-progress-fill";
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    row.appendChild(bar);
+
+    var meta = [];
+    meta.push(eventDoneCount(t) + " 完了 (" + pct + "%)");
+    if (t.kind === "recurring" && t.period) meta.push(t.period);
+    if (t.dueDate) meta.push("期限 " + mdLabel(t.dueDate));
+    var m = document.createElement("div");
+    m.className = "pv-case-client";
+    m.textContent = meta.join(" ・ ");
+    row.appendChild(m);
+
+    if (t.digest && t.digest[0]){
+      var dg = document.createElement("div");
+      dg.className = "pv-event-digest";
+      dg.textContent = "💬 " + (page ? t.digest.slice(0, 2).join("  /  ") : t.digest[0]);
+      row.appendChild(dg);
+    }
+
+    if (page){
+      var items = t.items || [];
+      if (items.length){
+        var cl = document.createElement("ul");
+        cl.className = "pv-event-checklist";
+        items.slice(0, 8).forEach(function(it){
+          var li = document.createElement("li");
+          if (it.done) li.className = "is-done";
+          else if (it.dueDate && !it.done && it.dueDate < today) li.className = "is-overdue";
+          li.textContent = (it.done ? "✓ " : "・ ") + (it.text || "") + (!it.done && it.dueDate ? "（" + mdLabel(it.dueDate) + "）" : "");
+          cl.appendChild(li);
+        });
+        if (items.length > 8){
+          var more = document.createElement("li");
+          more.className = "is-more";
+          more.textContent = "…ほか " + (items.length - 8) + " 項目";
+          cl.appendChild(more);
+        }
+        row.appendChild(cl);
+      }
+    }
+
+    (function(id){
+      function open(){ openEventModal(id); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+    })(t.id);
+    return row;
+  }
+
+  // カード(ビジネス右列)。フィルタ適用・3件まで・超過は「すべて表示」で #view-projects へ。
+  function renderEventTrackersCard(){
     var list = document.getElementById("pv-events-list");
     if (!list) return;
     list.innerHTML = "";
-    var active = eventTrackersState.filter(function(t){ return !t.archived; });
-    if (!active.length){
+    if (!eventTrackersState.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」からプロジェクトを追加してください。</div>';
       return;
     }
-    var today = jstDateKey(new Date());
-    active.forEach(function(t){
-      var pct = eventProgress(t);
-      var done = t.status === "完了" || pct >= 100;
-      var overdue = t.dueDate && t.dueDate < today && !done;
-      var overdueItems = eventOverdueItems(t);
-      var row = document.createElement("div");
-      row.className = "pv-event-row" + (done ? " is-done" : "") + (overdue ? " is-overdue" : "");
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
+    var filtered = filterEventTrackers(false);
+    if (!filtered.length){
+      list.innerHTML = '<div class="pv-habit-empty">該当するプロジェクトがありません。</div>';
+      return;
+    }
+    var CARD_MAX = 2; // ページ行は複数行なので少なめ。全部は「すべて表示」→ #view-projects
+    filtered.slice(0, CARD_MAX).forEach(function(t){ list.appendChild(buildEventRow(t, false)); });
+    var more = document.createElement("button");
+    more.type = "button";
+    more.className = "pv-list-more";
+    more.textContent = filtered.length > CARD_MAX
+      ? "すべて表示（ほか " + (filtered.length - CARD_MAX) + " 件）"
+      : "一覧ページを開く";
+    more.addEventListener("click", function(){ showView("projects"); });
+    list.appendChild(more);
+  }
 
-      var head = document.createElement("div");
-      head.className = "pv-case-head";
-      var name = document.createElement("span");
-      name.className = "pv-case-name";
-      name.textContent = t.name || "（名称未設定）";
-      head.appendChild(name);
-      if (t.confidential){
-        var lk = document.createElement("span"); lk.className = "pv-case-lock"; lk.textContent = "🔒"; lk.title = "機密"; head.appendChild(lk);
-      }
-      var kind = document.createElement("span");
-      kind.className = "pv-event-kind";
-      kind.textContent = eventKindLabel(t.kind);
-      head.appendChild(kind);
-      if (overdue){
-        var od = document.createElement("span"); od.className = "pv-contract-alert is-err"; od.textContent = "⚠ 期限超過"; head.appendChild(od);
-      }
-      if (overdueItems.length){
-        var oi = document.createElement("span"); oi.className = "pv-contract-alert is-err";
-        oi.textContent = "⚠ 項目期限切れ " + overdueItems.length;
-        oi.title = overdueItems.map(function(it){ return it.text; }).join("\n");
-        head.appendChild(oi);
-      }
-      var st = document.createElement("span");
-      st.className = "pv-case-status-badge";
-      st.textContent = t.status;
-      head.appendChild(st);
-      if (t.autoIngest === false){
-        var ao = document.createElement("span"); ao.className = "pv-event-autooff"; ao.textContent = "自動オフ"; ao.title = "event-digest の対象外"; head.appendChild(ao);
-      } else if (t.digest && t.digest.length){
-        var ab = document.createElement("span"); ab.className = "pv-contract-slack-badge"; ab.textContent = "自動反映"; ab.title = "メール／Slackから自動入力された進捗があります"; head.appendChild(ab);
-      }
-      row.appendChild(head);
+  /* ---- プロジェクトボード 一覧ページ (#view-projects) ---- */
+  var projectsPageWired = false;
+  var projectsPageSetStatus = makeStatusSetter("projects-page-status");
 
-      var bar = document.createElement("div");
-      bar.className = "pv-event-progress";
-      var fill = document.createElement("div");
-      fill.className = "pv-event-progress-fill";
-      fill.style.width = pct + "%";
-      bar.appendChild(fill);
-      row.appendChild(bar);
-
-      var meta = [];
-      meta.push(eventDoneCount(t) + " 完了 (" + pct + "%)");
-      if (t.kind === "recurring" && t.period) meta.push(t.period);
-      if (t.dueDate) meta.push("期限 " + mdLabel(t.dueDate));
-      var m = document.createElement("div");
-      m.className = "pv-case-client";
-      m.textContent = meta.join(" ・ ");
-      row.appendChild(m);
-
-      if (t.digest && t.digest[0]){
-        var dg = document.createElement("div");
-        dg.className = "pv-event-digest";
-        dg.textContent = "💬 " + t.digest[0];
-        row.appendChild(dg);
-      }
-
-      (function(id){
-        function open(){ openEventModal(id); }
-        row.addEventListener("click", open);
-        row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      })(t.id);
-      list.appendChild(row);
+  function renderEventPageTabs(){
+    var bar = document.getElementById("projects-page-tabs");
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll(".pv-contracts-tab"), function(btn){
+      btn.classList.toggle("is-active", (btn.getAttribute("data-tab") || "") === eventTab);
     });
+  }
+
+  function renderProjectsPage(){
+    var list = document.getElementById("projects-page-list");
+    if (!list) return;
+    renderEventPageTabs();
+    var q = document.getElementById("projects-page-q");
+    if (q && q.value !== eventQuery) q.value = eventQuery;
+    var sortSel = document.getElementById("projects-page-sort");
+    if (sortSel && sortSel.value !== eventPageSort) sortSel.value = eventPageSort;
+
+    list.innerHTML = "";
+    if (!eventTrackersLoadOk && !eventTrackersState.length){
+      list.innerHTML = '<div class="sched-empty">読み込み中…</div>';
+      projectsPageSetStatus("読み込み中…");
+      return;
+    }
+    if (!eventTrackersState.length){
+      list.innerHTML = '<div class="pv-habit-empty">プロジェクトがまだありません。「＋ 新規」から追加できます。</div>';
+      projectsPageSetStatus("0 件");
+      return;
+    }
+    var filtered = filterEventTrackers(true);
+    if (!filtered.length){
+      list.innerHTML = '<div class="pv-habit-empty">該当するプロジェクトがありません。</div>';
+      projectsPageSetStatus("0 / " + eventTrackersState.length + " 件");
+      return;
+    }
+    filtered.forEach(function(t){ list.appendChild(buildEventRow(t, true)); });
+    projectsPageSetStatus(
+      filtered.length === eventTrackersState.length
+        ? (eventTrackersState.length + " 件")
+        : (filtered.length + " / " + eventTrackersState.length + " 件（絞り込み中）")
+    );
+  }
+
+  function renderEventTrackersAll(){ renderEventTrackersCard(); renderProjectsPage(); }
+
+  function wireProjectsPage(){
+    if (projectsPageWired) return;
+    projectsPageWired = true;
+    var tabs = document.getElementById("projects-page-tabs");
+    if (tabs) tabs.addEventListener("click", function(e){
+      var btn = e.target.closest(".pv-contracts-tab");
+      if (!btn) return;
+      eventTab = btn.getAttribute("data-tab") || "";
+      renderEventTrackersAll();
+    });
+    var q = document.getElementById("projects-page-q");
+    if (q) q.addEventListener("input", function(){ eventQuery = q.value; renderEventTrackersAll(); });
+    var sortSel = document.getElementById("projects-page-sort");
+    if (sortSel) sortSel.addEventListener("change", function(){ eventPageSort = sortSel.value; renderProjectsPage(); });
+    var newBtn = document.getElementById("projects-page-new");
+    if (newBtn) newBtn.addEventListener("click", function(){
+      openEventModal();
+      if (eventTrackersLoadOk){
+        eventEditRows.push(eventNewRow());
+        eventDetailIdx = eventEditRows.length - 1;
+        renderEventModal();
+      }
+    });
+  }
+
+  function initProjectsPage(){
+    wireProjectsPage();
+    if (!eventTrackersLoadOk) loadEventTrackers(); // 成功時 applyEventTrackers → renderEventTrackersAll
+    else renderProjectsPage();
   }
 
   /* ---- イベントトラッカー管理モーダル (cases/contracts と同じ master-detail) ---- */
@@ -1576,6 +1754,8 @@
   CP.initBusinessCards = function(){ wireContracts(); wireEventTrackers(); loadBusinessBootstrap(); };
   CP.initContractsPage = initContractsPage;
   CP.renderContractsPage = renderContractsPage;
+  CP.initProjectsPage = initProjectsPage;
+  CP.renderProjectsPage = renderProjectsPage;
   CP.loadContracts = loadContracts;
   CP.loadEventTrackers = loadEventTrackers;
   // タスク画面の projectName() がプロジェクト名の予備解決に使う(主は tasks 側の projectsForLink)。

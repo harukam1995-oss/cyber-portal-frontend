@@ -227,7 +227,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.22</span>
+      <span>v2.33.23</span>
     </div>
   </footer>
 </div>
@@ -491,6 +491,46 @@
 
   <section class="panel cal-body-panel">
     <div class="contracts-page-list" id="contracts-page-list"><div class="sched-empty">読み込み中…</div></div>
+  </section>
+</div>
+
+<!-- ================= プロジェクトボード 一覧ページ（ビジネスカードの「すべて表示」から遷移。
+     フィルタ・行はカードと共用。行タップで管理モーダルの詳細へ。アーカイブ済みもここで見る） ================= -->
+<div class="frame" id="view-projects" hidden>
+
+  <header class="panel topbar" data-subhead="プロジェクトボード" data-subtag="CYBER PORTAL"></header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="projects-back" type="button">← 戻る</button>
+      <div class="pv-contracts-tabs" id="projects-page-tabs" role="tablist">
+        <button type="button" class="pv-contracts-tab is-active" data-tab="">すべて</button>
+        <button type="button" class="pv-contracts-tab" data-tab="進行中">進行中</button>
+        <button type="button" class="pv-contracts-tab" data-tab="計画中">計画中</button>
+        <button type="button" class="pv-contracts-tab" data-tab="完了">完了</button>
+        <button type="button" class="pv-contracts-tab pv-contracts-tab-alert" data-tab="alert">アラート</button>
+        <button type="button" class="pv-contracts-tab" data-tab="archived">アーカイブ</button>
+      </div>
+    </div>
+    <div class="cal-toolbar-right">
+      <div class="mail-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="projects-page-q" placeholder="名前・項目・メモで検索" autocomplete="off" maxlength="80">
+      </div>
+      <select id="projects-page-sort" class="pv-contracts-requester" aria-label="並び順">
+        <option value="order">並び順</option>
+        <option value="due">期限が近い順</option>
+        <option value="updated">更新が新しい順</option>
+        <option value="progress">進捗が低い順</option>
+      </select>
+      <button type="button" class="cal-new-btn" id="projects-page-new">＋ 新規</button>
+    </div>
+  </section>
+
+  <section class="panel cal-status-bar" id="projects-page-status">接続確認中…</section>
+
+  <section class="panel cal-body-panel">
+    <div class="projects-page-list" id="projects-page-list"><div class="sched-empty">読み込み中…</div></div>
   </section>
 </div>
 
