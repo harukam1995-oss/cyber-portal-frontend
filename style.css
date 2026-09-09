@@ -1571,6 +1571,28 @@
     max-width:840px; margin:0 auto; padding:4px 0 8px;
   }
   .contracts-page-list .pv-contract-row{ height:auto; }
+  /* 「完了 N 件を表示 / 隠す」。列が中央寄せなので、この行も中央に置く。 */
+  .contracts-page-toggle{ align-self:center; margin-top:2px; }
+
+  /* 一覧ページのステータスバーを KPI バンドにする（「12 件」だけでは状況が分からない）。
+     padding 20px を含めて 880px にすると、内容の左端がリスト（840px 中央寄せ）と揃う。
+     id セレクタで display を持つので [hidden] を明示的に打ち消しておく
+     （.frame[hidden] と同じ理由。無いと非表示時に出たままになる）。 */
+  #contracts-page-status{
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:20px;
+    max-width:880px; margin:0 auto;
+  }
+  #contracts-page-status[hidden]{ display:none; }
+  .contracts-kpi{ display:flex; align-items:baseline; gap:6px; }
+  .contracts-kpi-label{
+    font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint);
+  }
+  .contracts-kpi-value{
+    font-family: var(--font-mono); font-size:13px; font-variant-numeric: tabular-nums;
+    letter-spacing:0; color: var(--text);
+  }
+  .contracts-kpi.is-warn .contracts-kpi-value{ color: var(--warn); }
+  .contracts-kpi.is-err .contracts-kpi-value{ color: var(--err); }
 
   /* 行内の Slack スレッドリンク（カード・一覧ページ共通） */
   .pv-contract-slack-link{
@@ -1600,7 +1622,39 @@
   .pv-contract-row.is-alert:hover, .pv-contract-row.is-alert:focus-visible{ background: rgba(255,207,107,0.14); }
   .pv-contract-row.is-overdue{ border-left-color: var(--err); background: rgba(255,60,90,0.06); }
   .pv-contract-row.is-overdue:hover, .pv-contract-row.is-overdue:focus-visible{ background: rgba(255,60,90,0.12); }
-  .pv-contract-subtitle{ font-size:11px; color: var(--text-faint); }
+  /* 契約書名。同一会社の複数契約（JMDC 3件・MODE Inc 2件 等）を見分ける唯一の手掛かりなので、
+     text-faint / 11px から1段強くして読めるようにする。 */
+  .pv-contract-subtitle{ font-size:12px; color: var(--text-dim); }
+
+  /* 完了（報告済み）の行は落として、要対応の行が前に出るようにする。
+     プロジェクトボードの .pv-event-row.is-archived と同じ手法。hover では戻す。 */
+  .pv-contract-row.is-done{ opacity:.55; }
+  .pv-contract-row.is-done:hover, .pv-contract-row.is-done:focus-visible{ opacity:1; }
+
+  /* 進捗ステッパー（依頼→送付→締結→報告）。日付を「依頼 7/28 ・ 送付 7/29 …」と
+     横に並べるより「今どこで止まっているか」が一目で分かる。デザイン方針で許可されている
+     セグメント進捗を、契約書トラッカーではここで1回だけ使う。 */
+  .pv-contract-steps{ display:flex; gap:6px; margin-top:1px; }
+  .pv-contract-step{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:3px; }
+  .pv-contract-step-bar{ height:2px; border-radius:1px; background: var(--panel-border); }
+  .pv-contract-step.is-done .pv-contract-step-bar{ background: var(--accent); }
+  .pv-contract-step.is-overdue .pv-contract-step-bar{ background: var(--err); }
+  .pv-contract-step-label{
+    font-family: var(--font-mono); font-size:9px; letter-spacing:1px; color: var(--text-faint);
+  }
+  .pv-contract-step.is-current .pv-contract-step-label{ color: var(--text-dim); }
+  /* 日付は mono ＋ tabular-nums で桁を揃える（方針: 数値・日付は mono）。 */
+  .pv-contract-step-date{
+    font-family: var(--font-mono); font-size:10.5px; font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+  }
+  .pv-contract-step.is-done .pv-contract-step-date{ color: var(--text-dim); }
+  /* 依頼者・期限の行（日付3つはステッパーへ移した残り）。 */
+  .pv-contract-meta{
+    font-family: var(--font-mono); font-size:10.5px; font-variant-numeric: tabular-nums;
+    letter-spacing:.2px; color: var(--text-faint);
+  }
+
   /* ビジネスカード用コンパクト行（1行＝契約書名・依頼者・ステータス）。縦を詰める。 */
   .pv-contract-row.is-compact{
     flex-direction: row; align-items: center; gap: 8px;

@@ -33,6 +33,7 @@
   var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
   var contractsLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
+  var contractsShowDone = false; // 一覧ページで「報告済み」(完了)を展開しているか
 
   // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
   function contractAlertLabels(c){
@@ -43,6 +44,33 @@
     var unsigned = c.status !== "締結済み" && c.status !== "報告済み";
     if (c.dueDate && c.dueDate < today && unsigned) out.push("⚠ 期限超過");
     return out;
+  }
+
+  // 状態の進行度 = CONTRACT_STATUSES の添字。未知の値は 0(依頼受領)扱い。
+  function contractStatusIdx(c){
+    var i = CONTRACT_STATUSES.indexOf(c.status);
+    return i === -1 ? 0 : i;
+  }
+  // 並べ替えの優先度(小さいほど上)。アラート → 未締結 → 締結済み(報告待ち) → 報告済み。
+  function contractUrgency(c){
+    if (contractAlertLabels(c).length) return 0;
+    var idx = contractStatusIdx(c);
+    if (idx < 2) return 1;
+    if (idx === 2) return 2;
+    return 3;
+  }
+  // 要対応を先頭に寄せる。カードは先頭3件しか出ないので、これが無いと
+  // 完了済みだけが並んでアラート行が「すべて表示」の中に埋もれる。
+  // 同順位は元の order を保つ(Array#sort は安定)。
+  function sortContractsByUrgency(list){
+    return list.slice().sort(function(a, b){ return contractUrgency(a) - contractUrgency(b); });
+  }
+  // "YYYY-MM-DD" 同士の日数差(b - a)。どちらかが日付キーでなければ null。
+  function dateKeyDiffDays(a, b){
+    var pa = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a || "");
+    var pb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(b || "");
+    if (!pa || !pb) return null;
+    return Math.round((Date.UTC(+pb[1], +pb[2] - 1, +pb[3]) - Date.UTC(+pa[1], +pa[2] - 1, +pa[3])) / 86400000);
   }
 
   var contractSetStatus = makeStatusSetter("pv-contracts-status");
@@ -104,6 +132,38 @@
     });
   }
 
+  // 進捗ステッパーの4段。「報告」だけは対応する日付フィールドが無い(status でしか分からない)。
+  var CONTRACT_STEPS = [
+    { label: "依頼", key: "requestedDate" },
+    { label: "送付", key: "sentDate" },
+    { label: "締結", key: "signedDate" },
+    { label: "報告", key: "" }
+  ];
+  // 依頼→送付→締結→報告 のセグメント進捗。日付を横に並べただけの行より
+  // 「今どこで止まっているか」が一目で分かる。status の添字までを到達済みとする。
+  function buildContractStepper(c, overdue){
+    var idx = contractStatusIdx(c);
+    var wrap = document.createElement("div");
+    wrap.className = "pv-contract-steps";
+    CONTRACT_STEPS.forEach(function(s, i){
+      var step = document.createElement("div");
+      step.className = "pv-contract-step" + (i <= idx ? " is-done" : "") +
+        (i === idx ? " is-current" : "") + (overdue && i === idx ? " is-overdue" : "");
+      var bar = document.createElement("span");
+      bar.className = "pv-contract-step-bar";
+      var lbl = document.createElement("span");
+      lbl.className = "pv-contract-step-label";
+      lbl.textContent = s.label;
+      var dt = document.createElement("span");
+      dt.className = "pv-contract-step-date";
+      var v = s.key ? c[s.key] : "";
+      dt.textContent = v ? contractMD(v) : "–";
+      step.appendChild(bar); step.appendChild(lbl); step.appendChild(dt);
+      wrap.appendChild(step);
+    });
+    return wrap;
+  }
+
   // 1件ぶんの行 DOM。カード(#pv-contracts-list)と一覧ページ(#contracts-page-list)で共用。
   // タップで管理モーダルのその契約書の詳細ビューへ直行。
   function buildContractRow(c){
@@ -111,7 +171,8 @@
     var pending = c.status !== "締結済み" && c.status !== "報告済み";
     var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
     var row = document.createElement("div");
-    row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
+    row.className = "pv-contract-row" + (pending ? " is-pending" : "") + (alerts.length ? " is-alert" : "") +
+      (overdue ? " is-overdue" : "") + (c.status === "報告済み" ? " is-done" : "");
     row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
 
     var head = document.createElement("div");
@@ -173,15 +234,15 @@
       row.appendChild(sub);
     }
 
+    // 日付3つはステッパー側に移したので、ここは依頼者と期限だけ。
+    row.appendChild(buildContractStepper(c, overdue));
+
     var metaLine = [];
-    if (c.requestedDate) metaLine.push("依頼 " + contractMD(c.requestedDate));
-    if (c.sentDate) metaLine.push("送付 " + contractMD(c.sentDate));
-    if (c.signedDate) metaLine.push("締結 " + contractMD(c.signedDate));
     if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
     if (c.dueDate) metaLine.push("期限 " + contractMD(c.dueDate) + " まで");
     if (metaLine.length){
       var meta = document.createElement("div");
-      meta.className = "pv-case-client";
+      meta.className = "pv-contract-meta";
       meta.textContent = metaLine.join(" ・ ");
       row.appendChild(meta);
     }
@@ -208,7 +269,8 @@
     var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
     var row = document.createElement("div");
     row.className = "pv-contract-row is-compact" + (pending ? " is-pending" : "") +
-      (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
+      (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "") +
+      (c.status === "報告済み" ? " is-done" : "");
     row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
 
     var name = document.createElement("span");
@@ -257,7 +319,9 @@
       list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
       return;
     }
-    var filtered = filterContracts();
+    // 要対応(アラート→未締結)を先頭に寄せてから3件を切る。order 順のままだと
+    // 完了済みでカード枠が埋まり、アラート行が一覧ページ側に隠れてしまう。
+    var filtered = sortContractsByUrgency(filterContracts());
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
@@ -307,18 +371,80 @@
       contractsPageSetStatus("0 件");
       return;
     }
-    var filtered = filterContracts();
+    var filtered = sortContractsByUrgency(filterContracts());
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
-      contractsPageSetStatus("0 / " + contractsState.length + " 件");
+      renderContractsKpi(0);
       return;
     }
-    filtered.forEach(function(c){ list.appendChild(buildContractRow(c)); });
-    contractsPageSetStatus(
-      filtered.length === contractsState.length
-        ? (contractsState.length + " 件")
-        : (filtered.length + " / " + contractsState.length + " 件（絞り込み中）")
-    );
+
+    // 完了(報告済み)は既定で畳む。件数の大半が完了なので、畳まないと要対応が埋もれる。
+    //   - タブが「すべて」以外のときは畳まない（「締結」タブは報告済みを見るためのタブ）
+    //   - 検索中も畳まない（探している行が黙って隠れるのを避ける）
+    //   - 全件が完了のときも畳まない（1行も出ないのは不親切）
+    var doneRows = filtered.filter(function(c){ return c.status === "報告済み"; });
+    var canCollapse = contractsTab === "" && !contractsQuery.trim() &&
+      doneRows.length > 0 && doneRows.length < filtered.length;
+    var shown = (canCollapse && !contractsShowDone)
+      ? filtered.filter(function(c){ return c.status !== "報告済み"; })
+      : filtered;
+
+    shown.forEach(function(c){ list.appendChild(buildContractRow(c)); });
+
+    if (canCollapse){
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "pv-list-more contracts-page-toggle";
+      toggle.textContent = contractsShowDone
+        ? ("完了 " + doneRows.length + " 件を隠す")
+        : ("完了 " + doneRows.length + " 件を表示");
+      toggle.addEventListener("click", function(){
+        contractsShowDone = !contractsShowDone;
+        renderContractsPage();
+      });
+      list.appendChild(toggle);
+    }
+    renderContractsKpi(filtered.length);
+  }
+
+  // 一覧ページのステータスバーを KPI バンドにする。件数だけでは「今どういう状況か」が
+  // 分からないため、母数は絞り込みではなく contractsState 全体で数える。
+  function renderContractsKpi(filteredCount){
+    var el = document.getElementById("contracts-page-status");
+    if (!el) return;
+    el.classList.remove("is-err");
+    el.hidden = false;
+    el.innerHTML = "";
+
+    var total = contractsState.length;
+    var ym = jstDateKey(new Date()).slice(0, 7);
+    var pending = 0, alerts = 0, signedThisMonth = 0, leadSum = 0, leadN = 0;
+    contractsState.forEach(function(c){
+      if (contractStatusIdx(c) < 2) pending++;
+      if (contractAlertLabels(c).length) alerts++;
+      if (c.signedDate && c.signedDate.slice(0, 7) === ym) signedThisMonth++;
+      var d = dateKeyDiffDays(c.sentDate, c.signedDate);
+      if (d != null && d >= 0){ leadSum += d; leadN++; }
+    });
+
+    [
+      { label: "件数", value: filteredCount === total ? String(total) : (filteredCount + " / " + total) },
+      { label: "未締結", value: String(pending), tone: pending ? "is-warn" : "" },
+      { label: "アラート", value: String(alerts), tone: alerts ? "is-err" : "" },
+      { label: "今月締結", value: String(signedThisMonth) },
+      { label: "送付→締結 平均", value: leadN ? ((leadSum / leadN).toFixed(1) + " 日") : "—" }
+    ].forEach(function(it){
+      var box = document.createElement("div");
+      box.className = "contracts-kpi" + (it.tone ? " " + it.tone : "");
+      var lbl = document.createElement("span");
+      lbl.className = "contracts-kpi-label";
+      lbl.textContent = it.label;
+      var val = document.createElement("span");
+      val.className = "contracts-kpi-value";
+      val.textContent = it.value;
+      box.appendChild(lbl); box.appendChild(val);
+      el.appendChild(box);
+    });
   }
 
   function wireContractsPage(){
