@@ -2167,42 +2167,51 @@
      ・PC（マウス・幅1025px以上）        → HOME を 16:9 枠に、上下中央寄せ
      ・タブレット（タッチ・幅768px以上）  → HOME を 4:3 枠に
      ・スマホ（〜767px）／中間幅のPC      → 何もしない（従来フロー）
-     枠内はヒーローを flex で伸縮させて余白を吸収し、スクロールバーを出さない。
+     枠は HOME の自然な高さ（≒834px＝縦ギャップ12px時）が収まる幅に取る。
+     ヒーローは flex:1 0 auto で「余った縦だけ食い、決して縮まない」＝下のカードに
+     かぶらない。上下の外余白（レターボックス）は body padding を 10px に詰める。
      transform:scale は不使用。このブロックごと消せば完全に元へ戻る。
      ===================================================================== */
   @media (pointer: fine) and (min-width: 1025px) {
     html.fixed-aspect body:has(> #view-home:not([hidden])){
       display: flex; align-items: center; justify-content: center;
+      padding: 10px;
     }
     html.fixed-aspect #view-home:not([hidden]){
       flex: none;
       max-width: none;
-      width: min(1400px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 16 / 9));
+      width: min(1680px, 100%, calc((100dvh - 20px) * 16 / 9));
       aspect-ratio: 16 / 9;
       height: auto;
+      gap: 12px;
       overflow: auto;
     }
   }
   @media (pointer: coarse) and (min-width: 768px) {
     html.fixed-aspect body:has(> #view-home:not([hidden])){
       display: flex; align-items: center; justify-content: center;
+      padding: 10px;
     }
     html.fixed-aspect #view-home:not([hidden]){
       flex: none;
       max-width: none;
-      width: min(1200px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 4 / 3));
+      width: min(1180px, 100%, calc((100dvh - 20px) * 4 / 3));
       aspect-ratio: 4 / 3;
       height: auto;
+      gap: 12px;
       overflow: auto;
     }
   }
-  /* ヒーロー帯で縦の余りを吸収（少ないときは伸び、詰まったときは縮む）。 */
+  /* ヒーロー帯＝余った縦を食う担当。縮みはしない（下段カードにかぶせない）。
+     下段グリッドの内ギャップも枠内だけ少し詰める。 */
   @media (pointer: fine) and (min-width: 1025px), (pointer: coarse) and (min-width: 768px) {
     html.fixed-aspect #view-home:not([hidden]) .hero{
-      flex: 1 1 auto;
-      min-height: 0;
+      flex: 1 0 auto;
     }
     html.fixed-aspect #view-home:not([hidden]) .hero .scene{
       min-height: 0;
+    }
+    html.fixed-aspect #view-home:not([hidden]) .grid3{
+      gap: 12px;
     }
   }
