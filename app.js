@@ -3084,6 +3084,9 @@
   var ACCOUNT_LABELS = { haruka: "はるか", syslea: "SYSLEA" };
   var reauthBannerAccount = null;
   var reauthBannerExpiresAt = null;
+  // /api/google/status の accounts をそのまま保持。HOME INBOX の「再連携」ボタンを
+  // 「本当に再連携が要るときだけ」出す判定に使う(未取得なら null)。
+  var googleAcctStatus = null;
 
   function reauthDismissKey(account){ return "reauthDismiss_" + account; }
   function isReauthDismissed(account, expiresAt){
@@ -3121,6 +3124,8 @@
   function applyReauthStatus(data){
     if (!reauthBanner) return;
     var accounts = (data && data.accounts) || {};
+    googleAcctStatus = accounts;
+    if (typeof renderHomeInbox === "function") renderHomeInbox();
     var now = Date.now();
     var soonest = null;
     Object.keys(accounts).forEach(function(acct){
@@ -4332,11 +4337,25 @@
   }
 
   function renderHomeInbox(){
-    // 連携ボタンは常時表示。未連携なら「連携する」、連携済みなら「再連携」。
-    homeGoogleConnectBtn.hidden = false;
+    // 再連携ボタンは「実際に再連携が要るとき」だけ出す(どちらかの枠が未連携 or 失効、
+    // または未読取得が google_not_connected)。期限が近いだけの警告は上部の reauth
+    // バナーが担当。両枠とも連携中で有効なら出さない(以前は常時表示でエラーに見えた)。
+    var needReconnect =
+      (harukaUnreadError && harukaUnreadError.code === "google_not_connected") ||
+      (sysleaUnreadError && sysleaUnreadError.code === "google_not_connected");
+    if (googleAcctStatus){
+      Object.keys(googleAcctStatus).forEach(function(a){
+        var s = googleAcctStatus[a] || {};
+        if (!s.connected) needReconnect = true;
+        else if (s.expiresAt && s.expiresAt <= Date.now()) needReconnect = true;
+      });
+    }
+    homeGoogleConnectBtn.hidden = !(needReconnect || googleConnecting);
     if (!googleConnecting){
-      var notConnected = harukaUnreadError && harukaUnreadError.code === "google_not_connected";
-      homeGoogleConnectBtn.textContent = notConnected ? "Googleサービスと連携する" : "Google再連携";
+      var everConnected = googleAcctStatus
+        ? Object.keys(googleAcctStatus).some(function(a){ return (googleAcctStatus[a] || {}).connected; })
+        : !(harukaUnreadError && harukaUnreadError.code === "google_not_connected");
+      homeGoogleConnectBtn.textContent = everConnected ? "Google再連携" : "Googleサービスと連携する";
     }
     renderInboxRow(homeInboxCountNum, homeInboxCountLabel, harukaUnreadCount, harukaUnreadError);
     renderInboxRow(homeInboxCountNumSyslea, homeInboxCountLabelSyslea, sysleaUnreadCount, sysleaUnreadError);

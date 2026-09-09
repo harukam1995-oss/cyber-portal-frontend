@@ -335,7 +335,7 @@
   .quick-tile:hover{ border-color: var(--accent); background: rgba(255,143,63,0.05); }
   .quick-tile svg{ width:22px; height:22px; stroke: var(--cyan); }
   .quick-tile span{ font-size:12px; color: var(--text-dim); letter-spacing:.5px; }
-  .quick-tile .tile-dot{ position:absolute; top:8px; right:8px; width:6px; height:6px; border-radius:50%; background: var(--magenta); box-shadow:0 0 5px var(--magenta); }
+  .quick-tile .tile-dot{ position:absolute; top:8px; right:8px; width:6px; height:6px; border-radius:50%; background: var(--accent); }
 
   /* inbox — simple unread-count tile, click through to the full メール page */
   .inbox-count-btn{
@@ -1227,13 +1227,14 @@
   #view-private .pv-bottom{ grid-template-columns: 1fr 1fr 1fr; }
   /* ビジネス下段は2枚。Slackダイジェスト(内容多め)を広めに */
   #view-business .pv-bottom{ grid-template-columns: 1.6fr 1fr; }
-  /* 左列(TODAY / WEATHER / メモ 等)は内容が少ないので、最後のカードを縦に
-     引き伸ばさない。余った縦は列末尾の素の余白(ドット地)にして、中身スカスカの
-     巨大カードができるのを防ぐ。右列(習慣・契約=中身多め)は従来どおり伸ばす。 */
-  #view-private .pv-grid > .pv-col:first-child > .pv-card:last-child,
-  #view-business .pv-grid > .pv-col:first-child > .pv-card:last-child{ flex: 0 0 auto; }
-  #view-private .pv-grid > .pv-col:first-child > .pv-card:last-child .card-body,
-  #view-business .pv-grid > .pv-col:first-child > .pv-card:last-child .card-body{ flex: 0 0 auto; }
+  /* 左右列の最後のカードを縦に引き伸ばさない。内容が少ないカード(WEATHER / 最近のタスク /
+     習慣トラッカー 等。内部リストは自前で max-height＋スクロール)が中身スカスカのまま
+     ヒーロー高まで伸びて巨大な空白カードになるのを防ぐ。余った縦は列末尾の素の余白
+     (ドット地)にする。以前は列の高さ揃えのため flex:1 1 auto にしていた。 */
+  #view-private .pv-grid > .pv-col > .pv-card:last-child,
+  #view-business .pv-grid > .pv-col > .pv-card:last-child{ flex: 0 0 auto; }
+  #view-private .pv-grid > .pv-col > .pv-card:last-child .card-body,
+  #view-business .pv-grid > .pv-col > .pv-card:last-child .card-body{ flex: 0 0 auto; }
   .pv-card .card-body{ padding-top: 4px; }
   .pv-soon .card-head h2{ color: var(--text-dim); }
   .pv-soon-msg{ font-size:12px; color: var(--text-faint); margin:0; line-height:1.6; }
