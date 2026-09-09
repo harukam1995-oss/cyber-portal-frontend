@@ -928,6 +928,11 @@
 
   .cal-body-panel{ padding:16px 12px 20px; overflow:hidden; }
 
+  /* サブページ（今月の収支 / サブスク）の中央寄せラッパー。カード1枚を程よい幅で置く。 */
+  .subpage-wrap{ width:100%; max-width:520px; margin:0 auto; }
+  .subpage-wrap.is-wide{ max-width:680px; }
+  .subpage-wrap > .pv-card{ display:flex; flex-direction:column; }
+
   .cal-week-headers{ display:flex; margin-bottom:2px; }
   .cal-col-header{
     text-align:center; font-family: var(--font-display); font-size:11px; letter-spacing:1px;
@@ -1585,6 +1590,16 @@
   .pv-contract-row.is-overdue{ border-left-color: var(--err); background: rgba(255,60,90,0.06); }
   .pv-contract-row.is-overdue:hover, .pv-contract-row.is-overdue:focus-visible{ background: rgba(255,60,90,0.12); }
   .pv-contract-subtitle{ font-size:11px; color: var(--text-faint); }
+  /* ビジネスカード用コンパクト行（1行＝契約書名・依頼者・ステータス）。縦を詰める。 */
+  .pv-contract-row.is-compact{
+    flex-direction: row; align-items: center; gap: 8px;
+    padding: 6px 10px; min-width: 0;
+  }
+  .pv-contract-row.is-compact .pv-case-name{ font-size: 12.5px; }
+  .pv-contract-req{
+    flex: none; font-family: var(--font-mono); font-size: 10px;
+    color: var(--text-dim); letter-spacing: .3px; white-space: nowrap;
+  }
   .pv-contract-alert{
     flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
     color: var(--warn); border:1px solid rgba(255,207,107,0.4); border-radius:5px; padding:2px 6px;
@@ -2162,22 +2177,27 @@
      固定アスペクト比ステージ（設定「表示 > 画面を固定比率にする」）
      ---------------------------------------------------------------------
      html.fixed-aspect が付いているときだけ有効。既定は OFF（＝従来の流動幅）。
-     対象は HOME だけ（＝一目で見る概要画面）。プライベート/ビジネス/メール等の
-     詳細ページは中身の量が可変でスクロールが前提のため枠を掛けない。
-     ・PC（マウス・幅1025px以上）        → HOME を 16:9 枠に、上下中央寄せ
-     ・タブレット（タッチ・幅768px以上）  → HOME を 4:3 枠に
+     対象は HOME / プライベート / ビジネス の3ダッシュボード。メール等の詳細ページは
+     中身が可変でスクロール前提のため枠を掛けない。
+     ・PC（マウス・幅1025px以上）        → 16:9 枠に、上下中央寄せ
+     ・タブレット（タッチ・幅768px以上）  → 4:3 枠に
      ・スマホ（〜767px）／中間幅のPC      → 何もしない（従来フロー）
-     枠は HOME の自然な高さ（≒834px＝縦ギャップ12px時）が収まる幅に取る。
-     ヒーローは flex:1 0 auto で「余った縦だけ食い、決して縮まない」＝下のカードに
-     かぶらない。上下の外余白（レターボックス）は body padding を 10px に詰める。
+     枠は自然な高さが収まる幅に取る（幅上限 1680／他タブの1400より広め）。
+     中央の帯（HOME=.hero／プライベート・ビジネス=.pv-grid）を flex:1 0 auto にして
+     「余った縦だけ食い、決して縮まない」＝下のカードにかぶらない。
+     上下の外余白（レターボックス）は body padding を 10px に詰める。
      transform:scale は不使用。このブロックごと消せば完全に元へ戻る。
      ===================================================================== */
   @media (pointer: fine) and (min-width: 1025px) {
-    html.fixed-aspect body:has(> #view-home:not([hidden])){
+    html.fixed-aspect body:has(> #view-home:not([hidden])),
+    html.fixed-aspect body:has(> #view-private:not([hidden])),
+    html.fixed-aspect body:has(> #view-business:not([hidden])){
       display: flex; align-items: center; justify-content: center;
       padding: 10px;
     }
-    html.fixed-aspect #view-home:not([hidden]){
+    html.fixed-aspect #view-home:not([hidden]),
+    html.fixed-aspect #view-private:not([hidden]),
+    html.fixed-aspect #view-business:not([hidden]){
       flex: none;
       max-width: none;
       width: min(1680px, 100%, calc((100dvh - 20px) * 16 / 9));
@@ -2188,11 +2208,15 @@
     }
   }
   @media (pointer: coarse) and (min-width: 768px) {
-    html.fixed-aspect body:has(> #view-home:not([hidden])){
+    html.fixed-aspect body:has(> #view-home:not([hidden])),
+    html.fixed-aspect body:has(> #view-private:not([hidden])),
+    html.fixed-aspect body:has(> #view-business:not([hidden])){
       display: flex; align-items: center; justify-content: center;
       padding: 10px;
     }
-    html.fixed-aspect #view-home:not([hidden]){
+    html.fixed-aspect #view-home:not([hidden]),
+    html.fixed-aspect #view-private:not([hidden]),
+    html.fixed-aspect #view-business:not([hidden]){
       flex: none;
       max-width: none;
       width: min(1180px, 100%, calc((100dvh - 20px) * 4 / 3));
@@ -2202,7 +2226,7 @@
       overflow: auto;
     }
   }
-  /* ヒーロー帯＝余った縦を食う担当。縮みはしない（下段カードにかぶせない）。
+  /* 中央帯＝余った縦を食う担当。縮みはしない（下段カードにかぶせない）。
      下段グリッドの内ギャップも枠内だけ少し詰める。 */
   @media (pointer: fine) and (min-width: 1025px), (pointer: coarse) and (min-width: 768px) {
     html.fixed-aspect #view-home:not([hidden]) .hero{
@@ -2212,6 +2236,18 @@
       min-height: 0;
     }
     html.fixed-aspect #view-home:not([hidden]) .grid3{
+      gap: 12px;
+    }
+    /* プライベート/ビジネスは中身が少なめ。グリッドは枠いっぱいに広げるが、
+       行は引き伸ばさず中央に寄せる（16:9ステージに内容がふわっと浮く見た目）。 */
+    html.fixed-aspect #view-private:not([hidden]) .pv-grid,
+    html.fixed-aspect #view-business:not([hidden]) .pv-grid{
+      flex: 1 1 auto;
+      align-content: center;
+      gap: 12px;
+    }
+    html.fixed-aspect #view-private:not([hidden]) .pv-bottom,
+    html.fixed-aspect #view-business:not([hidden]) .pv-bottom{
       gap: 12px;
     }
   }

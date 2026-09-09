@@ -228,7 +228,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.13</span>
+      <span>v2.33.14</span>
     </div>
   </footer>
 </div>
@@ -256,35 +256,8 @@
           <div class="pv-weather-note" id="pv-weather-note">接続確認中…</div>
         </div>
       </section>
-      <!-- 今月の収支（v1b: 家計簿スプレッドシート連携） -->
-      <section class="panel pv-card pv-fin">
-        <div class="card-head">
-          <h2>今月の収支</h2>
-          <button type="button" class="pv-fin-add" id="pv-fin-add" hidden>＋ 追加</button>
-        </div>
-        <div class="card-body">
-          <div class="pv-fin-main" id="pv-fin-main" hidden>
-            <div class="pv-fin-donut-wrap">
-              <svg class="pv-fin-donut" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-                <circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.07)" stroke-width="10"/>
-                <circle id="pv-fin-arc-expense" cx="60" cy="60" r="52" stroke="#a8836a" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
-                <circle id="pv-fin-arc-income" cx="60" cy="60" r="52" stroke="var(--accent)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
-              </svg>
-              <div class="pv-fin-donut-center">
-                <span class="pv-fin-donut-label">収支差</span>
-                <span class="pv-fin-donut-value" id="pv-fin-diff">¥--</span>
-              </div>
-            </div>
-            <dl class="pv-fin-figures">
-              <div><dt>収入合計</dt><dd id="pv-fin-income" class="is-income">¥--</dd></div>
-              <div><dt>支出合計</dt><dd id="pv-fin-expense" class="is-expense">¥--</dd></div>
-              <div><dt>当月の残り日数</dt><dd id="pv-fin-daysleft">--日</dd></div>
-            </dl>
-          </div>
-          <p class="pv-fin-status" id="pv-fin-status">読み込み中…</p>
-          <button type="button" class="inbox-reconnect pv-fin-reconnect" id="pv-fin-reconnect" hidden>Google再連携</button>
-        </div>
-      </section>
+      <!-- 今月の収支 / サブスク は別ページ（#view-finance / #view-subs）へ移動。
+           クイックアクセスのアイコンから開く。 -->
     </div>
 
     <section class="panel pv-hero">
@@ -309,18 +282,6 @@
           </div>
           <div class="pv-habit-list" id="pv-habit-list"></div>
           <p class="pv-habit-status" id="pv-habit-status">読み込み中…</p>
-        </div>
-      </section>
-      <!-- サブスク管理（users/{uid}/subscriptions） -->
-      <section class="panel pv-card">
-        <div class="card-head">
-          <h2>サブスク</h2>
-          <button type="button" class="pv-habit-manage" id="pv-subs-manage">管理</button>
-        </div>
-        <div class="card-body">
-          <div class="pv-subs-list" id="pv-subs-list"></div>
-          <div class="pv-subs-total" id="pv-subs-total" hidden></div>
-          <p class="pv-subs-status" id="pv-subs-status">読み込み中…</p>
         </div>
       </section>
     </div>
@@ -367,6 +328,8 @@
             <button class="quick-tile" type="button" id="pv-quick-notes"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>メモ</span></button>
             <button class="quick-tile" type="button" id="pv-quick-mail"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>メール</span></button>
             <button class="quick-tile" type="button" id="pv-quick-ideas"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-4 10.5c.6.6 1 1.6 1 2.5h6c0-.9.4-1.9 1-2.5A6 6 0 0 0 12 2Z"/></svg><span>アイデア帳</span></button>
+            <button class="quick-tile" type="button" id="pv-quick-finance"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg><span>今月の収支</span></button>
+            <button class="quick-tile" type="button" id="pv-quick-subs"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg><span>サブスク</span></button>
             <a class="quick-tile" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M6.3 17.7l2.8-2.8M14.9 9.1l2.8-2.8"/></svg><span>Claude</span></a>
           </div>
         </div>
@@ -553,6 +516,121 @@
   <section class="panel cal-body-panel">
     <div class="contracts-page-list" id="contracts-page-list"><div class="sched-empty">読み込み中…</div></div>
   </section>
+</div>
+
+<!-- ================= 今月の収支 ページ（プライベートのクイックアクセスから遷移。
+     家計簿スプレッドシート連携。中身・IDはプライベートのカードから移設） ================= -->
+<div class="frame" id="view-finance" hidden>
+  <header class="panel topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#gfin)" stroke-width="2.4"/>
+          <path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#gfin)" opacity="0.85"/>
+          <defs><linearGradient id="gfin" x1="4" y1="3" x2="36" y2="37"><stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="name">今月の収支</div>
+        <div class="tag">CYBER PORTAL</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="profile">
+        <div class="avatar">遥</div>
+        <div class="profile-meta">
+          <div class="uname">HARUKA</div>
+          <div class="status">Online</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="finance-back" type="button">← 戻る</button>
+    </div>
+  </section>
+
+  <div class="subpage-wrap">
+    <section class="panel pv-card pv-fin">
+      <div class="card-head">
+        <h2>今月の収支</h2>
+        <button type="button" class="pv-fin-add" id="pv-fin-add" hidden>＋ 追加</button>
+      </div>
+      <div class="card-body">
+        <div class="pv-fin-main" id="pv-fin-main" hidden>
+          <div class="pv-fin-donut-wrap">
+            <svg class="pv-fin-donut" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+              <circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.07)" stroke-width="10"/>
+              <circle id="pv-fin-arc-expense" cx="60" cy="60" r="52" stroke="#a8836a" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+              <circle id="pv-fin-arc-income" cx="60" cy="60" r="52" stroke="var(--accent)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+            </svg>
+            <div class="pv-fin-donut-center">
+              <span class="pv-fin-donut-label">収支差</span>
+              <span class="pv-fin-donut-value" id="pv-fin-diff">¥--</span>
+            </div>
+          </div>
+          <dl class="pv-fin-figures">
+            <div><dt>収入合計</dt><dd id="pv-fin-income" class="is-income">¥--</dd></div>
+            <div><dt>支出合計</dt><dd id="pv-fin-expense" class="is-expense">¥--</dd></div>
+            <div><dt>当月の残り日数</dt><dd id="pv-fin-daysleft">--日</dd></div>
+          </dl>
+        </div>
+        <p class="pv-fin-status" id="pv-fin-status">読み込み中…</p>
+        <button type="button" class="inbox-reconnect pv-fin-reconnect" id="pv-fin-reconnect" hidden>Google再連携</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ================= サブスク ページ（プライベートのクイックアクセスから遷移。
+     家計簿スプレッドシートの「サブスク管理」タブ連携。中身・IDはカードから移設） ================= -->
+<div class="frame" id="view-subs" hidden>
+  <header class="panel topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#gsub)" stroke-width="2.4"/>
+          <path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#gsub)" opacity="0.85"/>
+          <defs><linearGradient id="gsub" x1="4" y1="3" x2="36" y2="37"><stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="name">サブスク</div>
+        <div class="tag">CYBER PORTAL</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="profile">
+        <div class="avatar">遥</div>
+        <div class="profile-meta">
+          <div class="uname">HARUKA</div>
+          <div class="status">Online</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="subs-back" type="button">← 戻る</button>
+    </div>
+  </section>
+
+  <div class="subpage-wrap is-wide">
+    <section class="panel pv-card">
+      <div class="card-head">
+        <h2>サブスク</h2>
+        <button type="button" class="pv-habit-manage" id="pv-subs-manage">管理</button>
+      </div>
+      <div class="card-body">
+        <div class="pv-subs-list" id="pv-subs-list"></div>
+        <div class="pv-subs-total" id="pv-subs-total" hidden></div>
+        <p class="pv-subs-status" id="pv-subs-status">読み込み中…</p>
+      </div>
+    </section>
+  </div>
 </div>
 
 <!-- ================= 契約書トラッカーの管理モーダル ================= -->
@@ -1562,7 +1640,7 @@
           <input type="checkbox" id="settings-hero"> ヒーローのイラストを表示する
         </label>
         <label class="settings-check">
-          <input type="checkbox" id="settings-aspect"> HOMEを固定比率にする（PC=16:9 / タブレット=4:3 / スマホは従来）
+          <input type="checkbox" id="settings-aspect"> 画面を固定比率にする（HOME/プライベート/ビジネスを PC=16:9・タブレット=4:3。スマホは従来）
         </label>
         <label>カレンダーの初期表示
           <select id="settings-cal-view">

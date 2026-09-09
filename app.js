@@ -794,6 +794,8 @@
   var viewIdeas = document.getElementById("view-ideas");
   var viewPayables = document.getElementById("view-payables");
   var viewContracts = document.getElementById("view-contracts");
+  var viewFinance = document.getElementById("view-finance");
+  var viewSubs = document.getElementById("view-subs");
   var appTopbar = document.getElementById("app-topbar");
   var navHome = document.getElementById("nav-home");
   var navPrivate = document.getElementById("nav-private");
@@ -808,6 +810,8 @@
   var businessInitialized = false;
   var payablesInitialized = false;
   var contractsPageInitialized = false;
+  var financeInitialized = false;
+  var subsPageInitialized = false;
 
   function showView(name){
     var isDash = name === "home" || name === "private" || name === "business";
@@ -821,6 +825,8 @@
     viewIdeas.hidden = name !== "ideas";
     if (viewPayables) viewPayables.hidden = name !== "payables";
     if (viewContracts) viewContracts.hidden = name !== "contracts";
+    if (viewFinance) viewFinance.hidden = name !== "finance";
+    if (viewSubs) viewSubs.hidden = name !== "subs";
 
     if (isDash){
       currentDashboard = name;
@@ -878,6 +884,16 @@
       if (!contractsPageInitialized){ contractsPageInitialized = true; initContractsPage(); }
       else renderContractsPage();
     }
+    if (name === "finance" && !financeInitialized){
+      financeInitialized = true;
+      wireFinanceModal();
+      loadFinance();
+    }
+    if (name === "subs" && !subsPageInitialized){
+      subsPageInitialized = true;
+      wireSubs();
+      loadSubs();
+    }
     window.scrollTo(0, 0);
   }
 
@@ -890,13 +906,14 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "finance-back", "subs-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
   // プライベートのクイックアクセス: はるかを選択済みにしてサブ画面を開く
   [["pv-quick-tasks", "tasks"], ["pv-quick-calendar", "calendar"], ["pv-quick-notes", "notes"],
-   ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"]].forEach(function(pair){
+   ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"],
+   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"]].forEach(function(pair){
     var b = document.getElementById(pair[0]);
     if (b) b.addEventListener("click", function(){
       if (typeof setDefaultAccount === "function") setDefaultAccount("haruka");
@@ -925,14 +942,10 @@
     }
     loadWeather();          // 即時反映(通常は30分間隔)
     loadPrivateUpcoming();
-    wireFinanceModal();
-    loadFinance();
     wireHabitTracker();
     loadHabits();
     wirePlan();
     loadPlan();
-    wireSubs();
-    loadSubs();
   }
 
   async function loadPrivateUpcoming(){
@@ -2625,6 +2638,52 @@
     return row;
   }
 
+  // ビジネスカード用のコンパクト行（1行＝契約書名・依頼者・ステータスのみ）。
+  // 縦を詰めてカードに多めに載せるため。詳細（日付/アラート/Slack）は一覧ページか
+  // 行タップで開く管理モーダルで見る。
+  function buildContractRowCompact(c){
+    var pending = c.status !== "締結済み" && c.status !== "報告済み";
+    var alerts = contractAlertLabels(c);
+    var overdue = alerts.indexOf("⚠ 期限超過") !== -1;
+    var row = document.createElement("div");
+    row.className = "pv-contract-row is-compact" + (pending ? " is-pending" : "") +
+      (alerts.length ? " is-alert" : "") + (overdue ? " is-overdue" : "");
+    row.style.setProperty("--contract-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
+
+    var name = document.createElement("span");
+    name.className = "pv-case-name";
+    name.textContent = c.title || c.client || "(名称未設定)";
+    row.appendChild(name);
+
+    if (c.confidential){
+      var lock = document.createElement("span");
+      lock.className = "pv-case-lock"; lock.textContent = "🔒"; lock.title = "機密案件";
+      row.appendChild(lock);
+    }
+    if (c.requestedBy){
+      var req = document.createElement("span");
+      req.className = "pv-contract-req";
+      req.textContent = c.requestedBy;
+      row.appendChild(req);
+    }
+    var status = document.createElement("span");
+    status.className = "pv-case-status-badge";
+    status.style.setProperty("--case-accent", CONTRACT_STATUS_COLOR[c.status] || "var(--text-faint)");
+    status.textContent = c.status;
+    row.appendChild(status);
+
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    (function(id){
+      function open(){ openContractModal(id); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); }
+      });
+    })(c.id);
+    return row;
+  }
+
   // カードとページの両方を更新する(フィルタ状態は共用なので片方を触ったらもう片方も揃える)。
   function renderContractsAll(){ renderContracts(); renderContractsPage(); }
 
@@ -2642,9 +2701,9 @@
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
     }
-    // カードは2件まで。残りは「すべて表示」で一覧ページ(#view-contracts)へ。
-    var CONTRACTS_CARD_MAX = 2;
-    filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){ list.appendChild(buildContractRow(c)); });
+    // カードは4件まで（コンパクト行で縦を詰めた）。残りは「すべて表示」で一覧ページ(#view-contracts)へ。
+    var CONTRACTS_CARD_MAX = 4;
+    filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){ list.appendChild(buildContractRowCompact(c)); });
     if (filtered.length > CONTRACTS_CARD_MAX){
       var more = document.createElement("button");
       more.type = "button";
