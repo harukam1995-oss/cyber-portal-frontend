@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 112;
+  var BUILD_V = 113;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -612,6 +612,7 @@
   var viewPayables = document.getElementById("view-payables");
   var viewContracts = document.getElementById("view-contracts");
   var viewProjects = document.getElementById("view-projects");
+  var viewSlack = document.getElementById("view-slack");
   var viewFinance = document.getElementById("view-finance");
   var viewSubs = document.getElementById("view-subs");
   var appTopbar = document.getElementById("app-topbar");
@@ -663,6 +664,7 @@
   var payablesInitialized = false;
   var contractsPageInitialized = false;
   var projectsPageInitialized = false;
+  var slackPageInitialized = false;
   var financeInitialized = false;
   var subsPageInitialized = false;
 
@@ -688,7 +690,7 @@
   function loadPayablesModule(){ return loadModuleOnce("app.payables.js", "initPayables"); }
   function loadBusinessModule(){ return loadModuleOnce("app.business.js", "initBusinessCards"); }
   function bizModuleFail(err){
-    ["pv-contracts-status", "pv-events-status", "pv-slack-status", "contracts-page-status", "projects-page-status"].forEach(function(id){
+    ["pv-contracts-status", "pv-events-status", "pv-slack-status", "contracts-page-status", "projects-page-status", "slack-page-status"].forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.textContent = "モジュールの読み込みに失敗しました。タブを開き直してください。";
     });
@@ -726,6 +728,7 @@
     if (viewPayables) viewPayables.hidden = name !== "payables";
     if (viewContracts) viewContracts.hidden = name !== "contracts";
     if (viewProjects) viewProjects.hidden = name !== "projects";
+    if (viewSlack) viewSlack.hidden = name !== "slack";
     if (viewFinance) viewFinance.hidden = name !== "finance";
     if (viewSubs) viewSubs.hidden = name !== "subs";
 
@@ -800,6 +803,12 @@
         else window.__CP.renderProjectsPage();
       }).catch(bizModuleFail);
     }
+    if (name === "slack"){
+      loadBusinessModule().then(function(){
+        if (!slackPageInitialized){ slackPageInitialized = true; window.__CP.initSlackPage(); }
+        else window.__CP.renderSlackPage();
+      }).catch(bizModuleFail);
+    }
     if (name === "finance" && !financeInitialized){
       financeInitialized = true;
       wireFinanceModal();
@@ -822,7 +831,7 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "finance-back", "subs-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });

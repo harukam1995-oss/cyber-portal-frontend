@@ -1806,86 +1806,397 @@
   }
 
   /* ================= ビジネス: Slackダイジェスト(フェーズB) =================
-     読み取り専用。Claudeの定期実行タスクが /api/slack-digest へ書き込み、
-     このカードはその最新10件を表示するだけ(手動の作成/編集/削除はない)。 */
+     読み取り専用。Claudeの定期実行タスク(JST 9/13/16/18時)が /api/slack-digest へ書き込み、
+     ここはそれを表示するだけ(手動の作成/編集/削除はない)。
+     ビジネスカード = 最新3件。全件ページ #view-slack = 保持ぶん全件を検索・セクション・期間で
+     絞り込み、日別タイムラインで見る。
+     summary は「■セクション名 → ・箇条書き」のプレーンテキスト(定期タスクの SKILL.md が
+     フォーマットを固定している)。parseDigest() でそれを構造に戻し、カードとページで共用する。 */
   var slackDigestSetStatus = makeStatusSetter("pv-slack-status");
+  var slackPageSetStatus = makeStatusSetter("slack-page-status");
 
-  // ダイジェスト本文から一覧用の見出し1行を作る。
-  // 「■Claudeからの一言」直下の実文を優先。無ければ含まれるセクション名を並べる。
-  function digestHeadline(summary){
-    var lines = String(summary || "").split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean);
-    for (var i = 0; i < lines.length; i++){
-      if (lines[i].indexOf("■Claudeからの一言") === 0){
-        if (lines[i + 1] && lines[i + 1].charAt(0) !== "■") return lines[i + 1];
-        break;
+  var SLACK_NOTE_TITLE = "Claudeからの一言"; // 冒頭の要約1行。セクションとしては扱わない
+  var SLACK_CARD_MAX = 3;     // ビジネスカードに載せる件数
+  var SLACK_PAGE_LIMIT = 400; // 全件ページが1回で取る上限(バックの MAX_KEPT=365 より大きく取る)
+
+  var slackCardDigests = [];  // カード用(bootstrap の最新10件)
+  var slackDigestTotal = 0;   // Firestore 上の総件数(カードの「すべて表示（ほか N 件）」用)
+  var slackPageDigests = [];  // 全件ページ用(GET ?limit=400)
+  var slackPageLoadOk = false;
+  var slackPageWired = false;
+  var slackQuery = "";        // 検索窓(スペース区切りで AND)
+  var slackSection = "";      // "" = すべて / "会社の動き" など
+  var slackPeriod = "";       // "" = 全期間 / "today" / "7" / "30"
+  var slackHideQuiet = false; // 「動きなし」の回を隠す
+
+  // parseDigest() の結果は本文が変わらない限り使い回す(検索の1打鍵ごとに全件を再パースしない)。
+  var slackParsedCache = {};
+
+  // 「■見出し」「・箇条書き」のプレーンテキストを { note, sections[], count, quiet } に戻す。
+  function parseDigest(summary){
+    var sections = [];
+    var cur = null;
+    String(summary || "").split(/\r?\n/).forEach(function(raw){
+      var line = raw.trim();
+      if (!line) return;
+      if (line.charAt(0) === "■"){
+        cur = { title: line.replace(/^■\s*/, "").trim(), lines: [] };
+        sections.push(cur);
+        return;
       }
+      if (!cur){ cur = { title: "", lines: [] }; sections.push(cur); } // 見出し無しで始まる古い形式
+      cur.lines.push(line.replace(/^[・･\-*]\s*/, ""));
+    });
+    var note = "", body = [];
+    sections.forEach(function(s){
+      if (s.title.indexOf(SLACK_NOTE_TITLE) === 0){ if (!note) note = s.lines.join(" "); }
+      else body.push(s);
+    });
+    var count = 0;
+    body.forEach(function(s){ count += s.lines.length; });
+    return { note: note, sections: body, count: count, quiet: count === 0 };
+  }
+  function parsedOf(d){
+    var key = d.id || ("t" + d.createdAt);
+    var hit = slackParsedCache[key];
+    if (!hit || hit.src !== d.summary){
+      hit = parseDigest(d.summary);
+      hit.src = d.summary;
+      slackParsedCache[key] = hit;
     }
-    var heads = lines
-      .filter(function(l){ return l.charAt(0) === "■" && l.indexOf("Claudeからの一言") === -1; })
-      .map(function(l){ return l.replace(/^■/, "").replace(/の動き$/, ""); });
-    if (heads.length) return heads.join("・");
-    return lines[0] || "ダイジェスト";
+    return hit;
   }
 
-  function renderSlackDigest(digests){
+  // 一覧の見出し1行。「一言」→ 中身のあるセクション名 → 最初の箇条書き、の順に拾う。
+  function digestHeadline(d){
+    var p = parsedOf(d);
+    if (p.note) return p.note;
+    var withBody = p.sections.filter(function(s){ return s.lines.length; });
+    if (withBody.length){
+      var heads = withBody.map(function(s){ return s.title.replace(/の動き$/, ""); }).filter(Boolean);
+      if (heads.length) return heads.join("・");
+      return withBody[0].lines[0];
+    }
+    return "動きなし";
+  }
+
+  var SLACK_WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+  function digestDayKey(ms){ return jstDateKey(new Date(ms)); }
+  function digestStamp(ms){ return mdLabel(digestDayKey(ms)) + " " + fmtSavedAt(ms); }
+  function digestDayLabel(key){
+    var p = key.split("-");
+    var wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return mdLabel(key) + "（" + SLACK_WEEKDAYS[wd] + "）";
+  }
+  function slackTerms(){
+    return slackQuery.toLowerCase().split(/[\s　]+/).filter(Boolean).slice(0, 6);
+  }
+
+  // text を el に流し込みつつ、terms に一致する部分だけ <mark> で囲む(検索語ハイライト)。
+  // innerHTML を使わずテキストノードで組むので、本文に < や & があっても壊れない。
+  function appendHighlighted(el, text, terms){
+    var src = String(text == null ? "" : text);
+    if (!terms || !terms.length){ el.appendChild(document.createTextNode(src)); return; }
+    var lower = src.toLowerCase();
+    var hits = [];
+    terms.forEach(function(t){
+      var from = 0, i;
+      while ((i = lower.indexOf(t, from)) !== -1){ hits.push([i, i + t.length]); from = i + t.length; }
+    });
+    if (!hits.length){ el.appendChild(document.createTextNode(src)); return; }
+    hits.sort(function(a, b){ return a[0] - b[0]; });
+    var merged = [];
+    hits.forEach(function(h){
+      var last = merged[merged.length - 1];
+      if (last && h[0] <= last[1]) last[1] = Math.max(last[1], h[1]);
+      else merged.push([h[0], h[1]]);
+    });
+    var pos = 0;
+    merged.forEach(function(m){
+      if (m[0] > pos) el.appendChild(document.createTextNode(src.slice(pos, m[0])));
+      var mk = document.createElement("mark");
+      mk.className = "slack-hl";
+      mk.textContent = src.slice(m[0], m[1]);
+      el.appendChild(mk);
+      pos = m[1];
+    });
+    if (pos < src.length) el.appendChild(document.createTextNode(src.slice(pos)));
+  }
+
+  // カードと全件ページで共用する1件ぶんの行。opts = { terms, section, open }。
+  // section が入っているとそのセクションだけを詳細に出す(ページのセクション絞り込み用)。
+  function buildDigestItem(d, opts){
+    var o = opts || {};
+    var terms = o.terms || [];
+    var secFilter = o.section || "";
+    var p = parsedOf(d);
+
+    var item = document.createElement("div");
+    item.className = "pv-slack-item" + (p.quiet ? " is-quiet" : "");
+
+    var head = document.createElement("button");
+    head.type = "button";
+    head.className = "pv-slack-head";
+    head.setAttribute("aria-expanded", "false");
+    var time = document.createElement("span");
+    time.className = "pv-slack-time";
+    time.textContent = d.createdAt ? digestStamp(d.createdAt) : "";
+    var headline = document.createElement("span");
+    headline.className = "pv-slack-headline";
+    appendHighlighted(headline, digestHeadline(d), terms);
+    head.appendChild(time);
+    head.appendChild(headline);
+    if (p.count){
+      var badge = document.createElement("span");
+      badge.className = "pv-slack-count";
+      badge.textContent = String(p.count);
+      badge.title = p.count + " 件の記載";
+      head.appendChild(badge);
+    }
+    item.appendChild(head);
+
+    var detail = document.createElement("div");
+    detail.className = "pv-slack-detail";
+    detail.hidden = true;
+
+    if (d.channels && d.channels.length){
+      var chans = document.createElement("div");
+      chans.className = "pv-slack-channels";
+      d.channels.forEach(function(c){
+        var chip = document.createElement("span");
+        chip.className = "pv-slack-chan";
+        appendHighlighted(chip, "#" + c, terms);
+        chans.appendChild(chip);
+      });
+      detail.appendChild(chans);
+    }
+    if (p.note){
+      var note = document.createElement("div");
+      note.className = "pv-slack-note";
+      appendHighlighted(note, p.note, terms);
+      detail.appendChild(note);
+    }
+    var shown = p.sections.filter(function(s){
+      return s.lines.length && (!secFilter || s.title === secFilter);
+    });
+    shown.forEach(function(s){
+      var sec = document.createElement("div");
+      sec.className = "pv-slack-sec";
+      if (s.title){
+        var t = document.createElement("div");
+        t.className = "pv-slack-sec-title";
+        t.textContent = s.title;
+        sec.appendChild(t);
+      }
+      var ul = document.createElement("ul");
+      ul.className = "pv-slack-sec-list";
+      s.lines.forEach(function(line){
+        var li = document.createElement("li");
+        appendHighlighted(li, line, terms);
+        ul.appendChild(li);
+      });
+      sec.appendChild(ul);
+      detail.appendChild(sec);
+    });
+    if (!shown.length && !p.note){
+      var empty = document.createElement("div");
+      empty.className = "pv-slack-note";
+      empty.textContent = "この回に記載はありません。";
+      detail.appendChild(empty);
+    }
+    item.appendChild(detail);
+
+    head.addEventListener("click", function(){
+      var open = detail.hidden;
+      detail.hidden = !open;
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      item.classList.toggle("is-open", open);
+    });
+    if (o.open){
+      detail.hidden = false;
+      head.setAttribute("aria-expanded", "true");
+      item.classList.add("is-open");
+    }
+    return item;
+  }
+
+  function applySlackDigests(digests, total){
+    slackCardDigests = digests || [];
+    if (typeof total === "number" && total >= 0) slackDigestTotal = total;
+    renderSlackDigest();
+  }
+
+  function renderSlackDigest(){
     var list = document.getElementById("pv-slack-list");
     if (!list) return;
     list.innerHTML = "";
-    if (!digests || !digests.length){
+    if (!slackCardDigests.length){
       list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクの設定後、9/13/16/18時に届きます。</div>';
       return;
     }
-    var SLACK_CARD_MAX = 3; // カードは最新3件まで
-    digests.slice(0, SLACK_CARD_MAX).forEach(function(d){
-      var item = document.createElement("div");
-      item.className = "pv-slack-item";
-
-      // 見出し行(クリックで詳細を開閉)
-      var head = document.createElement("button");
-      head.type = "button";
-      head.className = "pv-slack-head";
-      head.setAttribute("aria-expanded", "false");
-      var time = document.createElement("span");
-      time.className = "pv-slack-time";
-      time.textContent = d.createdAt ? fmtSavedAt(d.createdAt) : "";
-      var headline = document.createElement("span");
-      headline.className = "pv-slack-headline";
-      headline.textContent = digestHeadline(d.summary);
-      head.appendChild(time);
-      head.appendChild(headline);
-      item.appendChild(head);
-
-      // 詳細(既定は閉じている)
-      var detail = document.createElement("div");
-      detail.className = "pv-slack-detail";
-      detail.hidden = true;
-      if (d.channels && d.channels.length){
-        var chans = document.createElement("div");
-        chans.className = "pv-slack-channels";
-        chans.textContent = d.channels.map(function(c){ return "#" + c; }).join(" ");
-        detail.appendChild(chans);
-      }
-      var body = document.createElement("div");
-      body.className = "pv-slack-summary";
-      body.textContent = d.summary || "";
-      detail.appendChild(body);
-      item.appendChild(detail);
-
-      head.addEventListener("click", function(){
-        var open = detail.hidden;
-        detail.hidden = !open;
-        head.setAttribute("aria-expanded", open ? "true" : "false");
-        item.classList.toggle("is-open", open);
-      });
-
-      list.appendChild(item);
+    slackCardDigests.slice(0, SLACK_CARD_MAX).forEach(function(d){
+      list.appendChild(buildDigestItem(d, { terms: [], section: "", open: false }));
     });
-    if (digests.length > SLACK_CARD_MAX){
-      var more = document.createElement("div");
-      more.className = "pv-list-more is-static";
-      more.textContent = "…ほか " + (digests.length - SLACK_CARD_MAX) + " 件";
-      list.appendChild(more);
+    // 「…ほか N 件」の静的テキストをやめ、契約書/プロジェクトと同じ「すべて表示」ボタンに揃える。
+    var total = Math.max(slackDigestTotal, slackCardDigests.length);
+    var more = document.createElement("button");
+    more.type = "button";
+    more.className = "pv-list-more";
+    more.textContent = total > SLACK_CARD_MAX
+      ? "すべて表示（ほか " + (total - SLACK_CARD_MAX) + " 件）"
+      : "一覧ページを開く";
+    more.addEventListener("click", function(){ showView("slack"); });
+    list.appendChild(more);
+  }
+
+  /* ---- Slackダイジェスト 全件ページ (#view-slack) ----
+     カードは bootstrap の最新10件しか持たないので、ページは開いたときに
+     GET /api/slack-digest?limit=400 で保持ぶんをまとめて取り直す。 */
+
+  // 期間フィルタの下限を epoch(ms) で返す。0 = 全期間。JST(UTC+9)の 0:00 起点。
+  function slackPeriodFrom(){
+    if (!slackPeriod) return 0;
+    var today = jstDateKey(new Date());
+    var fromKey = slackPeriod === "today" ? today : addDaysKey(today, -(parseInt(slackPeriod, 10) - 1));
+    var p = fromKey.split("-");
+    return Date.UTC(+p[0], +p[1] - 1, +p[2]) - 9 * 3600 * 1000;
+  }
+
+  function filterSlackDigests(){
+    var terms = slackTerms();
+    var from = slackPeriodFrom();
+    return slackPageDigests.filter(function(d){
+      var p = parsedOf(d);
+      if (slackHideQuiet && p.quiet) return false;
+      if (from && !(d.createdAt >= from)) return false;
+      if (slackSection && !p.sections.some(function(s){ return s.title === slackSection && s.lines.length; })) return false;
+      if (terms.length){
+        var hay = ((d.summary || "") + " " + (d.channels || []).join(" ")).toLowerCase();
+        if (!terms.every(function(t){ return hay.indexOf(t) !== -1; })) return false;
+      }
+      return true;
+    });
+  }
+
+  // セクションのタブは固定リストではなく、実データに出てきた見出しから組む
+  // (定期タスクの SKILL.md でフォーマットを変えてもフロントの改修が要らないように)。
+  function renderSlackPageTabs(){
+    var bar = document.getElementById("slack-page-tabs");
+    if (!bar) return;
+    var titles = [];
+    slackPageDigests.forEach(function(d){
+      parsedOf(d).sections.forEach(function(s){
+        if (s.lines.length && s.title && titles.indexOf(s.title) === -1) titles.push(s.title);
+      });
+    });
+    var tabs = [{ key: "", label: "すべて" }].concat(titles.map(function(t){
+      return { key: t, label: t.replace(/の動き$/, "") };
+    }));
+    bar.innerHTML = "";
+    tabs.forEach(function(o){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "pv-contracts-tab" + (o.key === slackSection ? " is-active" : "");
+      b.setAttribute("data-tab", o.key);
+      b.textContent = o.label;
+      bar.appendChild(b);
+    });
+  }
+
+  function renderSlackPage(){
+    var list = document.getElementById("slack-page-list");
+    if (!list) return;
+    renderSlackPageTabs();
+    var q = document.getElementById("slack-page-q");
+    if (q && q.value !== slackQuery) q.value = slackQuery;
+    var per = document.getElementById("slack-page-period");
+    if (per && per.value !== slackPeriod) per.value = slackPeriod;
+    var quiet = document.getElementById("slack-page-quiet");
+    if (quiet && quiet.checked !== slackHideQuiet) quiet.checked = slackHideQuiet;
+
+    list.innerHTML = "";
+    if (!slackPageLoadOk){
+      list.innerHTML = '<div class="sched-empty">読み込み中…</div>';
+      slackPageSetStatus("読み込み中…");
+      return;
     }
+    if (!slackPageDigests.length){
+      list.innerHTML = '<div class="pv-habit-empty">まだダイジェストがありません。定期実行タスクが 9/13/16/18時 に書き込みます。</div>';
+      slackPageSetStatus("0 件");
+      return;
+    }
+    var terms = slackTerms();
+    var filtered = filterSlackDigests();
+    if (!filtered.length){
+      list.innerHTML = '<div class="pv-habit-empty">該当するダイジェストがありません。</div>';
+      slackPageSetStatus("0 / " + slackPageDigests.length + " 件（絞り込み中）");
+      return;
+    }
+    // 検索・セクション絞り込み中は、どこが当たったか分かるよう最初から開いて出す。
+    var openAll = terms.length > 0 || !!slackSection;
+    var curKey = null, dayBox = null;
+    filtered.forEach(function(d){
+      var key = d.createdAt ? digestDayKey(d.createdAt) : "";
+      if (key !== curKey){
+        curKey = key;
+        dayBox = document.createElement("div");
+        dayBox.className = "slack-day";
+        var h = document.createElement("div");
+        h.className = "slack-day-head";
+        h.textContent = key ? digestDayLabel(key) : "日付不明";
+        dayBox.appendChild(h);
+        list.appendChild(dayBox);
+      }
+      dayBox.appendChild(buildDigestItem(d, { terms: terms, section: slackSection, open: openAll }));
+    });
+    slackPageSetStatus(
+      filtered.length === slackPageDigests.length
+        ? (slackPageDigests.length + " 件")
+        : (filtered.length + " / " + slackPageDigests.length + " 件（絞り込み中）")
+    );
+  }
+
+  async function loadSlackPage(){
+    slackPageSetStatus("読み込み中…");
+    try {
+      var res = await apiFetch("/api/slack-digest?limit=" + SLACK_PAGE_LIMIT);
+      slackPageDigests = res.digests || [];
+      slackPageLoadOk = true;
+      // ページで実数が分かったらカードの「ほか N 件」もそれに合わせる。
+      slackDigestTotal = Math.max(slackDigestTotal, slackPageDigests.length);
+      renderSlackPage();
+      renderSlackDigest();
+    } catch (err){
+      var list = document.getElementById("slack-page-list");
+      if (list) list.innerHTML = "";
+      slackPageSetStatus(apiErrorMessage(err, "Slackダイジェスト"), true);
+    }
+  }
+
+  function wireSlackPage(){
+    if (slackPageWired) return;
+    slackPageWired = true;
+    var tabs = document.getElementById("slack-page-tabs");
+    if (tabs) tabs.addEventListener("click", function(e){
+      var btn = e.target.closest(".pv-contracts-tab");
+      if (!btn) return;
+      slackSection = btn.getAttribute("data-tab") || "";
+      renderSlackPage();
+    });
+    var q = document.getElementById("slack-page-q");
+    if (q) q.addEventListener("input", function(){ slackQuery = q.value; renderSlackPage(); });
+    var per = document.getElementById("slack-page-period");
+    if (per) per.addEventListener("change", function(){ slackPeriod = per.value; renderSlackPage(); });
+    var quiet = document.getElementById("slack-page-quiet");
+    if (quiet) quiet.addEventListener("change", function(){ slackHideQuiet = quiet.checked; renderSlackPage(); });
+    var reload = document.getElementById("slack-page-reload");
+    if (reload) reload.addEventListener("click", function(){ loadSlackPage(); });
+  }
+
+  function initSlackPage(){
+    wireSlackPage();
+    if (!slackPageLoadOk) loadSlackPage();
+    else renderSlackPage();
   }
 
   // ビジネスタブ初期化: プロジェクトボード(event_trackers) / contracts / slack_digest を1回で取得。
@@ -1898,13 +2209,14 @@
       var res = await apiFetch("/api/bootstrap/business");
       applyContracts(res.contracts);
       applyEventTrackers(res.eventTrackers, res.eventTemplates);
-      renderSlackDigest(res.digests || []);
+      applySlackDigests(res.digests || [], res.digestTotal);
       slackDigestSetStatus("");
     } catch (err){
       failContracts(err);
       failEventTrackers(err);
       var sl = document.getElementById("pv-slack-list");
       if (sl) sl.innerHTML = "";
+      slackCardDigests = [];
       slackDigestSetStatus(apiErrorMessage(err, "Slackダイジェスト"), true);
     }
   }
@@ -1915,6 +2227,8 @@
   CP.renderContractsPage = renderContractsPage;
   CP.initProjectsPage = initProjectsPage;
   CP.renderProjectsPage = renderProjectsPage;
+  CP.initSlackPage = initSlackPage;
+  CP.renderSlackPage = renderSlackPage;
   CP.loadContracts = loadContracts;
   CP.loadEventTrackers = loadEventTrackers;
   // タスク画面の projectName() がプロジェクト名の予備解決に使う(主は tasks 側の projectsForLink)。

@@ -227,7 +227,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.31</span>
+      <span>v2.33.32</span>
     </div>
   </footer>
 </div>
@@ -534,6 +534,41 @@
 
   <section class="panel cal-body-panel">
     <div class="projects-page-list" id="projects-page-list"><div class="sched-empty">読み込み中…</div></div>
+  </section>
+</div>
+
+<!-- ================= Slackダイジェスト 全件ページ（ビジネスカードの「すべて表示」から遷移。
+     カードは bootstrap の最新10件だけなので、このページは開いたときに保持ぶん全件を取り直す。
+     セクションタブは実データの「■見出し」から動的に組む。行はカードと同じ buildDigestItem） ================= -->
+<div class="frame" id="view-slack" hidden>
+
+  <header class="panel topbar" data-subhead="Slackダイジェスト" data-subtag="CYBER PORTAL"></header>
+
+  <section class="panel cal-toolbar">
+    <div class="cal-toolbar-left">
+      <button class="cal-back-btn" id="slack-back" type="button">← 戻る</button>
+      <div class="pv-contracts-tabs" id="slack-page-tabs" role="tablist"></div>
+    </div>
+    <div class="cal-toolbar-right">
+      <div class="mail-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="slack-page-q" placeholder="本文・チャンネル名で検索（スペース区切りでAND）" autocomplete="off" maxlength="80">
+      </div>
+      <select id="slack-page-period" class="pv-contracts-requester" aria-label="期間で絞り込み">
+        <option value="">全期間</option>
+        <option value="today">今日</option>
+        <option value="7">直近7日</option>
+        <option value="30">直近30日</option>
+      </select>
+      <label class="slack-quiet-toggle"><input type="checkbox" id="slack-page-quiet">動きなしを隠す</label>
+      <button type="button" class="cal-new-btn" id="slack-page-reload">↻ 更新</button>
+    </div>
+  </section>
+
+  <section class="panel cal-status-bar" id="slack-page-status">接続確認中…</section>
+
+  <section class="panel cal-body-panel">
+    <div class="slack-page-list" id="slack-page-list"><div class="sched-empty">読み込み中…</div></div>
   </section>
 </div>
 
