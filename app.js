@@ -607,6 +607,40 @@
   var viewFinance = document.getElementById("view-finance");
   var viewSubs = document.getElementById("view-subs");
   var appTopbar = document.getElementById("app-topbar");
+
+  /* サブ画面(カレンダー/メール/請求書管理/収支/サブスク/契約書/タスク/メモ/アイデア帳)の
+     ヘッダーは #app-topbar と違い brand + profile だけの静的表示。同じ 24 行の markup を
+     9 箇所コピペしていた(六角ロゴの <linearGradient> id も重複)ので、index.html には
+     <header class="panel topbar" data-subhead="表示名" data-subtag="小見出し"> だけ置き、
+     ここで1テンプレから流し込む。この後の querySelectorAll(".profile") 等が拾えるよう
+     view routing より前に実行する。 */
+  Array.prototype.forEach.call(
+    document.querySelectorAll("header.topbar[data-subhead]"),
+    function(h, i){
+      var gid = "brandGrad" + i;
+      h.innerHTML =
+        '<div class="brand">' +
+          '<div class="brand-mark">' +
+            '<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+              '<path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#' + gid + ')" stroke-width="2.4"/>' +
+              '<path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#' + gid + ')" opacity="0.85"/>' +
+              '<defs><linearGradient id="' + gid + '" x1="4" y1="3" x2="36" y2="37">' +
+                '<stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>' +
+            '</svg>' +
+          '</div>' +
+          '<div class="brand-text"><div class="name"></div><div class="tag"></div></div>' +
+        '</div>' +
+        '<div class="top-actions">' +
+          '<div class="profile">' +
+            '<div class="avatar">遥</div>' +
+            '<div class="profile-meta"><div class="uname">HARUKA</div><div class="status">Online</div></div>' +
+          '</div>' +
+        '</div>';
+      h.querySelector(".brand-text .name").textContent = h.getAttribute("data-subhead") || "CYBER PORTAL";
+      h.querySelector(".brand-text .tag").textContent = h.getAttribute("data-subtag") || "CYBER PORTAL";
+    }
+  );
+
   var navHome = document.getElementById("nav-home");
   var navPrivate = document.getElementById("nav-private");
   var navBusiness = document.getElementById("nav-business");
