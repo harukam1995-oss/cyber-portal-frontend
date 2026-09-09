@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 108;
+  var BUILD_V = 109;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3770,11 +3770,17 @@
 
     mailComposeModal.hidden = false;
     document.body.style.overflow = "hidden";
-    // 返信は本文にすぐ書き始めたい / 新規は宛先から
+    // 返信は本文にすぐ書き始めたい / 新規は宛先から。
+    // focus() だけだと引用の長い本文で textarea もフォームも末尾までスクロールした状態で
+    // 開いてしまい、宛先欄と書き始めの位置が見えないので、両方を先頭に戻す。
     var focusEl = (mode === "new" || mode === "forward") ? mailComposeTo : mailComposeBody;
     setTimeout(function(){
       focusEl.focus();
-      if (focusEl === mailComposeBody) mailComposeBody.setSelectionRange(0, 0);
+      if (focusEl === mailComposeBody){
+        mailComposeBody.setSelectionRange(0, 0);
+        mailComposeBody.scrollTop = 0;
+      }
+      mailComposeForm.scrollTop = 0;
     }, 30);
   }
 
