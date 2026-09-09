@@ -558,6 +558,12 @@
 
   function initContractsPage(){
     wireContractsPage();
+    // 管理モーダル(閉じる/保存/削除/新規)の配線。以前この画面はビジネスカードの
+    // 「すべて表示」からしか来られず、その時点で initBusinessCards() が wireContracts() を
+    // 済ませていた。HOME の INBOX から直接来る経路(v2.33.33)ができたため、ここでも
+    // 呼ぶ必要がある。呼ばないと #contract-form の submit ハンドラが付かず、
+    // 「保存」が素の form 送信になってページごとリロードされる(＝編集が消える)。
+    wireContracts();
     if (!contractsLoadOk) loadContracts(); // 成功時 applyContracts → renderContractsAll
     else renderContractsPage();
   }
@@ -1200,6 +1206,7 @@
 
   function initProjectsPage(){
     wireProjectsPage();
+    wireEventTrackers(); // 契約書側と同じ理由（管理モーダルの配線をこの画面単独でも済ませる）
     if (!eventTrackersLoadOk) loadEventTrackers(); // 成功時 applyEventTrackers → renderEventTrackersAll
     else renderProjectsPage();
   }
