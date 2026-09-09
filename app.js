@@ -6420,6 +6420,18 @@
 
   // PWA: サービスワーカー登録
   if ("serviceWorker" in navigator){
+    // 新しい SW が制御を奪ったら(＝デプロイでシェルが更新されたら)1回だけリロードする。
+    // これが無いと「新しい index.html × キャッシュされた旧 app.js」のままのタブが残り、
+    // 削除済み DOM 要素へのアクセス等で初期化が停止する(2026/09 に getContext エラーで再現)。
+    // controller が既にある(=更新)ときだけ購読し、初回訪問では発火させない。
+    if (navigator.serviceWorker.controller){
+      var swReloading = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function(){
+        if (swReloading) return;
+        swReloading = true;
+        window.location.reload();
+      });
+    }
     var reg = function(){ navigator.serviceWorker.register("sw.js").catch(function(err){ console.warn("[sw] register failed", err); }); };
     if (document.readyState === "complete") reg();
     else window.addEventListener("load", reg);
