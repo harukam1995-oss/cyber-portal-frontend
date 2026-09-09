@@ -21,7 +21,9 @@
      営業から依頼される契約書送付の進捗を管理する。案件管理(cases)と同じ master-detail 管理モーダル。
      client(会社名)が主識別子。title(契約書名)は任意の補足。
      status は手動選択。requestedDate/sentDate/signedDate(依頼日/送付日/締結日)で遅延をアラート表示する。 */
-  var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
+  // 状態の定義とアラート判定は app.js 側にある（HOME の INBOX でも使うため）。
+  // ここで再実装すると判定が2箇所に分かれるので __CP から受け取る。
+  var CONTRACT_STATUSES = CP.CONTRACT_STATUSES;
   // 意味のある状態(要対応=warn / 締結済み=ok)だけ色を持たせ、途中経過はニュートラルに(虹色をやめる)
   var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--text-faint)", "締結済み": "var(--ok)", "報告済み": "var(--text-faint)" };
   var CONTRACT_REQUESTERS = ["河野", "藤井", "船木", "竹内"]; // 依頼者の quick-pick / 絞り込み候補
@@ -35,22 +37,30 @@
   var contractsLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
   var contractsShowDone = false; // 一覧ページで「報告済み」(完了)を展開しているか
 
-  // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
-  function contractAlertLabels(c){
-    var today = jstDateKey(new Date());
-    var out = [];
-    if (c.requestedDate && !c.sentDate) out.push("⚠ 送付待ち");
-    if (c.sentDate && !c.signedDate && addDaysKey(c.sentDate, 7) < today) out.push("⚠ 締結遅延");
-    var unsigned = c.status !== "締結済み" && c.status !== "報告済み";
-    if (c.dueDate && c.dueDate < today && unsigned) out.push("⚠ 期限超過");
-    return out;
+  var contractAlertLabels = CP.contractAlertLabels;
+  var contractStatusIdx = CP.contractStatusIdx;
+
+  // 会社名の正規化キー。バック contracts.js の normClient() と同じ規則(NFKC + 前後空白除去 +
+  // 連続空白の畳み込み)に、突き合わせ用の小文字化を足したもの。
+  function normClientKey(s){
+    return String(s || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+  }
+  // 同じ会社の他の契約の件数。JMDC 3件・MODE Inc 2件 のように同社で複数が同時進行するため。
+  function contractSameClientCount(c){
+    var key = normClientKey(c.client);
+    if (!key) return 0;
+    var n = 0;
+    contractsState.forEach(function(x){ if (normClientKey(x.client) === key) n++; });
+    return n - 1;
   }
 
-  // 状態の進行度 = CONTRACT_STATUSES の添字。未知の値は 0(依頼受領)扱い。
-  function contractStatusIdx(c){
-    var i = CONTRACT_STATUSES.indexOf(c.status);
-    return i === -1 ? 0 : i;
-  }
+  // 「次へ進める」1タップ操作。進めた段の日付が空なら今日を入れる
+  // (日付が入らないとアラート判定が変わらず、進めた意味が無いため)。
+  var CONTRACT_NEXT = {
+    "依頼受領": { status: "送付済み", dateKey: "sentDate", label: "送付済みにする" },
+    "送付済み": { status: "締結済み", dateKey: "signedDate", label: "締結済みにする" },
+    "締結済み": { status: "報告済み", dateKey: "", label: "報告済みにする" }
+  };
   // 並べ替えの優先度(小さいほど上)。アラート → 未締結 → 締結済み(報告待ち) → 報告済み。
   function contractUrgency(c){
     if (contractAlertLabels(c).length) return 0;
@@ -71,6 +81,51 @@
     var pb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(b || "");
     if (!pa || !pb) return null;
     return Math.round((Date.UTC(+pb[1], +pb[2] - 1, +pb[3]) - Date.UTC(+pa[1], +pa[2] - 1, +pa[3])) / 86400000);
+  }
+
+  // 行の「◯◯にする」ボタン。行タップ → モーダル → select → 保存 の4手を1手にする。
+  // バックは全置換の PUT /bulk しか無いので、contractsState から全行を組み直して
+  // 対象の1行だけ差し替えて送る(管理モーダルの保存と同じ経路・同じガード)。
+  async function advanceContract(id, btn){
+    if (!contractsLoadOk){
+      contractsPageSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      return;
+    }
+    var cur = null;
+    for (var i = 0; i < contractsState.length; i++){ if (contractsState[i].id === id) cur = contractsState[i]; }
+    var next = cur && CONTRACT_NEXT[cur.status];
+    if (!next) return;
+
+    var today = jstDateKey(new Date());
+    var payload = contractsState.map(function(c){
+      var row = {
+        id: c.id, title: c.title || "", client: c.client || "",
+        requestedBy: c.requestedBy || "", status: c.status,
+        requestedDate: c.requestedDate || "", sentDate: c.sentDate || "",
+        signedDate: c.signedDate || "", dueDate: c.dueDate || "",
+        confidential: c.confidential === true, slackUrl: c.slackUrl || "",
+        source: c.source === "slack" ? "slack" : "manual"
+      };
+      if (c.id === id){
+        row.status = next.status;
+        if (next.dateKey && !row[next.dateKey]) row[next.dateKey] = today;
+        row.source = "manual"; // 手で進めた＝ユーザーが所有する行になる(Slack検知バッジは外れる)
+      }
+      return row;
+    });
+
+    if (btn){ btn.disabled = true; btn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/contracts/bulk", {
+        method: "PUT",
+        headers: { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ contracts: payload })
+      });
+      await loadContracts(); // 成功時は再描画で行ごと作り直されるのでボタンの後始末は不要
+    } catch (err){
+      contractsPageSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
+      if (btn){ btn.disabled = false; btn.textContent = next.label; }
+    }
   }
 
   var contractSetStatus = makeStatusSetter("pv-contracts-status");
@@ -188,6 +243,23 @@
       lock.title = "機密案件";
       head.appendChild(lock);
     }
+    // 同一会社の他契約へ絞り込むチップ。同社で複数が同時進行するので、
+    // 「この会社の分だけ」を1タップで見られるようにする。
+    var sameN = contractSameClientCount(c);
+    if (sameN > 0){
+      var same = document.createElement("button");
+      same.type = "button";
+      same.className = "pv-contract-same";
+      same.textContent = "同社 他" + sameN + "件";
+      same.title = (c.client || "") + " の契約だけに絞り込む";
+      same.addEventListener("click", function(e){
+        e.stopPropagation(); // 行タップ(＝管理モーダル)へは伝播させない
+        contractsQuery = c.client || "";
+        renderContractsAll();
+      });
+      same.addEventListener("keydown", function(e){ e.stopPropagation(); });
+      head.appendChild(same);
+    }
     if (alerts.length){
       alerts.forEach(function(t){
         var a = document.createElement("span");
@@ -223,6 +295,18 @@
       slackLink.title = "Slackスレッドを開く";
       slackLink.addEventListener("click", function(e){ e.stopPropagation(); });
       head.appendChild(slackLink);
+    }
+    // 次の状態へ1タップで進めるボタン(報告済み＝終端には出さない)。
+    var next = CONTRACT_NEXT[c.status];
+    if (next){
+      var adv = document.createElement("button");
+      adv.type = "button";
+      adv.className = "pv-contract-advance";
+      adv.textContent = next.label;
+      adv.title = next.status + " に進めます" + (next.dateKey ? "（日付が空なら今日を入れます）" : "");
+      adv.addEventListener("click", function(e){ e.stopPropagation(); advanceContract(c.id, adv); });
+      adv.addEventListener("keydown", function(e){ e.stopPropagation(); });
+      head.appendChild(adv);
     }
     row.appendChild(head);
 
@@ -2230,6 +2314,12 @@
   CP.initSlackPage = initSlackPage;
   CP.renderSlackPage = renderSlackPage;
   CP.loadContracts = loadContracts;
+  // HOME の INBOX「N 件の契約書アラート」から showView("contracts") したときに
+  // 「アラート」タブを選んだ状態で開くため。検索・依頼者の絞り込みは触らない。
+  CP.setContractsTab = function(tab){
+    contractsTab = tab || "";
+    renderContractsAll();
+  };
   CP.loadEventTrackers = loadEventTrackers;
   // タスク画面の projectName() がプロジェクト名の予備解決に使う(主は tasks 側の projectsForLink)。
   CP.getEventTrackers = function(){ return eventTrackersState; };

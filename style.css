@@ -357,6 +357,11 @@
     color: var(--text-dim); cursor: pointer; letter-spacing: .5px; font-family: var(--font-body);
     transition: border-color .15s ease, color .15s ease;
   }
+  /* 契約書アラート行。メール件数と同じ行フォーマットのまま数字だけ warn 色にする。
+     .inbox-count-btn は `all: unset` + `display:flex` を持つので [hidden] を明示的に打ち消す。 */
+  .inbox-alert-btn .inbox-count-num{ color: var(--warn); }
+  .inbox-alert-btn:hover .inbox-count-label{ color: var(--text); }
+  .inbox-count-btn[hidden]{ display:none; }
   .inbox-reconnect[hidden]{ display:none; }
   .inbox-reconnect:hover{ border-color: var(--cyan); color: var(--text); }
 
@@ -1676,6 +1681,25 @@
     flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
     color: var(--violet); border:1px solid var(--violet); border-radius:5px; padding:2px 6px;
   }
+  /* 次の状態へ1タップで進めるボタン（行 → モーダル → select → 保存 の4手を1手にする）。
+     行タップ＝管理モーダルと競合しないよう click / keydown は行へ伝播させていない。 */
+  .pv-contract-advance{
+    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    color: var(--text-dim); background:transparent; cursor:pointer;
+    border:1px solid var(--panel-border); border-radius:5px; padding:2px 8px;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .pv-contract-advance:hover{ color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .pv-contract-advance:disabled{ opacity:.5; cursor:default; }
+  .pv-contract-advance:disabled:hover{ color: var(--text-dim); background:transparent; border-color: var(--panel-border); }
+  /* 同一会社の他契約に絞り込むチップ。補助情報なので破線で弱く出す。 */
+  .pv-contract-same{
+    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    color: var(--text-faint); background:transparent; cursor:pointer;
+    border:1px dashed var(--panel-border); border-radius:5px; padding:2px 6px;
+    transition: color .15s, border-color .15s;
+  }
+  .pv-contract-same:hover{ color: var(--accent); border-color: var(--accent-dim); }
 
   #contract-detail-body{ display:flex; flex-direction:column; gap:10px; }
   #contract-detail-body .case-edit-status{ flex:none; width:120px !important; padding:7px 8px !important; font-size:12.5px !important; }

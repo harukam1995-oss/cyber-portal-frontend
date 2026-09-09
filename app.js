@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 113;
+  var BUILD_V = 114;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -663,6 +663,9 @@
   var businessInitialized = false;
   var payablesInitialized = false;
   var contractsPageInitialized = false;
+  // showView("contracts") のときに開きたいタブ。モジュールのロードを待ってから
+  // __CP.setContractsTab() に渡す(HOME の契約書アラート行 →「アラート」タブ 用)。
+  var contractsPendingTab = null;
   var projectsPageInitialized = false;
   var slackPageInitialized = false;
   var financeInitialized = false;
@@ -795,6 +798,10 @@
       loadBusinessModule().then(function(){
         if (!contractsPageInitialized){ contractsPageInitialized = true; window.__CP.initContractsPage(); }
         else window.__CP.renderContractsPage();
+        if (contractsPendingTab != null){
+          window.__CP.setContractsTab(contractsPendingTab);
+          contractsPendingTab = null;
+        }
       }).catch(bizModuleFail);
     }
     if (name === "projects"){
@@ -3049,6 +3056,44 @@
   var homeInboxCountNumSyslea = document.getElementById("home-inbox-count-num-syslea");
   var homeInboxCountLabelSyslea = document.getElementById("home-inbox-count-label-syslea");
   var homeGoogleConnectBtn = document.getElementById("home-google-connect-btn");
+  var homeContractAlertBtn = document.getElementById("home-contract-alert-btn");
+  var homeContractAlertNum = document.getElementById("home-contract-alert-num");
+
+  /* ---- 契約書トラッカーのアラート判定（HOME の INBOX と app.business.js で共用） ----
+     app.business.js は業務タブを開くまでロードされないので、HOME でも要る この3つだけは
+     本体側に置き、window.__CP 経由でモジュールへ渡す。判定の実装を2箇所に分けないため。 */
+  var CONTRACT_STATUSES = ["依頼受領", "送付済み", "締結済み", "報告済み"];
+  // 状態の進行度 = CONTRACT_STATUSES の添字。未知の値は 0(依頼受領)扱い。
+  function contractStatusIdx(c){
+    var i = CONTRACT_STATUSES.indexOf(c && c.status);
+    return i === -1 ? 0 : i;
+  }
+  // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
+  function contractAlertLabels(c){
+    var today = jstDateKey(new Date());
+    var out = [];
+    if (c.requestedDate && !c.sentDate) out.push("⚠ 送付待ち");
+    if (c.sentDate && !c.signedDate && addDaysKey(c.sentDate, 7) < today) out.push("⚠ 締結遅延");
+    if (c.dueDate && c.dueDate < today && contractStatusIdx(c) < 2) out.push("⚠ 期限超過");
+    return out;
+  }
+
+  // HOME の INBOX に出す契約書アラート件数。0 件なら行ごと隠す。
+  var homeContractAlerts = 0;
+  function renderHomeContractAlert(){
+    if (!homeContractAlertBtn) return;
+    homeContractAlertBtn.hidden = homeContractAlerts <= 0;
+    if (homeContractAlertNum) homeContractAlertNum.textContent = String(homeContractAlerts);
+  }
+  function applyHomeContractAlerts(list){
+    if (!Array.isArray(list)) return;
+    homeContractAlerts = list.filter(function(c){ return contractAlertLabels(c).length > 0; }).length;
+    renderHomeContractAlert();
+  }
+  if (homeContractAlertBtn) homeContractAlertBtn.addEventListener("click", function(){
+    contractsPendingTab = "alert";
+    showView("contracts");
+  });
 
   // Gmail/Calendar/DriveへのアクセスはFirebase Authenticationのログインとは別に、
   // 追加のGoogle同意(googleAuth.js)が必要。未連携時はもちろん、連携済みでも
@@ -6785,6 +6830,10 @@
 
     if (b.googleStatus) applyReauthStatus(b.googleStatus);
     else checkReauthReminder();
+
+    // 契約書アラート。取れなかったときは行を出さないだけにして、
+    // HOME のために追加の往復を増やさない(業務タブを開けば正しい件数になる)。
+    applyHomeContractAlerts(b.contracts);
   }
 
   async function warmOnAuthReady(){
@@ -6836,7 +6885,11 @@
     showView: showView,
     acctPath: acctPath,
     extractPdfText: extractPdfText,
-    mailAttachBytes: mailAttachBytes
+    mailAttachBytes: mailAttachBytes,
+    // 契約書のアラート判定は HOME の INBOX でも使うので本体側に置き、ここから渡す。
+    CONTRACT_STATUSES: CONTRACT_STATUSES,
+    contractStatusIdx: contractStatusIdx,
+    contractAlertLabels: contractAlertLabels
   };
 
 })();

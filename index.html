@@ -214,6 +214,13 @@
           <span class="inbox-count-label" id="home-inbox-count-label-syslea">読み込み中…</span>
           <span class="inbox-count-acct">SYSLEA</span>
         </button>
+        <!-- 契約書トラッカーのアラート。0件のときは hidden(ビジネスタブを開かないと
+             送付待ち・締結遅延・期限超過に気づけなかったため HOME にも出す) -->
+        <button type="button" class="inbox-count-btn inbox-alert-btn" id="home-contract-alert-btn" hidden>
+          <span class="inbox-count-num" id="home-contract-alert-num">0</span>
+          <span class="inbox-count-label">件の契約書アラート</span>
+          <span class="inbox-count-acct">SYSLEA</span>
+        </button>
         <button type="button" class="inbox-reconnect" id="home-google-connect-btn" hidden>
           Google再連携
         </button>
@@ -227,7 +234,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.32</span>
+      <span>v2.33.33</span>
     </div>
   </footer>
 </div>
