@@ -267,11 +267,9 @@
   .hud-weather .range{ color: var(--text-faint); font-size:11.5px; text-align:right; }
   .weather-note{ font-size: 9.5px; color: var(--text-faint); letter-spacing: .5px; margin-top:2px; }
 
-  /* ---------- skyline scene（生成canvas + ユーザー提供の実写ヒーロー） ---------- */
+  /* ---------- hero scene（ユーザー提供の実写ヒーロー画像） ---------- */
   .scene{ position: relative; overflow:hidden; }
-  .scene canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   .scene-illustration{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
-  .scene.has-illustration canvas{ display:none; }
   .scene.has-illustration .scene-illustration{ display:block; }
 
   /* ---------- footer grid ---------- */
@@ -2092,7 +2090,6 @@
 
   /* HOME 右列: 実写ヒーロー。高さは左のカード列に stretch で追従 */
   .hero .scene{ display: block; position: relative; min-height: 220px; overflow: hidden; border-radius: 3px; }
-  .hero .scene canvas{ display: none; }
   .hero .scene .scene-illustration{
     display: block; opacity: 1; object-position: center 42%;
     filter: brightness(1.08) contrast(1.02) saturate(1.04);
