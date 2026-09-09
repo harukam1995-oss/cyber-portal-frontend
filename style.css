@@ -2162,37 +2162,47 @@
      固定アスペクト比ステージ（設定「表示 > 画面を固定比率にする」）
      ---------------------------------------------------------------------
      html.fixed-aspect が付いているときだけ有効。既定は OFF（＝従来の流動幅）。
-     ・PC（マウス・幅1025px以上）      → 16:9 のレターボックス
-     ・タブレット（タッチ・幅768px以上）→ 4:3 のレターボックス
-     ・スマホ（〜767px）／中間幅のPC    → 何もしない（従来フロー）
-     枠は固定してグリッドは中で普通に流す方式（transform:scale は使わない）。
-     はみ出す内容は .frame 内スクロール。このブロックごと消せば完全に元へ戻る。
+     対象は HOME だけ（＝一目で見る概要画面）。プライベート/ビジネス/メール等の
+     詳細ページは中身の量が可変でスクロールが前提のため枠を掛けない。
+     ・PC（マウス・幅1025px以上）        → HOME を 16:9 枠に、上下中央寄せ
+     ・タブレット（タッチ・幅768px以上）  → HOME を 4:3 枠に
+     ・スマホ（〜767px）／中間幅のPC      → 何もしない（従来フロー）
+     枠内はヒーローを flex で伸縮させて余白を吸収し、スクロールバーを出さない。
+     transform:scale は不使用。このブロックごと消せば完全に元へ戻る。
      ===================================================================== */
   @media (pointer: fine) and (min-width: 1025px) {
-    html.fixed-aspect body{
+    html.fixed-aspect body:has(> #view-home:not([hidden])){
       display: flex; align-items: center; justify-content: center;
     }
-    html.fixed-aspect .frame:not([hidden]){
+    html.fixed-aspect #view-home:not([hidden]){
       flex: none;
       max-width: none;
       width: min(1400px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 16 / 9));
       aspect-ratio: 16 / 9;
       height: auto;
       overflow: auto;
-      scrollbar-gutter: stable;
     }
   }
   @media (pointer: coarse) and (min-width: 768px) {
-    html.fixed-aspect body{
+    html.fixed-aspect body:has(> #view-home:not([hidden])){
       display: flex; align-items: center; justify-content: center;
     }
-    html.fixed-aspect .frame:not([hidden]){
+    html.fixed-aspect #view-home:not([hidden]){
       flex: none;
       max-width: none;
       width: min(1200px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 4 / 3));
       aspect-ratio: 4 / 3;
       height: auto;
       overflow: auto;
-      scrollbar-gutter: stable;
+    }
+  }
+  /* ヒーロー帯で縦の余りを吸収（少ないときは伸び、詰まったときは縮む）。 */
+  @media (pointer: fine) and (min-width: 1025px), (pointer: coarse) and (min-width: 768px) {
+    html.fixed-aspect #view-home:not([hidden]) .hero{
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    html.fixed-aspect #view-home:not([hidden]) .hero .scene{
+      min-height: 0;
     }
   }
