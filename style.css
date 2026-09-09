@@ -2238,16 +2238,42 @@
     html.fixed-aspect #view-home:not([hidden]) .grid3{
       gap: 12px;
     }
-    /* プライベート/ビジネスは中身が少なめ。グリッドは枠いっぱいに広げるが、
-       行は引き伸ばさず中央に寄せる（16:9ステージに内容がふわっと浮く見た目）。 */
+    /* プライベート/ビジネスも HOME と同じく枠いっぱいに広げる。
+       行1（左列 / ヒーロー / 右列）が余った縦を食い、行2（.pv-bottom）は自然高。 */
     html.fixed-aspect #view-private:not([hidden]) .pv-grid,
     html.fixed-aspect #view-business:not([hidden]) .pv-grid{
-      flex: 1 1 auto;
-      align-content: center;
+      flex: 1 0 auto;
+      align-content: stretch;
+      grid-template-rows: 1fr auto;
       gap: 12px;
     }
     html.fixed-aspect #view-private:not([hidden]) .pv-bottom,
     html.fixed-aspect #view-business:not([hidden]) .pv-bottom{
       gap: 12px;
     }
+    /* 下段 QUICK ACCESS は枠内だけ 4 列＋タイルを低くして行数（3→2）を減らす。 */
+    html.fixed-aspect #view-private:not([hidden]) .pv-bottom .quick-grid,
+    html.fixed-aspect #view-business:not([hidden]) .pv-bottom .quick-grid{
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    html.fixed-aspect #view-private:not([hidden]) .pv-bottom .quick-tile,
+    html.fixed-aspect #view-business:not([hidden]) .pv-bottom .quick-tile{
+      padding: 10px 6px;
+      gap: 6px;
+    }
+    /* 枠内だけカード見出しの余白を詰める（プライベート・ビジネス共通）。 */
+    html.fixed-aspect #view-private:not([hidden]) .card-head,
+    html.fixed-aspect #view-business:not([hidden]) .card-head{
+      padding: 11px 16px 8px;
+    }
+    /* ビジネスは内部スクロールの箱を枠内だけ低くして 16:9 に確実に収める。
+       左列が3カード（TODAY/メモ/タスク）で縦に長いので、メモ・タスクを強めに詰める。 */
+    /* 契約書リストは枠内では最大3件＋「すべて表示」だけなので固定高スクロールをやめる。 */
+    html.fixed-aspect #view-business:not([hidden]) .pv-contracts-list{ height: auto; overflow: visible; }
+    html.fixed-aspect #view-business:not([hidden]) .pv-slack-list{ max-height: 150px; }
+    html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 132px; }
+    html.fixed-aspect #view-business:not([hidden]) .biz-note-list,
+    html.fixed-aspect #view-business:not([hidden]) .biz-task-list{ max-height: 88px; }
+    html.fixed-aspect #view-business:not([hidden]) .pv-today-clock{ font-size: clamp(26px, 2.6vw, 32px); }
   }

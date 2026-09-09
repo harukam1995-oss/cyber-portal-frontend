@@ -2652,7 +2652,7 @@
 
     var name = document.createElement("span");
     name.className = "pv-case-name";
-    name.textContent = c.title || c.client || "(名称未設定)";
+    name.textContent = c.client || c.title || "(名称未設定)";
     row.appendChild(name);
 
     if (c.confidential){
@@ -2701,8 +2701,8 @@
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       return;
     }
-    // カードは4件まで（コンパクト行で縦を詰めた）。残りは「すべて表示」で一覧ページ(#view-contracts)へ。
-    var CONTRACTS_CARD_MAX = 4;
+    // カードは3件まで（コンパクト行）。残りは「すべて表示（ほか N 件）」で一覧ページ(#view-contracts)へ。
+    var CONTRACTS_CARD_MAX = 3;
     filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){ list.appendChild(buildContractRowCompact(c)); });
     if (filtered.length > CONTRACTS_CARD_MAX){
       var more = document.createElement("button");
