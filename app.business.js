@@ -1294,8 +1294,18 @@
           if (!sub.hidden) dd.focus();
         });
         if (hasVal) moreBtn.classList.add("has-val");
+        var up = mkHabitIconBtn("↑", "上へ", "pv-event-item-move", function(){
+          if (i > 0){ var t = r.items[i - 1]; r.items[i - 1] = it; r.items[i] = t; renderItems(); }
+        });
+        var down = mkHabitIconBtn("↓", "下へ", "pv-event-item-move", function(){
+          if (i < r.items.length - 1){ var t = r.items[i + 1]; r.items[i + 1] = it; r.items[i] = t; renderItems(); }
+        });
+        up.disabled = i === 0;
+        down.disabled = i === r.items.length - 1;
         var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
-        line.appendChild(cb); line.appendChild(tx); line.appendChild(moreBtn); line.appendChild(del);
+        line.appendChild(cb); line.appendChild(tx);
+        line.appendChild(up); line.appendChild(down);
+        line.appendChild(moreBtn); line.appendChild(del);
         itemsWrap.appendChild(line);
         itemsWrap.appendChild(sub);
       });
@@ -1517,8 +1527,16 @@
         tx.type = "text"; tx.className = "plan-tpl-text"; tx.maxLength = 200;
         tx.placeholder = "やること"; tx.value = it.text || "";
         tx.addEventListener("input", function(){ it.text = tx.value; });
+        var up = mkHabitIconBtn("↑", "上へ", "pv-event-item-move", function(){
+          if (i > 0){ var t = r.items[i - 1]; r.items[i - 1] = it; r.items[i] = t; renderItems(); }
+        });
+        var down = mkHabitIconBtn("↓", "下へ", "pv-event-item-move", function(){
+          if (i < r.items.length - 1){ var t = r.items[i + 1]; r.items[i + 1] = it; r.items[i] = t; renderItems(); }
+        });
+        up.disabled = i === 0;
+        down.disabled = i === r.items.length - 1;
         var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
-        line.appendChild(tx); line.appendChild(del);
+        line.appendChild(tx); line.appendChild(up); line.appendChild(down); line.appendChild(del);
         itemsWrap.appendChild(line);
       });
       var add = document.createElement("button");
@@ -1597,6 +1615,8 @@
     eventTrackersWired = true;
     var manageBtn = document.getElementById("pv-events-manage");
     if (manageBtn) manageBtn.addEventListener("click", function(){ openEventModal(); });
+    var allBtn = document.getElementById("pv-events-all");
+    if (allBtn) allBtn.addEventListener("click", function(){ showView("projects"); });
     var modal = document.getElementById("pb-modal");
     var closeBtn = document.getElementById("pb-modal-close");
     var cancelBtn = document.getElementById("pb-cancel");

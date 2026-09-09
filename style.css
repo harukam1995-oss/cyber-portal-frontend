@@ -1657,22 +1657,30 @@
   .pv-events-list .pv-event-next{ font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pv-event-field-label{ font-size:11px; letter-spacing:.4px; color: var(--text-faint); margin:12px 0 4px; }
   .pv-event-items{ display:flex; flex-direction:column; gap:6px; }
-  .pv-event-item-line{ display:flex; align-items:center; gap:7px; }
+  .pv-event-item-line{ display:flex; align-items:center; gap:5px; }
   .pv-event-item-line input[type="checkbox"]{ flex:none; }
   .pv-event-item-line .plan-tpl-text{ flex:1 1 auto; min-width:0; }
-  /* 期限・メモの開閉ボタン。既定は畳んでおき、値があるものは amber ドットで示す。 */
+  /* 期限・メモの開閉ボタン。既定は畳んでおき、値があるものは amber で示す。 */
   .pv-event-item-more{ font-size:12px; }
   .pv-event-item-more.is-open{ border-color: var(--accent); color: var(--accent); }
   .pv-event-item-more.has-val{ color: var(--accent); border-color: var(--accent-dim); }
-  .pv-event-item-sub{ display:flex; gap:7px; margin:-2px 0 6px 24px; }
+  /* 項目の並べ替え ↑↓。行が混まないよう小さめ。 */
+  .pv-event-item-move{ width:24px; font-size:11px; }
+  .pv-event-item-move:disabled{ opacity:.3; cursor:default; }
+  /* 期限＋メモは縦積み(狭いモーダルで横並びだと潰れる)。既定は畳む。 */
+  .pv-event-item-sub{ display:flex; flex-direction:column; align-items:stretch; gap:6px; margin:-2px 0 8px 24px; }
   .pv-event-item-sub[hidden]{ display:none; }
-  .pv-event-item-due{ flex:none; width:126px; font-size:11.5px; padding:4px 6px; color-scheme: dark;
+  /* .event-form input[type=date/text](width:100%・font 14px)に負けるので詳細度を上げて上書き。 */
+  .event-form input[type="date"].pv-event-item-due{
+    align-self:flex-start; width:172px; flex:none; font-size:12px; padding:6px 9px; color-scheme: dark;
     background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text); }
-  .pv-event-item-due.is-overdue{ border:1px solid var(--err); color: var(--err); background: rgba(255,90,90,0.08); }
-  .pv-event-item-note{ flex:1 1 auto; min-width:0; font-size:11.5px; padding:4px 8px; color-scheme: dark;
-    background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:6px; color: var(--text-dim);
-    box-sizing:border-box; }
+  .event-form input[type="date"].pv-event-item-due.is-overdue{ border-color: var(--err); color: var(--err); background: rgba(255,90,90,0.08); }
+  .event-form input[type="text"].pv-event-item-note{
+    width:100%; font-size:12px; padding:6px 9px; color-scheme: dark;
+    background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:6px; color: var(--text-dim); }
   .pv-event-digest-list{ margin:0; padding-left:18px; font-size:11.5px; color: var(--text-dim); line-height:1.6; }
+  /* プロジェクトボードカードのヘッダー右(すべて / 管理) */
+  .pv-head-actions{ display:flex; align-items:center; gap:8px; }
 
   /* ---- プロジェクトボード 一覧ページ (#view-projects) ---- */
   .projects-page-list{ max-width:840px; margin:0 auto; display:flex; flex-direction:column; gap:12px; padding:4px 0 8px; }
