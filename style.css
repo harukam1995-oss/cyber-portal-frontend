@@ -1571,16 +1571,18 @@
     max-width:840px; margin:0 auto; padding:4px 0 8px;
   }
   .contracts-page-list .pv-contract-row{ height:auto; }
-  /* 「完了 N 件を表示 / 隠す」。列が中央寄せなので、この行も中央に置く。 */
-  .contracts-page-toggle{ align-self:center; margin-top:2px; }
+  /* 「完了 N 件を表示 / 隠す」。列が中央寄せなので、この行も中央に置く。
+     .pv-list-more の align-self:flex-start が後ろの行にあるので、詳細度で勝たせる。 */
+  .contracts-page-list .contracts-page-toggle{ align-self:center; margin-top:2px; }
 
   /* 一覧ページのステータスバーを KPI バンドにする（「12 件」だけでは状況が分からない）。
-     padding 20px を含めて 880px にすると、内容の左端がリスト（840px 中央寄せ）と揃う。
+     中央寄せのリストの上に載るので内容も中央揃え。パネル自体は他ページのステータスバーと
+     同じ全幅のまま（`margin:0 auto` を足すと .frame の縦 flex の中で
+     shrink-to-fit になり、パネルごと小さい箱に縮んでしまう）。
      id セレクタで display を持つので [hidden] を明示的に打ち消しておく
      （.frame[hidden] と同じ理由。無いと非表示時に出たままになる）。 */
   #contracts-page-status{
-    display:flex; flex-wrap:wrap; align-items:baseline; gap:20px;
-    max-width:880px; margin:0 auto;
+    display:flex; flex-wrap:wrap; align-items:baseline; justify-content:center; gap:20px;
   }
   #contracts-page-status[hidden]{ display:none; }
   .contracts-kpi{ display:flex; align-items:baseline; gap:6px; }
