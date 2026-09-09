@@ -1273,16 +1273,29 @@
         dd.addEventListener("input", function(){
           it.dueDate = dd.value; it.source = "manual";
           dd.classList.toggle("is-overdue", !!(it.dueDate && !it.done && it.dueDate < today));
+          moreBtn.classList.toggle("has-val", !!(it.dueDate || it.note));
         });
-        var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
-        line.appendChild(cb); line.appendChild(tx); line.appendChild(del);
-        var sub = document.createElement("div");
-        sub.className = "pv-event-item-sub";
         var note = document.createElement("input");
         note.type = "text"; note.className = "pv-event-item-note"; note.maxLength = 400;
         note.placeholder = "メモ（任意）"; note.value = it.note || "";
-        note.addEventListener("input", function(){ it.note = note.value; it.source = "manual"; });
+        note.addEventListener("input", function(){
+          it.note = note.value; it.source = "manual";
+          moreBtn.classList.toggle("has-val", !!(it.dueDate || it.note));
+        });
+        var sub = document.createElement("div");
+        sub.className = "pv-event-item-sub";
         sub.appendChild(dd); sub.appendChild(note);
+        // 期限・メモの行は既定で畳む(空ピッカーが項目数ぶん並ぶのを防ぐ)。値があれば開いた状態。
+        var hasVal = !!(it.dueDate || it.note);
+        sub.hidden = !hasVal;
+        var moreBtn = mkHabitIconBtn("🗓", "期限・メモ", "pv-event-item-more", function(){
+          sub.hidden = !sub.hidden;
+          moreBtn.classList.toggle("is-open", !sub.hidden);
+          if (!sub.hidden) dd.focus();
+        });
+        if (hasVal) moreBtn.classList.add("has-val");
+        var del = mkHabitIconBtn("×", "削除", "habit-edit-del", function(){ r.items.splice(i, 1); renderItems(); });
+        line.appendChild(cb); line.appendChild(tx); line.appendChild(moreBtn); line.appendChild(del);
         itemsWrap.appendChild(line);
         itemsWrap.appendChild(sub);
       });

@@ -1633,7 +1633,7 @@
   .pv-contract-chip.is-active{ color: var(--cyan); border-color: var(--cyan); background: rgba(255,143,63,0.10); }
 
   /* ---------- ビジネス: プロジェクトボード(内部は event_trackers・旧イベント／月次トラッカー) ---------- */
-  .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:190px; overflow-y:auto; }
+  .pv-events-list{ display:flex; flex-direction:column; gap:10px; max-height:224px; overflow-y:auto; }
   .pv-events-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-events-status.is-err{ color: var(--err); }
   .pv-event-row{
@@ -1660,7 +1660,12 @@
   .pv-event-item-line{ display:flex; align-items:center; gap:7px; }
   .pv-event-item-line input[type="checkbox"]{ flex:none; }
   .pv-event-item-line .plan-tpl-text{ flex:1 1 auto; min-width:0; }
+  /* 期限・メモの開閉ボタン。既定は畳んでおき、値があるものは amber ドットで示す。 */
+  .pv-event-item-more{ font-size:12px; }
+  .pv-event-item-more.is-open{ border-color: var(--accent); color: var(--accent); }
+  .pv-event-item-more.has-val{ color: var(--accent); border-color: var(--accent-dim); }
   .pv-event-item-sub{ display:flex; gap:7px; margin:-2px 0 6px 24px; }
+  .pv-event-item-sub[hidden]{ display:none; }
   .pv-event-item-due{ flex:none; width:126px; font-size:11.5px; padding:4px 6px; color-scheme: dark;
     background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text); }
   .pv-event-item-due.is-overdue{ border:1px solid var(--err); color: var(--err); background: rgba(255,90,90,0.08); }
@@ -2293,7 +2298,7 @@
     /* 契約書リストは枠内では最大3件＋「すべて表示」だけなので固定高スクロールをやめる。 */
     html.fixed-aspect #view-business:not([hidden]) .pv-contracts-list{ height: auto; overflow: visible; }
     html.fixed-aspect #view-business:not([hidden]) .pv-slack-list{ max-height: 150px; }
-    html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 150px; }
+    html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 168px; }
     html.fixed-aspect #view-business:not([hidden]) .biz-note-list,
     html.fixed-aspect #view-business:not([hidden]) .biz-task-list{ max-height: 88px; }
     html.fixed-aspect #view-business:not([hidden]) .pv-today-clock{ font-size: clamp(26px, 2.6vw, 32px); }
