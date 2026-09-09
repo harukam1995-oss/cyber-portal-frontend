@@ -32,6 +32,13 @@
   </div>
 </div>
 
+<!-- 右上プロフィールのメニュー。位置は app.js が .profile の座標から算出する
+     (notif-panel と同じく、ヘッダー .panel の backdrop-filter を避けて body 直下に置く)。 -->
+<div class="profile-menu" id="profile-menu" hidden role="menu" aria-label="アカウント">
+  <div class="profile-menu-head" id="profile-menu-email">HARUKA</div>
+  <button type="button" class="profile-menu-btn" id="profile-signout-btn" role="menuitem">ログアウト</button>
+</div>
+
 
 
 <!-- ================= HOME VIEW ================= -->
@@ -218,7 +225,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.9</span>
+      <span>v2.33.10</span>
     </div>
   </footer>
 </div>

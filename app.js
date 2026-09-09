@@ -7951,6 +7951,98 @@
     });
   }
 
+  /* ===== 右上プロフィール → ログアウトメニュー =====
+     .profile はヘッダーごとに8箇所ある(#app-topbar の1つは showView が表示中frameへ
+     移動、残り7つは各フルスクリーンviewの静的ヘッダー)。個別バインドせず document
+     への委譲で拾う。メニュー本体(#profile-menu)は body 直下の1つを共用し、位置は
+     クリックされた .profile の座標から算出する(notif-panel と同じ方式)。 */
+  var profileMenu = document.getElementById("profile-menu");
+  var profileMenuEmail = document.getElementById("profile-menu-email");
+  var profileSignoutBtn = document.getElementById("profile-signout-btn");
+  var profileMenuAnchor = null;
+
+  Array.prototype.forEach.call(document.querySelectorAll(".profile"), function(p){
+    p.setAttribute("role", "button");
+    p.setAttribute("tabindex", "0");
+    p.setAttribute("aria-haspopup", "menu");
+    if (!p.getAttribute("title")) p.setAttribute("title", "アカウント");
+  });
+
+  function positionProfileMenu(){
+    if (!profileMenu || !profileMenuAnchor) return;
+    var mobile = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+    if (mobile){
+      // モバイルは CSS の固定オフセットに任せる
+      profileMenu.style.top = ""; profileMenu.style.right = ""; profileMenu.style.left = "";
+      return;
+    }
+    var r = profileMenuAnchor.getBoundingClientRect();
+    var pw = profileMenu.offsetWidth || 190;
+    var right = window.innerWidth - r.right;
+    // ビューポート内に収める(右端 / 左端どちらにもはみ出させない)
+    right = Math.min(Math.max(8, right), Math.max(8, window.innerWidth - pw - 8));
+    profileMenu.style.left = "";
+    profileMenu.style.top = Math.round(r.bottom + 10) + "px";
+    profileMenu.style.right = Math.round(right) + "px";
+  }
+  function openProfileMenu(anchor){
+    if (!profileMenu) return;
+    profileMenuAnchor = anchor;
+    if (profileMenuEmail){
+      var u = window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser;
+      profileMenuEmail.textContent = (u && (u.email || u.displayName)) || "アカウント";
+    }
+    profileMenu.hidden = false;
+    positionProfileMenu();
+    if (anchor.setAttribute) anchor.setAttribute("aria-expanded", "true");
+    document.addEventListener("mousedown", onProfileOutside, true);
+    document.addEventListener("keydown", onProfileEsc, true);
+    window.addEventListener("resize", positionProfileMenu);
+    if (profileSignoutBtn) profileSignoutBtn.focus();
+  }
+  function closeProfileMenu(){
+    if (!profileMenu) return;
+    profileMenu.hidden = true;
+    if (profileMenuAnchor && profileMenuAnchor.setAttribute) profileMenuAnchor.setAttribute("aria-expanded", "false");
+    profileMenuAnchor = null;
+    document.removeEventListener("mousedown", onProfileOutside, true);
+    document.removeEventListener("keydown", onProfileEsc, true);
+    window.removeEventListener("resize", positionProfileMenu);
+  }
+  function onProfileOutside(e){
+    var inProfile = e.target.closest && e.target.closest(".profile");
+    if (profileMenu && !profileMenu.contains(e.target) && !inProfile) closeProfileMenu();
+  }
+  function onProfileEsc(e){
+    if (e.key === "Escape"){ e.preventDefault(); closeProfileMenu(); if (profileMenuAnchor && profileMenuAnchor.focus) profileMenuAnchor.focus(); }
+  }
+  function toggleProfileMenu(prof){
+    if (profileMenu && profileMenu.hidden) openProfileMenu(prof); else closeProfileMenu();
+  }
+
+  document.addEventListener("click", function(e){
+    var prof = e.target.closest && e.target.closest(".profile");
+    if (!prof) return;
+    e.preventDefault();
+    toggleProfileMenu(prof);
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var prof = e.target.closest && e.target.closest(".profile");
+    if (!prof || !prof.hasAttribute("tabindex")) return;
+    e.preventDefault();
+    toggleProfileMenu(prof);
+  });
+  if (profileSignoutBtn){
+    profileSignoutBtn.addEventListener("click", function(){
+      closeProfileMenu();
+      try {
+        var p = window.__cyberPortalSignOut && window.__cyberPortalSignOut();
+        if (p && p.catch) p.catch(function(err){ console.error("[auth] signOut failed:", err); });
+      } catch (err){ console.error("[auth] signOut failed:", err); }
+    });
+  }
+
   // PWA: インストールプロンプト
   window.addEventListener("beforeinstallprompt", function(e){
     e.preventDefault();
