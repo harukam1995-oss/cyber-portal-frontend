@@ -7037,6 +7037,14 @@
     }
   }
 
+  // 画面を固定アスペクト比にするか(設定 表示>画面を固定比率にする)。
+  // 実際の比率切替(PC=16:9 / タブレット=4:3 / スマホは無効)は style.css の
+  // html.fixed-aspect メディアクエリ側。ここはクラスの付け外しとキャッシュのみ。
+  function setFixedAspect(on){
+    try { localStorage.setItem("pref_fixedAspect", String(!!on)); } catch(e){}
+    document.documentElement.classList.toggle("fixed-aspect", !!on);
+  }
+
   function setDefaultAccount(acct){
     acct = acct === "syslea" ? "syslea" : "haruka";
     schedAccount = acct;
@@ -7061,6 +7069,7 @@
       el.textContent = acc.avatarText || "遥";
     });
     setHeroVisible(disp.heroIllustration !== false);
+    setFixedAspect(disp.fixedAspect === true);
     if (settingsFirstApply){
       settingsFirstApply = false;
       setDefaultAccount(disp.defaultAccount);
@@ -7090,6 +7099,7 @@
   var elSetPlace = document.getElementById("settings-weather-place");
   var elSetPlaceCurrent = document.getElementById("settings-weather-current");
   var elSetHero = document.getElementById("settings-hero");
+  var elSetAspect = document.getElementById("settings-aspect");
   var elSetCalView = document.getElementById("settings-cal-view");
   var elSetDefAcct = document.getElementById("settings-default-account");
   var elSetName = document.getElementById("settings-display-name");
@@ -7103,6 +7113,7 @@
     if (elSetPlace) elSetPlace.value = "";
     if (elSetPlaceCurrent) elSetPlaceCurrent.textContent = "現在: " + (w.place || "柏市");
     if (elSetHero) elSetHero.checked = d.heroIllustration !== false;
+    if (elSetAspect) elSetAspect.checked = d.fixedAspect === true;
     if (elSetCalView) elSetCalView.value = CAL_VIEWS_ALLOWED.indexOf(d.calendarView) !== -1 ? d.calendarView : "day";
     if (elSetDefAcct) elSetDefAcct.value = d.defaultAccount === "syslea" ? "syslea" : "haruka";
     if (elSetName) elSetName.value = a.displayName || "";
@@ -7374,6 +7385,7 @@
       var patch = {
         display: {
           heroIllustration: !!(elSetHero && elSetHero.checked),
+          fixedAspect: !!(elSetAspect && elSetAspect.checked),
           calendarView: elSetCalView ? elSetCalView.value : "day",
           defaultAccount: elSetDefAcct ? elSetDefAcct.value : "haruka"
         },

@@ -2157,3 +2157,42 @@
   .quick-tile svg{ stroke: var(--accent); }
   .quick-tile .tile-dot{ background: var(--accent); }
   .mail-unread-dot{ background: var(--accent); }
+
+  /* =====================================================================
+     固定アスペクト比ステージ（設定「表示 > 画面を固定比率にする」）
+     ---------------------------------------------------------------------
+     html.fixed-aspect が付いているときだけ有効。既定は OFF（＝従来の流動幅）。
+     ・PC（マウス・幅1025px以上）      → 16:9 のレターボックス
+     ・タブレット（タッチ・幅768px以上）→ 4:3 のレターボックス
+     ・スマホ（〜767px）／中間幅のPC    → 何もしない（従来フロー）
+     枠は固定してグリッドは中で普通に流す方式（transform:scale は使わない）。
+     はみ出す内容は .frame 内スクロール。このブロックごと消せば完全に元へ戻る。
+     ===================================================================== */
+  @media (pointer: fine) and (min-width: 1025px) {
+    html.fixed-aspect body{
+      display: flex; align-items: center; justify-content: center;
+    }
+    html.fixed-aspect .frame:not([hidden]){
+      flex: none;
+      max-width: none;
+      width: min(1400px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 16 / 9));
+      aspect-ratio: 16 / 9;
+      height: auto;
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+  }
+  @media (pointer: coarse) and (min-width: 768px) {
+    html.fixed-aspect body{
+      display: flex; align-items: center; justify-content: center;
+    }
+    html.fixed-aspect .frame:not([hidden]){
+      flex: none;
+      max-width: none;
+      width: min(1200px, 100%, calc((100dvh - 2 * clamp(12px, 2.4vw, 28px)) * 4 / 3));
+      aspect-ratio: 4 / 3;
+      height: auto;
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+  }
