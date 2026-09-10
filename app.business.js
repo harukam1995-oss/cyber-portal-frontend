@@ -39,6 +39,7 @@
 
   var contractAlertLabels = CP.contractAlertLabels;
   var contractStatusIdx = CP.contractStatusIdx;
+  var contractAutoAdvanced = CP.contractAutoAdvanced;
 
   // 会社名の正規化キー。バック contracts.js の normClient() と同じ規則(NFKC + 前後空白除去 +
   // 連続空白の畳み込み)に、突き合わせ用の小文字化を足したもの。
@@ -76,11 +77,38 @@
     return list.slice().sort(function(a, b){ return contractUrgency(a) - contractUrgency(b); });
   }
   // "YYYY-MM-DD" 同士の日数差(b - a)。どちらかが日付キーでなければ null。
+  // 自動更新の時刻(epoch ms)を「9/10 14:30」に。ツールチップとバナーで使う。
+  function contractAutoAdvancedWhen(c){
+    var t = Number(c && c.autoAdvancedAt) || 0;
+    if (!t) return "";
+    var d = new Date(t);
+    return (d.getMonth() + 1) + "/" + d.getDate() + " " +
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
   function dateKeyDiffDays(a, b){
     var pa = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a || "");
     var pb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(b || "");
     if (!pa || !pb) return null;
     return Math.round((Date.UTC(+pb[1], +pb[2] - 1, +pb[3]) - Date.UTC(+pa[1], +pa[2] - 1, +pa[3])) / 86400000);
+  }
+
+  // PUT /bulk（全置換）に送る1行。**送り忘れたフィールドはその行から消える**ので、
+  // 行を組み立てる場所はここ1箇所にまとめる（クイック進行・自動更新の確認済み化で共用。
+  // 管理モーダルの保存だけは入力欄の trim/切り詰めがあるので別に組んでいる）。
+  function contractBulkRow(c, overrides){
+    var row = {
+      id: c.id, title: c.title || "", client: c.client || "",
+      requestedBy: c.requestedBy || "", status: c.status,
+      requestedDate: c.requestedDate || "", sentDate: c.sentDate || "",
+      signedDate: c.signedDate || "", dueDate: c.dueDate || "",
+      confidential: c.confidential === true, slackUrl: c.slackUrl || "",
+      notes: c.notes || "",
+      autoAdvancedAt: Number(c.autoAdvancedAt) || 0, autoAdvancedTo: c.autoAdvancedTo || "",
+      source: c.source === "slack" ? "slack" : "manual"
+    };
+    if (overrides) for (var k in overrides){ if (Object.prototype.hasOwnProperty.call(overrides, k)) row[k] = overrides[k]; }
+    return row;
   }
 
   // 行の「◯◯にする」ボタン。行タップ → モーダル → select → 保存 の4手を1手にする。
@@ -98,21 +126,15 @@
 
     var today = jstDateKey(new Date());
     var payload = contractsState.map(function(c){
-      var row = {
-        id: c.id, title: c.title || "", client: c.client || "",
-        requestedBy: c.requestedBy || "", status: c.status,
-        requestedDate: c.requestedDate || "", sentDate: c.sentDate || "",
-        signedDate: c.signedDate || "", dueDate: c.dueDate || "",
-        confidential: c.confidential === true, slackUrl: c.slackUrl || "",
-        notes: c.notes || "", // bulk は全置換なので、触らない行も現状値を送らないと消える
-        source: c.source === "slack" ? "slack" : "manual"
+      if (c.id !== id) return contractBulkRow(c);
+      var over = {
+        status: next.status,
+        source: "manual", // 手で進めた＝ユーザーが所有する行になる(Slack検知バッジは外れる)
+        // 自分で進めたのだから自動更新の未確認印は用済み。
+        autoAdvancedAt: 0, autoAdvancedTo: ""
       };
-      if (c.id === id){
-        row.status = next.status;
-        if (next.dateKey && !row[next.dateKey]) row[next.dateKey] = today;
-        row.source = "manual"; // 手で進めた＝ユーザーが所有する行になる(Slack検知バッジは外れる)
-      }
-      return row;
+      if (next.dateKey && !c[next.dateKey]) over[next.dateKey] = today;
+      return contractBulkRow(c, over);
     });
 
     if (btn){ btn.disabled = true; btn.textContent = "保存中…"; }
@@ -291,6 +313,15 @@
       slackBadge.title = "Slackダイジェストが自動検知・更新した項目です。内容を確認してください。";
       head.appendChild(slackBadge);
     }
+    // Slack自動検知が status を勝手に進めた行の印。何にいつ進んだかを出す
+    // （「確認済みにする」を押すまで残る）。
+    if (contractAutoAdvanced(c)){
+      var auto = document.createElement("span");
+      auto.className = "pv-contract-auto";
+      auto.textContent = "⟳ 自動更新 → " + (c.autoAdvancedTo || c.status);
+      auto.title = "Slackダイジェストが " + contractAutoAdvancedWhen(c) + " に自動で進めました。内容を確認してください。";
+      head.appendChild(auto);
+    }
     if (c.slackUrl && /^https:\/\//i.test(c.slackUrl)){
       var slackLink = document.createElement("a");
       slackLink.className = "pv-contract-slack-link";
@@ -380,6 +411,11 @@
       var lock = document.createElement("span");
       lock.className = "pv-case-lock"; lock.textContent = "🔒"; lock.title = "機密案件";
       row.appendChild(lock);
+    }
+    if (contractAutoAdvanced(c)){
+      var autoMark = document.createElement("span");
+      autoMark.className = "pv-case-lock"; autoMark.textContent = "⟳"; autoMark.title = "自動更新あり（未確認）";
+      row.appendChild(autoMark);
     }
     // 備考の本文はカードに載せない（1行に収まらない）。あることだけ印で示し、
     // 中身は行タップ＝管理モーダル、または全件ページで読む。
@@ -496,13 +532,16 @@
     //   - タブが「すべて」以外のときは畳まない（「締結」タブは報告済みを見るためのタブ）
     //   - 検索中も畳まない（探している行が黙って隠れるのを避ける）
     //   - 全件が完了のときも畳まない（1行も出ないのは不親切）
-    var doneRows = filtered.filter(function(c){ return c.status === "報告済み"; });
+    //   - 自動更新の未確認行は畳まない（報告済みまで一気に進んだ行が、
+    //     HOME の INBOX から来たのに畳まれていて見えない、を避ける）
+    var doneRows = filtered.filter(function(c){ return c.status === "報告済み" && !contractAutoAdvanced(c); });
     var canCollapse = contractsTab === "" && !contractsQuery.trim() &&
       doneRows.length > 0 && doneRows.length < filtered.length;
     var shown = (canCollapse && !contractsShowDone)
-      ? filtered.filter(function(c){ return c.status !== "報告済み"; })
+      ? filtered.filter(function(c){ return c.status !== "報告済み" || contractAutoAdvanced(c); })
       : filtered;
 
+    renderContractsAutoBanner(list);
     shown.forEach(function(c){ list.appendChild(buildContractRow(c)); });
 
     if (canCollapse){
@@ -519,6 +558,54 @@
       list.appendChild(toggle);
     }
     renderContractsKpi(filtered.length);
+  }
+
+  // 自動更新の事後報告バナー。リストの先頭に置く（中央寄せの列に載る）。
+  // 「確認済みにする」で全行の印を一括で消す＝1回の PUT /bulk で済ませる。
+  function renderContractsAutoBanner(list){
+    var autos = contractsState.filter(contractAutoAdvanced);
+    if (!autos.length) return;
+
+    var bar = document.createElement("div");
+    bar.className = "contracts-auto-banner";
+
+    var txt = document.createElement("span");
+    txt.className = "contracts-auto-text";
+    txt.textContent = "⟳ " + autos.length + " 件を Slack の検知で自動更新しました（" +
+      autos.map(function(c){ return (c.client || c.title || "?") + " → " + (c.autoAdvancedTo || c.status); }).join(" ・ ") + "）";
+    bar.appendChild(txt);
+
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "contracts-auto-ack";
+    btn.textContent = "確認済みにする";
+    btn.addEventListener("click", function(){ ackContractAutoAdvances(btn); });
+    bar.appendChild(btn);
+
+    list.appendChild(bar);
+  }
+
+  // 印を消すだけの保存。PUT /bulk は全置換なので全行を組み直して送る
+  // （クイック進行 advanceContract と同じ経路・同じ全消しガード）。
+  async function ackContractAutoAdvances(btn){
+    if (!contractsLoadOk) return;
+    var payload = contractsState.map(function(c){
+      return contractBulkRow(c, { autoAdvancedAt: 0, autoAdvancedTo: "" });
+    });
+    if (btn){ btn.disabled = true; btn.textContent = "保存中…"; }
+    try {
+      await apiFetch("/api/contracts/bulk", {
+        method: "PUT",
+        headers: { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ contracts: payload })
+      });
+      await loadContracts();
+      // INBOX の件数も即座に消す（HOME を開き直すまで残らないように）。
+      if (CP.refreshHomeContractCounts) CP.refreshHomeContractCounts(contractsState);
+    } catch (e){
+      contractsPageSetStatus("確認済みにできませんでした: " + (e && e.message ? e.message : e), true);
+      if (btn){ btn.disabled = false; btn.textContent = "確認済みにする"; }
+    }
   }
 
   // 一覧ページのステータスバーを KPI バンドにする。件数だけでは「今どういう状況か」が
@@ -616,6 +703,7 @@
         requestedDate: c.requestedDate || "", sentDate: c.sentDate || "", signedDate: c.signedDate || "",
         dueDate: c.dueDate || "", confidential: c.confidential === true,
         slackUrl: c.slackUrl || "", notes: c.notes || "",
+        autoAdvancedAt: Number(c.autoAdvancedAt) || 0, autoAdvancedTo: c.autoAdvancedTo || "",
         source: c.source === "slack" ? "slack" : "manual"
       };
     });
@@ -637,7 +725,7 @@
     else closeContractModal();
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", source: "manual" };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", autoAdvancedAt: 0, autoAdvancedTo: "", source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
@@ -757,7 +845,11 @@
     status.className = "habit-edit-cadence case-edit-status";
     status.innerHTML = CONTRACT_STATUSES.map(function(s){ return '<option value="' + s + '">' + s + "</option>"; }).join("");
     status.value = r.status;
-    status.addEventListener("change", function(){ r.status = status.value; r.source = "manual"; });
+    status.addEventListener("change", function(){
+      r.status = status.value; r.source = "manual";
+      // 自分で状態を選び直した＝自動更新は確認済み。印を消す。
+      r.autoAdvancedAt = 0; r.autoAdvancedTo = "";
+    });
     var due = document.createElement("input");
     due.type = "date"; due.className = "case-edit-due";
     due.value = r.dueDate || "";
@@ -851,6 +943,7 @@
         dueDate: r.dueDate || "", confidential: r.confidential === true,
         slackUrl: (r.slackUrl || "").trim().slice(0, 500),
         notes: (r.notes || "").trim().slice(0, 500),
+        autoAdvancedAt: Number(r.autoAdvancedAt) || 0, autoAdvancedTo: r.autoAdvancedTo || "",
         source: r.source === "slack" ? "slack" : "manual"
       });
     }

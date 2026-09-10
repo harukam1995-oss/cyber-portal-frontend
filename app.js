@@ -4111,6 +4111,8 @@
   var homeGoogleConnectBtn = document.getElementById("home-google-connect-btn");
   var homeContractAlertBtn = document.getElementById("home-contract-alert-btn");
   var homeContractAlertNum = document.getElementById("home-contract-alert-num");
+  var homeContractAutoBtn = document.getElementById("home-contract-auto-btn");
+  var homeContractAutoNum = document.getElementById("home-contract-auto-num");
 
   /* ---- 契約書トラッカーのアラート判定（HOME の INBOX と app.business.js で共用） ----
      app.business.js は業務タブを開くまでロードされないので、HOME でも要る この3つだけは
@@ -4131,20 +4133,39 @@
     return out;
   }
 
-  // HOME の INBOX に出す契約書アラート件数。0 件なら行ごと隠す。
+  // from-digest が status を自動で進めた行かどうか（バックが付ける印）。
+  // 「確認済みにする」を押すまで立ったままなので、見逃さない。
+  function contractAutoAdvanced(c){
+    return !!(c && Number(c.autoAdvancedAt) > 0);
+  }
+
+  // HOME の INBOX に出す契約書アラート件数／自動更新の件数。0 件なら行ごと隠す。
   var homeContractAlerts = 0;
+  var homeContractAutos = 0;
   function renderHomeContractAlert(){
-    if (!homeContractAlertBtn) return;
-    homeContractAlertBtn.hidden = homeContractAlerts <= 0;
-    if (homeContractAlertNum) homeContractAlertNum.textContent = String(homeContractAlerts);
+    if (homeContractAlertBtn){
+      homeContractAlertBtn.hidden = homeContractAlerts <= 0;
+      if (homeContractAlertNum) homeContractAlertNum.textContent = String(homeContractAlerts);
+    }
+    if (homeContractAutoBtn){
+      homeContractAutoBtn.hidden = homeContractAutos <= 0;
+      if (homeContractAutoNum) homeContractAutoNum.textContent = String(homeContractAutos);
+    }
   }
   function applyHomeContractAlerts(list){
     if (!Array.isArray(list)) return;
     homeContractAlerts = list.filter(function(c){ return contractAlertLabels(c).length > 0; }).length;
+    homeContractAutos = list.filter(contractAutoAdvanced).length;
     renderHomeContractAlert();
   }
   if (homeContractAlertBtn) homeContractAlertBtn.addEventListener("click", function(){
     contractsPendingTab = "alert";
+    showView("contracts");
+  });
+  // 自動更新はステータス横断（報告済みまで進んだ行も含む）なので「すべて」タブで開く。
+  // 一覧ページ側は自動更新の行を完了の折りたたみから除外しているので必ず見える。
+  if (homeContractAutoBtn) homeContractAutoBtn.addEventListener("click", function(){
+    contractsPendingTab = "";
     showView("contracts");
   });
 
@@ -7942,7 +7963,10 @@
     // 契約書のアラート判定は HOME の INBOX でも使うので本体側に置き、ここから渡す。
     CONTRACT_STATUSES: CONTRACT_STATUSES,
     contractStatusIdx: contractStatusIdx,
-    contractAlertLabels: contractAlertLabels
+    contractAlertLabels: contractAlertLabels,
+    contractAutoAdvanced: contractAutoAdvanced,
+    // 「確認済みにする」で INBOX の件数もその場で消すため（再取得を待たない）。
+    refreshHomeContractCounts: applyHomeContractAlerts
   };
 
 })();

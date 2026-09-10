@@ -221,6 +221,13 @@
           <span class="inbox-count-label">件の契約書アラート</span>
           <span class="inbox-count-acct">SYSLEA</span>
         </button>
+        <!-- Slack自動検知が status を勝手に進めた行の事後報告。0件のときは hidden。
+             一覧ページの「確認済みにする」を押すまで出続ける（見逃し防止）。 -->
+        <button type="button" class="inbox-count-btn inbox-auto-btn" id="home-contract-auto-btn" hidden>
+          <span class="inbox-count-num" id="home-contract-auto-num">0</span>
+          <span class="inbox-count-label">件の契約書が自動更新</span>
+          <span class="inbox-count-acct">SYSLEA</span>
+        </button>
         <button type="button" class="inbox-reconnect" id="home-google-connect-btn" hidden>
           Google再連携
         </button>
