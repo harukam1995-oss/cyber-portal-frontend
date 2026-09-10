@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 119;
+  var BUILD_V = 120;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -1828,9 +1828,11 @@
     var next = document.getElementById("fin-month-next");
     var today = document.getElementById("fin-month-today");
     var cur = finCurrentMonth();
-    if (label) label.textContent = finMonthLabel(financeMonth || cur);
-    var isCurrent = (financeMonth || cur) === cur;
-    if (next) next.disabled = isCurrent;
+    var shown = financeMonth || cur;
+    if (label) label.textContent = finMonthLabel(shown);
+    var isCurrent = shown === cur;
+    // 未来日の取引を追加すると financeMonth が翌月以降になりうるので `>=` で止める
+    if (next) next.disabled = shown >= cur;
     if (today) today.hidden = isCurrent;
     if (label) label.classList.toggle("is-past", !isCurrent);
   }
