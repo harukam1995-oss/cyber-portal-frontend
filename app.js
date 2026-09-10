@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 121;
+  var BUILD_V = 122;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3627,6 +3627,12 @@
       }));
       html += '<div class="cal-month-cell' + dowClass(dayKey) + (outside ? ' outside' : '') + (isToday ? ' today' : '') + '" data-day-key="' + dayKey + '">';
       html += '<div class="cal-month-date">' + pk.d + '</div>';
+      // 期限超過だけは予定より前に出す。後ろに置くと、予定で埋まったセルでは
+      // fitMonthChips に必ず畳まれて「+N件」の中に消える＝一番見落としたくない
+      // ものが見えなくなる（本番の「両方」表示で実際にそうなった）。
+      var ovs = overlaysFor(dayKey);
+      ovs.filter(function(o){ return o.overdue; }).slice(0, 6)
+        .forEach(function(o){ html += overlayChipHtml(o, "cal-month-chip"); });
       // セルの高さはビューポート追従なので、何件出せるかは描画後に実測して決める
       // （下の fitMonthChips）。ここでは全件（上限12）出しておく。
       allItems.slice(0, 12).forEach(function(ev){
@@ -3636,10 +3642,8 @@
         html += '<div class="cal-month-chip" data-event-id="' + escapeHtml(ev.id) + '" title="' + escapeHtml(monthFullLabel) + '" style="--ev-color:' + colorForEvent(ev) + ';">'
           + timePrefix + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
       });
-      // レイヤーは予定の下に。期限超過が先（一番見落としたくない）。
-      overlaysFor(dayKey)
-        .sort(function(a, b){ return (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0); })
-        .slice(0, 12)
+      // 期限内のレイヤーは予定の下に（畳まれても「+N件」で件数は分かる）。
+      ovs.filter(function(o){ return !o.overdue; }).slice(0, 12)
         .forEach(function(o){ html += overlayChipHtml(o, "cal-month-chip"); });
       html += '<div class="cal-month-more" hidden></div>';
       html += '</div>';
