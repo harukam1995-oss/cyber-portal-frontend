@@ -234,7 +234,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.34</span>
+      <span>v2.33.35</span>
     </div>
   </footer>
 </div>
@@ -401,11 +401,17 @@
           <p class="pv-events-status" id="pv-events-status">読み込み中…</p>
         </div>
       </section>
-      <!-- 契約書トラッカー（カードは2件まで。全件は「管理」から） -->
+      <!-- 契約書トラッカー（カードは3件まで。全件は見出しの「すべて」から） -->
       <section class="panel pv-card">
         <div class="card-head">
           <h2>契約書トラッカー</h2>
-          <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
+          <div class="pv-card-head-actions">
+            <!-- 全件ページ(#view-contracts)への導線。以前はリスト下端の
+                 「すべて表示（ほか N 件）」だったが、3件以下だとボタン自体が出ず
+                 全件ページへ行けなかったので見出しに常設した。 -->
+            <button type="button" class="pv-habit-manage" id="pv-contracts-all" title="契約書の全件ページを開く">すべて</button>
+            <button type="button" class="pv-habit-manage" id="pv-contracts-manage">管理</button>
+          </div>
         </div>
         <div class="card-body">
           <div class="pv-contracts-tabs" id="pv-contracts-tabs">
@@ -414,21 +420,9 @@
             <button type="button" class="pv-contracts-tab" data-tab="送付済み">送付</button>
             <button type="button" class="pv-contracts-tab" data-tab="締結済み">締結</button>
             <button type="button" class="pv-contracts-tab is-active" data-tab="">すべて</button>
-            <button type="button" class="pv-contracts-search-toggle" id="pv-contracts-search-toggle" aria-label="検索" title="検索">
-              <svg viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
           </div>
-          <div class="pv-contracts-search" id="pv-contracts-search" hidden>
-            <input type="search" id="pv-contracts-q" class="pv-contracts-q" placeholder="会社名・依頼者・日付で検索" autocomplete="off" maxlength="80">
-            <select id="pv-contracts-requester" class="pv-contracts-requester" aria-label="依頼者で絞り込み">
-              <option value="">依頼者（すべて）</option>
-              <option value="河野">河野</option>
-              <option value="藤井">藤井</option>
-              <option value="船木">船木</option>
-              <option value="竹内">竹内</option>
-              <option value="__other">その他</option>
-            </select>
-          </div>
+          <!-- 検索・依頼者フィルタはカードから外した。カードは3件しか出ないので
+               絞り込む意味が薄く、全件ページ(#view-contracts)のツールバーで行う。 -->
           <div class="pv-contracts-list" id="pv-contracts-list"></div>
           <p class="pv-contracts-status" id="pv-contracts-status">読み込み中…</p>
         </div>

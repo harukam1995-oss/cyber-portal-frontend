@@ -104,6 +104,7 @@
         requestedDate: c.requestedDate || "", sentDate: c.sentDate || "",
         signedDate: c.signedDate || "", dueDate: c.dueDate || "",
         confidential: c.confidential === true, slackUrl: c.slackUrl || "",
+        notes: c.notes || "", // bulk は全置換なので、触らない行も現状値を送らないと消える
         source: c.source === "slack" ? "slack" : "manual"
       };
       if (c.id === id){
@@ -168,18 +169,23 @@
   }
 
   // タブ / 依頼者 / 検索窓のフィルタ。カードと一覧ページで共用。
-  function filterContracts(){
-    var q = contractsQuery.trim().toLowerCase();
+  // withSearch: 検索窓・依頼者セレクトの絞り込みを効かせるか。
+  //   全件ページ(#view-contracts) → true。ツールバーに両方の UI がある。
+  //   ビジネスカード       → false。カードから検索 UI を外したので、絞り込みが
+  //     効くと「なぜ件数が減っているか分からない」状態になる。タブだけカードにも効く。
+  function filterContracts(withSearch){
+    var q = withSearch ? contractsQuery.trim().toLowerCase() : "";
+    var requester = withSearch ? contractsRequester : "";
     return contractsState.filter(function(c){
       // タブ
       if (contractsTab === "alert"){ if (!contractAlertLabels(c).length) return false; }
       else if (contractsTab === "締結済み"){ if (c.status !== "締結済み" && c.status !== "報告済み") return false; }
       else if (contractsTab){ if (c.status !== contractsTab) return false; }
       // 依頼者
-      if (contractsRequester === "__other"){
+      if (requester === "__other"){
         if (CONTRACT_REQUESTERS.some(function(n){ return (c.requestedBy || "").indexOf(n) !== -1; })) return false;
-      } else if (contractsRequester){
-        if ((c.requestedBy || "").indexOf(contractsRequester) === -1) return false;
+      } else if (requester){
+        if ((c.requestedBy || "").indexOf(requester) === -1) return false;
       }
       // 検索窓
       if (q && !contractMatchesQuery(c, q)) return false;
@@ -331,6 +337,14 @@
       row.appendChild(meta);
     }
 
+    // 案件ごとの備考。全件ページの行にだけ出す（カードのコンパクト行には出さない）。
+    if (c.notes){
+      var notes = document.createElement("div");
+      notes.className = "pv-contract-notes";
+      notes.textContent = c.notes;
+      row.appendChild(notes);
+    }
+
     row.tabIndex = 0;
     row.setAttribute("role", "button");
     (function(id){
@@ -367,6 +381,13 @@
       lock.className = "pv-case-lock"; lock.textContent = "🔒"; lock.title = "機密案件";
       row.appendChild(lock);
     }
+    // 備考の本文はカードに載せない（1行に収まらない）。あることだけ印で示し、
+    // 中身は行タップ＝管理モーダル、または全件ページで読む。
+    if (c.notes){
+      var memo = document.createElement("span");
+      memo.className = "pv-case-lock"; memo.textContent = "📝"; memo.title = "備考あり";
+      row.appendChild(memo);
+    }
     if (c.requestedBy){
       var req = document.createElement("span");
       req.className = "pv-contract-req";
@@ -394,6 +415,21 @@
   // カードとページの両方を更新する(フィルタ状態は共用なので片方を触ったらもう片方も揃える)。
   function renderContractsAll(){ renderContracts(); renderContractsPage(); }
 
+  // カードは常に3件分の高さにする。16:9 枠モードでは .pv-contracts-list が
+  // height:auto なので、タブで絞って行が減るとカードが縮み、下のカードごと動く。
+  // min-height をピクセルで置くと行の実寸(バッジの高さ)とずれるので、
+  // 実物と同じ構造の行を不可視で並べて高さを合わせる。
+  var CONTRACTS_CARD_MAX = 3;
+  function padContractsCard(list, used){
+    for (var i = used; i < CONTRACTS_CARD_MAX; i++){
+      var ph = document.createElement("div");
+      ph.className = "pv-contract-row is-compact is-placeholder";
+      ph.setAttribute("aria-hidden", "true");
+      ph.innerHTML = '<span class="pv-case-name">\u00a0</span><span class="pv-case-status-badge">\u00a0</span>';
+      list.appendChild(ph);
+    }
+  }
+
   function renderContracts(){
     var list = document.getElementById("pv-contracts-list");
     if (!list) return;
@@ -401,26 +437,20 @@
     list.innerHTML = "";
     if (!contractsState.length){
       list.innerHTML = '<div class="pv-habit-empty">「管理」から契約書を追加してください。</div>';
+      padContractsCard(list, 1);
       return;
     }
     // 要対応(アラート→未締結)を先頭に寄せてから3件を切る。order 順のままだと
     // 完了済みでカード枠が埋まり、アラート行が一覧ページ側に隠れてしまう。
-    var filtered = sortContractsByUrgency(filterContracts());
+    var filtered = sortContractsByUrgency(filterContracts(false));
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
+      padContractsCard(list, 1);
       return;
     }
-    // カードは3件まで（コンパクト行）。残りは「すべて表示（ほか N 件）」で一覧ページ(#view-contracts)へ。
-    var CONTRACTS_CARD_MAX = 3;
+    // カードは3件まで（コンパクト行）。全件は見出しの「すべて」から一覧ページ(#view-contracts)へ。
     filtered.slice(0, CONTRACTS_CARD_MAX).forEach(function(c){ list.appendChild(buildContractRowCompact(c)); });
-    if (filtered.length > CONTRACTS_CARD_MAX){
-      var more = document.createElement("button");
-      more.type = "button";
-      more.className = "pv-list-more";
-      more.textContent = "すべて表示（ほか " + (filtered.length - CONTRACTS_CARD_MAX) + " 件）";
-      more.addEventListener("click", function(){ showView("contracts"); });
-      list.appendChild(more);
-    }
+    padContractsCard(list, filtered.length);
   }
 
   /* ---- 契約書トラッカー 一覧ページ (#view-contracts) ---- */
@@ -455,7 +485,7 @@
       contractsPageSetStatus("0 件");
       return;
     }
-    var filtered = sortContractsByUrgency(filterContracts());
+    var filtered = sortContractsByUrgency(filterContracts(true));
     if (!filtered.length){
       list.innerHTML = '<div class="pv-habit-empty">該当する契約書がありません。</div>';
       renderContractsKpi(0);
@@ -585,7 +615,7 @@
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
         requestedDate: c.requestedDate || "", sentDate: c.sentDate || "", signedDate: c.signedDate || "",
         dueDate: c.dueDate || "", confidential: c.confidential === true,
-        slackUrl: c.slackUrl || "",
+        slackUrl: c.slackUrl || "", notes: c.notes || "",
         source: c.source === "slack" ? "slack" : "manual"
       };
     });
@@ -607,7 +637,7 @@
     else closeContractModal();
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", source: "manual" };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
@@ -769,6 +799,23 @@
     slackWrap.appendChild(slackLbl); slackWrap.appendChild(slackInp);
     body.appendChild(slackWrap);
 
+    // 案件ごとの備考。他のフィールドに収まらない経緯・特記事項を書く欄。
+    // Slackダイジェストの自動更新(from-digest)は notes を触らないので手入力が消えない。
+    var notesWrap = document.createElement("div");
+    notesWrap.className = "field-block";
+    var notesLbl = document.createElement("span");
+    notesLbl.className = "pv-contract-field-label";
+    notesLbl.textContent = "備考（任意）";
+    var notesInp = document.createElement("textarea");
+    notesInp.className = "pv-contract-notes-input";
+    notesInp.maxLength = 500; notesInp.rows = 3;
+    notesInp.placeholder = "交渉の経緯・特記事項など";
+    notesInp.value = r.notes || "";
+    notesInp.setAttribute("aria-label", "備考（任意）");
+    notesInp.addEventListener("input", function(){ r.notes = notesInp.value; r.source = "manual"; });
+    notesWrap.appendChild(notesLbl); notesWrap.appendChild(notesInp);
+    body.appendChild(notesWrap);
+
     var lineMisc = document.createElement("div");
     lineMisc.className = "habit-block-line";
     var conf = document.createElement("label");
@@ -803,6 +850,7 @@
         requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
         dueDate: r.dueDate || "", confidential: r.confidential === true,
         slackUrl: (r.slackUrl || "").trim().slice(0, 500),
+        notes: (r.notes || "").trim().slice(0, 500),
         source: r.source === "slack" ? "slack" : "manual"
       });
     }
@@ -827,6 +875,9 @@
     contractsWired = true;
     var manageBtn = document.getElementById("pv-contracts-manage");
     if (manageBtn) manageBtn.addEventListener("click", function(){ openContractModal(); });
+    // 見出しの「すべて」＝全件ページへ。旧「すべて表示（ほか N 件）」の置き換え。
+    var allBtn = document.getElementById("pv-contracts-all");
+    if (allBtn) allBtn.addEventListener("click", function(){ showView("contracts"); });
 
     var tabsBar = document.getElementById("pv-contracts-tabs");
     if (tabsBar) tabsBar.addEventListener("click", function(e){
@@ -835,29 +886,8 @@
       contractsTab = btn.getAttribute("data-tab") || "";
       renderContractsAll();
     });
-    var qInput = document.getElementById("pv-contracts-q");
-    if (qInput) qInput.addEventListener("input", function(){ contractsQuery = qInput.value; renderContractsAll(); });
-    var reqSel = document.getElementById("pv-contracts-requester");
-    if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContractsAll(); });
-
-    // 検索窓は既定で畳んでおき、「すべて」右の虫めがねで開閉する。
-    // 畳むときは絞り込みを解除する(隠れたフィルタを残さない)。
-    var searchToggle = document.getElementById("pv-contracts-search-toggle");
-    var searchBox = document.getElementById("pv-contracts-search");
-    if (searchToggle && searchBox) searchToggle.addEventListener("click", function(){
-      var willShow = searchBox.hidden;
-      searchBox.hidden = !willShow;
-      searchToggle.classList.toggle("is-on", willShow);
-      if (willShow){
-        if (qInput) qInput.focus();
-      } else {
-        contractsQuery = "";
-        contractsRequester = "";
-        if (qInput) qInput.value = "";
-        if (reqSel) reqSel.value = "";
-        renderContractsAll();
-      }
-    });
+    // 検索・依頼者フィルタはカードから外した（全件ページ側のツールバーで行う）。
+    // contractsQuery / contractsRequester の状態自体は両画面で共用のまま残っている。
 
     var modal = document.getElementById("contract-modal");
     var closeBtn = document.getElementById("contract-modal-close");

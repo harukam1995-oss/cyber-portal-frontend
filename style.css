@@ -1281,6 +1281,8 @@
     border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px; cursor:pointer;
   }
   .pv-habit-manage:hover{ border-color: var(--cyan); }
+  /* カード見出しの右にボタンが2つ並ぶとき（契約書トラッカーの「すべて」＋「管理」）。 */
+  .pv-card-head-actions{ display:flex; align-items:center; gap:6px; }
   .pv-habit-weeknav{
     display:flex; align-items:center; justify-content:center; gap:12px;
     font-family: var(--font-mono); font-size:11.5px; color: var(--text-dim); margin-bottom:8px;
@@ -1540,29 +1542,23 @@
   .pv-contracts-tab.is-active{ color: var(--cyan); border-bottom-color: var(--cyan); }
   .pv-contracts-tab-alert{ color: var(--warn); }
   .pv-contracts-tab-alert.is-active{ color: var(--warn); border-bottom-color: var(--warn); }
-  /* 「すべて」の右端に置く検索トグル(タブではないので .pv-contracts-tab は付けない) */
-  .pv-contracts-search-toggle{
-    margin-left:auto; display:flex; align-items:center; padding:4px 6px; cursor:pointer;
-    background:transparent; border:none; color: var(--text-faint); border-bottom:2px solid transparent;
-  }
-  .pv-contracts-search-toggle svg{ width:14px; height:14px; stroke: currentColor; fill:none; }
-  .pv-contracts-search-toggle:hover{ color: var(--text); }
-  .pv-contracts-search-toggle.is-on{ color: var(--accent); }
-  .pv-contracts-search{ display:flex; gap:6px; margin-bottom:8px; }
-  .pv-contracts-search[hidden]{ display:none; }
-  .pv-contracts-q{
-    flex:1 1 auto; min-width:0; font-size:12px; padding:5px 8px; color-scheme: dark;
-    background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
-  }
-  .pv-contracts-q::placeholder{ color: var(--text-faint); }
+  /* カード内の検索トグル・検索窓(.pv-contracts-search-toggle / .pv-contracts-search /
+     .pv-contracts-q)は廃止した。カードは3件しか出さないので絞り込む意味が薄く、
+     検索は全件ページ(#view-contracts)のツールバーに一本化した。
+     .pv-contracts-requester は全件ページの依頼者セレクトと Slack 全件ページの期間セレクトで
+     まだ使っているので残す。 */
   .pv-contracts-requester{
     flex:none; font-size:11px; padding:5px 6px; color-scheme: dark;
     background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:6px; color: var(--text);
   }
   /* ネイティブのドロップダウン(option リスト)が白くならないよう、周りに合わせた暗色を明示 */
   .pv-contracts-requester option{ background: var(--panel-solid); color: var(--text); }
-  /* タブ切替で件数が変わってもカード高が動かないよう固定高。件数が少ないと余白が出る */
+  /* タブ切替で件数が変わってもカード高が動かないよう固定高。件数が少ないと余白が出る
+     (16:9 枠モードではこの高さを外すので、代わりに app.business.js が不可視の
+      プレースホルダ行で3件分を埋めている) */
   .pv-contracts-list{ display:flex; flex-direction:column; gap:12px; height:210px; overflow-y:auto; }
+  /* 3件に満たないときの高さ合わせ用のダミー行。実物と同じ構造なので実寸が一致する。 */
+  .pv-contract-row.is-placeholder{ visibility:hidden; pointer-events:none; }
   .pv-contracts-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
 
   /* 契約書トラッカー 一覧ページ（#view-contracts）。カードの .pv-contract-row をそのまま使い、
@@ -1662,6 +1658,15 @@
     letter-spacing:.2px; color: var(--text-faint);
   }
 
+  /* 案件ごとの備考。全件ページ(#view-contracts)の行にだけ出す。改行を保ちつつ、
+     長文で行が伸びすぎないよう3行で丸める（全文は行タップ＝管理モーダルで読む）。 */
+  .pv-contract-notes{
+    font-size:11.5px; line-height:1.6; color: var(--text-dim);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    border-left:2px solid var(--panel-border); padding-left:8px; margin-top:2px;
+    display:-webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp:3; overflow:hidden;
+  }
+
   /* ビジネスカード用コンパクト行（1行＝契約書名・依頼者・ステータス）。縦を詰める。 */
   .pv-contract-row.is-compact{
     flex-direction: row; align-items: center; gap: 8px;
@@ -1706,6 +1711,8 @@
   #contract-detail-body .case-edit-due{ flex:none; width:150px !important; padding:7px 8px !important; font-size:12.5px !important; color-scheme: dark; }
   .pv-contract-slack-note{ font-size:11.5px; color: var(--violet); line-height:1.6; }
   .pv-contract-field-label{ font-size:12px; color: var(--text-dim); margin-right:8px; }
+  /* 管理モーダルの備考欄。既定の1行 textarea だと書きづらいので3行ぶん確保する。 */
+  .pv-contract-notes-input{ min-height:76px; line-height:1.6; font-size:13px !important; }
   .pv-contract-chips{ display:flex; gap:6px; flex-wrap:wrap; }
   .pv-contract-chip{
     font-size:11px; cursor:pointer; color: var(--text-dim);
@@ -2345,7 +2352,7 @@
   .cal-month-cell.today .cal-month-date{ color: var(--accent); }
   /* フォームのラベル/入力の角も詰める */
   .event-form input, .event-form select, .event-form textarea,
-  .pv-contracts-q, .pv-contracts-requester, .mail-search-wrap{ border-radius: 2px; }
+  .pv-contracts-requester, .mail-search-wrap{ border-radius: 2px; }
   /* クイックタイル・アイコンの色をトークンへ */
   .quick-tile svg{ stroke: var(--accent); }
   .quick-tile .tile-dot{ background: var(--accent); }
@@ -2447,7 +2454,9 @@
     }
     /* ビジネスは内部スクロールの箱を枠内だけ低くして 16:9 に確実に収める。
        左列が3カード（TODAY/メモ/タスク）で縦に長いので、メモ・タスクを強めに詰める。 */
-    /* 契約書リストは枠内では最大3件＋「すべて表示」だけなので固定高スクロールをやめる。 */
+    /* 契約書リストは枠内では最大3件だけなので固定高スクロールをやめる。
+       件数が3件未満でもカードが縮まないよう、app.business.js が不可視の
+       プレースホルダ行で3件分を埋める（ピクセル指定の min-height は行の実寸とずれる）。 */
     html.fixed-aspect #view-business:not([hidden]) .pv-contracts-list{ height: auto; overflow: visible; }
     html.fixed-aspect #view-business:not([hidden]) .pv-slack-list{ max-height: 150px; }
     html.fixed-aspect #view-business:not([hidden]) .pv-events-list{ max-height: 168px; }
