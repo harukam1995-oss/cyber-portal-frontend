@@ -70,7 +70,35 @@ export function subCadenceWord(s){
   return n + "ヶ月ごと";
 }
 
-/* ---- 今月の収支: 金額表示 ---- */
+export function subTodayParts(){
+  return new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date()).split("-").map(Number);
+}
+export function subYm(y, m){ return y + "-" + String(m).padStart(2, "0"); }
+export function subChargesInRange(s, fromYm, count){
+  var step = subEvery(s) * (subUnit(s) === "year" ? 12 : 1);
+  var day = Math.min(31, Math.max(1, Math.round(Number(s.day) || 1)));
+  var p = subTodayParts();
+  var fp = String(fromYm).split("-").map(Number);
+  var fromIdx = fp[0] * 12 + (fp[1] - 1);
+  var toIdx = fromIdx + count - 1;
+  var anchorM = step === 1 ? p[1] : Math.min(12, Math.max(1, Math.round(Number(s.month) || p[1])));
+  var anchorIdx = (p[0] - 2) * 12 + (anchorM - 1);
+  var skip = Math.max(0, Math.ceil((fromIdx - anchorIdx) / step));
+  var out = [];
+  for (var idx = anchorIdx + skip * step; idx <= toIdx && out.length < 200; idx += step){
+    var y = Math.floor(idx / 12), m = (idx % 12) + 1;
+    out.push({ ym: subYm(y, m), y: y, m: m, d: Math.min(day, new Date(y, m, 0).getDate()) });
+  }
+  return out;
+}
+export function subDaysLabel(days){
+  if (days <= 0) return "今日";
+  if (days === 1) return "明日";
+  return "あと" + days + "日";
+}
+
+/* ---- 今月の収支: 金額表示 / 月の計算 ---- */
 
 export function finYen(n){
   return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP");
@@ -78,6 +106,15 @@ export function finYen(n){
 export function finSignedYen(n){
   var v = Math.round(Number(n) || 0);
   return (v < 0 ? "−" : "") + "¥" + Math.abs(v).toLocaleString("ja-JP");
+}
+export function finShiftMonth(ym, n){
+  var p = String(ym).split("-").map(Number);
+  var t = (p[0] * 12 + (p[1] - 1)) + n;
+  return String(Math.floor(t / 12)) + "-" + String((t % 12) + 1).padStart(2, "0");
+}
+export function finMonthLabel(ym){
+  var p = String(ym).split("-");
+  return p[0] + "年" + Number(p[1]) + "月";
 }
 
 export { JP_TZ };

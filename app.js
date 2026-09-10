@@ -816,14 +816,15 @@
         else window.__CP.renderSlackPage();
       }).catch(bizModuleFail);
     }
-    if (name === "finance" && !financeInitialized){
-      financeInitialized = true;
-      wireFinanceModal();
+    // 配線は初回だけ。データはシート(正)が外で変わりうるので開くたびに取り直す。
+    // 収支は月ナビで過去へ行けるので、入り直したら当月に戻す。
+    if (name === "finance"){
+      if (!financeInitialized){ financeInitialized = true; wireFinanceModal(); }
+      financeMonth = finCurrentMonth();
       loadFinance();
     }
-    if (name === "subs" && !subsPageInitialized){
-      subsPageInitialized = true;
-      wireSubs();
+    if (name === "subs"){
+      if (!subsPageInitialized){ subsPageInitialized = true; wireSubs(); }
       loadSubs();
     }
     window.scrollTo(0, 0);
@@ -924,7 +925,9 @@
   var subsState = [];
   var subsSetStatus = makeStatusSetter("pv-subs-status");
   var subsWired = false;
-  var subsRows = []; // 管理モーダルの作業コピー
+  var subsRows = [];            // 「まとめて編集」モーダルの作業コピー
+  var subsFinanceRows = null;   // 家計簿との突合用（当月の明細。取れなければ null）
+  var subRowEditIndex = -1;     // 1件編集モーダルが編集中の subsState インデックス（-1 = 新規）
 
   function subYen(n){ return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP"); }
   function subUnit(s){ return s.unit === "year" ? "year" : "month"; }
@@ -969,60 +972,342 @@
     var mo = Math.min(12, Math.max(1, Number(s.month) || (new Date().getMonth() + 1)));
     return subCadenceWord(s) + " " + mo + "/" + day;
   }
+  function subTodayParts(){
+    return new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date()).split("-").map(Number);
+  }
+  function subYm(y, m){ return y + "-" + String(m).padStart(2, "0"); }
+  /* s の課金月を列挙する。subNextParts と同じアンカー(2年前の基準月)から周期ぶんずつ
+     前進させ、fromYm から count ヶ月ぶんの窓に入るものを [{ym,y,m,d}] で返す。
+     「今月の請求」「年間の分布」はどちらもこれ1本で出す。 */
+  function subChargesInRange(s, fromYm, count){
+    var step = subEvery(s) * (subUnit(s) === "year" ? 12 : 1);
+    var day = Math.min(31, Math.max(1, Math.round(Number(s.day) || 1)));
+    var p = subTodayParts();
+    var fp = String(fromYm).split("-").map(Number);
+    var fromIdx = fp[0] * 12 + (fp[1] - 1);
+    var toIdx = fromIdx + count - 1;
+    var anchorM = step === 1 ? p[1] : Math.min(12, Math.max(1, Math.round(Number(s.month) || p[1])));
+    var anchorIdx = (p[0] - 2) * 12 + (anchorM - 1);
+    var skip = Math.max(0, Math.ceil((fromIdx - anchorIdx) / step));
+    var out = [];
+    for (var idx = anchorIdx + skip * step; idx <= toIdx && out.length < 200; idx += step){
+      var y = Math.floor(idx / 12), m = (idx % 12) + 1;
+      out.push({ ym: subYm(y, m), y: y, m: m, d: Math.min(day, new Date(y, m, 0).getDate()) });
+    }
+    return out;
+  }
+  // 次回課金までの日数（0 = 今日）
+  function subDaysUntil(s){
+    var n = subNextParts(s);
+    var p = subTodayParts();
+    var a = Date.UTC(n.y, n.m - 1, n.d), b = Date.UTC(p[0], p[1] - 1, p[2]);
+    return Math.round((a - b) / 86400000);
+  }
+  function subNextDateLabel(s){
+    var n = subNextParts(s);
+    return n.m + "/" + String(n.d).padStart(2, "0");
+  }
+  function subDaysLabel(days){
+    if (days <= 0) return "今日";
+    if (days === 1) return "明日";
+    return "あと" + days + "日";
+  }
+  function subCategoryOf(s){ return String(s.category || "").trim(); }
+  // 名前どうしのゆるい照合（家計簿の備考にサービス名が入っている前提）
+  function subNorm(s){
+    return String(s || "").toLowerCase().replace(/[\s　・,，.。]/g, "");
+  }
 
-  function renderSubs(){
+  // 一覧（次回課金日順）。行クリックで「その1件だけ」の編集モーダルを開く。
+  function renderSubsList(active){
     var list = document.getElementById("pv-subs-list");
-    var totalEl = document.getElementById("pv-subs-total");
     if (!list) return;
-    var active = subsState.filter(function(s){ return (s.name || "").trim(); });
+    list.innerHTML = "";
     if (!active.length){
-      list.innerHTML = '<div class="pv-habit-empty">「管理」からサブスクを登録してください。</div>';
-      if (totalEl) totalEl.hidden = true;
+      list.innerHTML = '<div class="pv-habit-empty">「＋ 追加」からサブスクを登録してください。</div>';
       return;
     }
-    active.sort(function(a, b){ return subNextKey(a) - subNextKey(b); });
-    list.innerHTML = "";
+    var curYm = (function(){ var p = subTodayParts(); return subYm(p[0], p[1]); })();
     active.forEach(function(s){
+      var days = subDaysUntil(s);
+      var next = subNextParts(s);
       var row = document.createElement("div");
-      row.className = "pv-sub-row";
+      row.className = "pv-sub-row" + (subYm(next.y, next.m) === curYm ? " is-thismonth" : "");
       row.tabIndex = 0; row.setAttribute("role", "button");
+
+      var gut = document.createElement("span");
+      gut.className = "pv-sub-gutter";
+      var gd = document.createElement("span");
+      gd.className = "pv-sub-date"; gd.textContent = subNextDateLabel(s);
+      var gu = document.createElement("span");
+      gu.className = "pv-sub-until" + (days <= 3 ? " is-soon" : "");
+      gu.textContent = subDaysLabel(days);
+      gut.appendChild(gd); gut.appendChild(gu);
+
+      var main = document.createElement("span");
+      main.className = "pv-sub-main";
+      var line1 = document.createElement("span");
+      line1.className = "pv-sub-line1";
       var name = document.createElement("span");
       name.className = "pv-sub-name"; name.textContent = s.name;
-      var when = document.createElement("span");
-      when.className = "pv-sub-when"; when.textContent = subWhenLabel(s);
+      line1.appendChild(name);
+      var cat = subCategoryOf(s);
+      if (cat){
+        var chip = document.createElement("span");
+        chip.className = "pv-sub-cat"; chip.textContent = cat;
+        line1.appendChild(chip);
+      }
+      main.appendChild(line1);
+      var meta = document.createElement("span");
+      meta.className = "pv-sub-meta";
+      meta.textContent = subWhenLabel(s) + (s.note ? " ・ " + s.note : "");
+      meta.title = s.note || "";
+      main.appendChild(meta);
+
+      var amtWrap = document.createElement("span");
+      amtWrap.className = "pv-sub-amtwrap";
       var amt = document.createElement("span");
-      amt.className = "pv-sub-amount";
-      amt.textContent = subYen(s.amount);
-      row.appendChild(name); row.appendChild(when); row.appendChild(amt);
-      var open = function(){ openSubsModal(); };
+      amt.className = "pv-sub-amount"; amt.textContent = subYen(s.amount);
+      var per = document.createElement("span");
+      per.className = "pv-sub-permonth";
+      per.textContent = subEvery(s) === 1 && subUnit(s) === "month" ? "" : "月あたり " + subYen(subMonthlyAmount(s));
+      amtWrap.appendChild(amt); amtWrap.appendChild(per);
+
+      row.appendChild(gut); row.appendChild(main); row.appendChild(amtWrap);
+      var open = function(){ openSubRowModal(subsState.indexOf(s)); };
       row.addEventListener("click", open);
       row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
       list.appendChild(row);
     });
-    var monthly = active.reduce(function(a, s){ return a + subMonthlyAmount(s); }, 0);
-    if (totalEl){
-      totalEl.hidden = false;
-      totalEl.textContent = "月合計 " + subYen(monthly) + " ・ 年 " + subYen(monthly * 12);
+  }
+
+  // 今月に来る課金（済み・これから を分けて表示）
+  function renderSubsThisMonth(active){
+    var listEl = document.getElementById("subs-month-list");
+    var labelEl = document.getElementById("subs-month-label");
+    if (!listEl) return { total: 0, count: 0, remaining: 0 };
+    var p = subTodayParts();
+    var ym = subYm(p[0], p[1]);
+    if (labelEl) labelEl.textContent = p[1] + "月";
+    var items = [];
+    active.forEach(function(s){
+      subChargesInRange(s, ym, 1).forEach(function(c){
+        items.push({ sub: s, day: c.d, done: c.d < p[2] });
+      });
+    });
+    items.sort(function(a, b){ return a.day - b.day; });
+    listEl.innerHTML = "";
+    if (!items.length){
+      listEl.innerHTML = '<div class="pv-habit-empty">今月の課金はありません。</div>';
+      return { total: 0, count: 0, remaining: 0, items: items };
     }
+    var total = 0, remaining = 0;
+    items.forEach(function(it){
+      var amount = Number(it.sub.amount) || 0;
+      total += amount;
+      if (!it.done) remaining += amount;
+      var row = document.createElement("div");
+      row.className = "subs-month-row" + (it.done ? " is-done" : "");
+      var d = document.createElement("span");
+      d.className = "subs-month-day"; d.textContent = it.day + "日";
+      var n = document.createElement("span");
+      n.className = "subs-month-name"; n.textContent = it.sub.name;
+      var a = document.createElement("span");
+      a.className = "subs-month-amount"; a.textContent = subYen(amount);
+      row.appendChild(d); row.appendChild(n); row.appendChild(a);
+      listEl.appendChild(row);
+    });
+    var foot = document.createElement("div");
+    foot.className = "subs-month-foot";
+    foot.textContent = "合計 " + subYen(total) + (remaining > 0 ? " ・ 残り " + subYen(remaining) : " ・ 支払い済み");
+    listEl.appendChild(foot);
+    return { total: total, count: items.length, remaining: remaining, items: items };
+  }
+
+  // これから12ヶ月の課金額分布。年払いが重なる月が一目で分かるようにする。
+  function renderSubsYear(active){
+    var wrap = document.getElementById("subs-year-chart");
+    if (!wrap) return;
+    var p = subTodayParts();
+    var fromYm = subYm(p[0], p[1]);
+    var buckets = [];
+    for (var i = 0; i < 12; i++){
+      var idx = p[0] * 12 + (p[1] - 1) + i;
+      buckets.push({ ym: subYm(Math.floor(idx / 12), (idx % 12) + 1), m: (idx % 12) + 1, total: 0 });
+    }
+    var byYm = Object.create(null);
+    buckets.forEach(function(b){ byYm[b.ym] = b; });
+    active.forEach(function(s){
+      subChargesInRange(s, fromYm, 12).forEach(function(c){
+        if (byYm[c.ym]) byYm[c.ym].total += Number(s.amount) || 0;
+      });
+    });
+    var max = buckets.reduce(function(a, b){ return Math.max(a, b.total); }, 0);
+    wrap.innerHTML = "";
+    buckets.forEach(function(b, i){
+      var col = document.createElement("div");
+      col.className = "subs-year-col" + (i === 0 ? " is-current" : "");
+      col.title = b.m + "月 " + subYen(b.total);
+      var barWrap = document.createElement("span");
+      barWrap.className = "subs-year-bar";
+      var fill = document.createElement("span");
+      fill.className = "subs-year-fill";
+      fill.style.height = (max > 0 ? Math.max(2, (b.total / max) * 100) : 0) + "%";
+      barWrap.appendChild(fill);
+      var lbl = document.createElement("span");
+      lbl.className = "subs-year-label"; lbl.textContent = b.m;
+      col.appendChild(barWrap); col.appendChild(lbl);
+      wrap.appendChild(col);
+    });
+    var peak = buckets.reduce(function(a, b){ return b.total > a.total ? b : a; }, buckets[0]);
+    if (max > 0){
+      var note = document.createElement("div");
+      note.className = "subs-year-note";
+      note.textContent = "最大は " + peak.m + "月 の " + subYen(peak.total);
+      wrap.appendChild(note);
+    }
+  }
+
+  /* 家計簿の「サブスク」カテゴリー実績と、この台帳の今月の請求を突き合わせる。
+     ・台帳になさそうな支出 → 登録漏れ（or 備考にサービス名が無い）
+     ・支払日を過ぎたのに実績が無い → 記帳漏れ（or 解約済みで台帳に残っている）
+     家計簿が未設定・取得失敗のときはパネルごと隠す（ここは補助情報なので黙って落とす）。 */
+  function renderSubsRecon(monthInfo){
+    var card = document.getElementById("subs-recon-card");
+    var body = document.getElementById("subs-recon");
+    var note = document.getElementById("subs-recon-note");
+    if (!card || !body) return;
+    var rows = subsFinanceRows;
+    if (!rows){ card.hidden = true; return; }
+    var actual = rows.filter(function(r){ return r.type === "支出" && String(r.category || "").trim() === "サブスク"; });
+    var actualTotal = actual.reduce(function(a, r){ return a + (Number(r.amount) || 0); }, 0);
+    var p = subTodayParts();
+    var items = (monthInfo && monthInfo.items) || [];
+
+    // 家計簿の備考にサービス名が入っている / 逆に備考がサービス名の略のどちらでも拾う
+    function matches(r, sub){
+      var needle = subNorm(sub.name);
+      var noteN = subNorm(r.note);
+      if (!needle || !noteN) return false;
+      return noteN.indexOf(needle) >= 0 || needle.indexOf(noteN) >= 0;
+    }
+    var unbooked = items.filter(function(it){
+      if (it.day > p[2]) return false; // まだ支払日が来ていない
+      return !actual.some(function(r){ return matches(r, it.sub); });
+    });
+    var unknown = actual.filter(function(r){
+      return !items.some(function(it){ return matches(r, it.sub); });
+    });
+
+    card.hidden = false;
+    if (note) note.textContent = p[1] + "月";
+    body.innerHTML = "";
+    var sum = document.createElement("div");
+    sum.className = "subs-recon-sum";
+    sum.textContent = "台帳の今月の請求 " + subYen(monthInfo ? monthInfo.total : 0)
+      + " ／ 家計簿の「サブスク」実績 " + subYen(actualTotal) + "（" + actual.length + "件）";
+    body.appendChild(sum);
+
+    function block(title, list, render, emptyText){
+      var b = document.createElement("div");
+      b.className = "subs-recon-block";
+      var h = document.createElement("div");
+      h.className = "subs-recon-title";
+      h.textContent = title + "（" + list.length + "）";
+      b.appendChild(h);
+      if (!list.length){
+        var e = document.createElement("div");
+        e.className = "subs-recon-ok"; e.textContent = emptyText;
+        b.appendChild(e);
+      } else {
+        list.forEach(function(x){
+          var r = document.createElement("div");
+          r.className = "subs-recon-row";
+          r.textContent = render(x);
+          b.appendChild(r);
+        });
+      }
+      body.appendChild(b);
+    }
+    block("家計簿に見当たらない", unbooked, function(it){
+      return it.day + "日 ・ " + it.sub.name + " ・ " + subYen(it.sub.amount);
+    }, "支払日を過ぎた課金はすべて記帳済みです。");
+    block("台帳にないサブスク支出", unknown, function(r){
+      return String(r.date).slice(5).replace("-", "/") + " ・ " + (r.note || "（備考なし）") + " ・ " + subYen(r.amount);
+    }, "家計簿の「サブスク」支出はすべて台帳と対応しています。");
+
+    var hint = document.createElement("p");
+    hint.className = "fin-note";
+    hint.textContent = "照合は家計簿の備考にサービス名が含まれているかで判定しています。";
+    body.appendChild(hint);
+  }
+
+  function renderSubs(){
+    var active = subsState.filter(function(s){ return (s.name || "").trim(); });
+    active.sort(function(a, b){ return subNextKey(a) - subNextKey(b); });
+
+    var kpis = document.getElementById("subs-kpis");
+    var body = document.getElementById("subs-body");
+    if (kpis) kpis.hidden = false;
+    if (body) body.hidden = false;
+
+    renderSubsList(active);
+    var monthInfo = renderSubsThisMonth(active);
+    renderSubsYear(active);
+
+    var monthly = active.reduce(function(a, s){ return a + subMonthlyAmount(s); }, 0);
+    var setTxt = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt("subs-kpi-month", subYen(monthly));
+    setTxt("subs-kpi-year", subYen(monthly * 12));
+    setTxt("subs-kpi-thismonth", subYen(monthInfo.total));
+    setTxt("subs-kpi-thismonth-sub", monthInfo.count
+      ? monthInfo.count + "件・残り " + subYen(monthInfo.remaining)
+      : "課金なし");
+    setTxt("subs-kpi-count", String(active.length));
+    var cats = {};
+    active.forEach(function(s){ var c = subCategoryOf(s); if (c) cats[c] = true; });
+    var catKeys = Object.keys(cats);
+    setTxt("subs-kpi-count-sub", catKeys.length ? catKeys.length + "カテゴリ" : "カテゴリ未設定");
+
+    // 編集モーダルのカテゴリ候補
+    var dl = document.getElementById("sub-category-options");
+    if (dl){
+      dl.innerHTML = "";
+      catKeys.sort().forEach(function(c){
+        var o = document.createElement("option"); o.value = c; dl.appendChild(o);
+      });
+    }
+    renderSubsRecon(monthInfo);
   }
 
   async function loadSubs(){
     var mngBtn = document.getElementById("pv-subs-manage");
-    var listEl = document.getElementById("pv-subs-list");
-    var totalEl = document.getElementById("pv-subs-total");
+    var addBtn = document.getElementById("pv-subs-add");
+    var kpis = document.getElementById("subs-kpis");
+    var body = document.getElementById("subs-body");
+    var recon = document.getElementById("subs-recon-card");
     subsSetStatus("読み込み中…");
     try {
       var res = await apiFetch("/api/sheets/subscriptions");
       if (!res || res.configured === false){
         subsState = [];
-        if (listEl) listEl.innerHTML = "";
-        if (totalEl) totalEl.hidden = true;
+        if (kpis) kpis.hidden = true;
+        if (body) body.hidden = true;
+        if (recon) recon.hidden = true;
         if (mngBtn) mngBtn.hidden = true;
+        if (addBtn) addBtn.hidden = true;
         subsSetStatus("設定 → 家計簿スプレッドシート に共有 URL を登録すると使えます。");
         return;
       }
       if (mngBtn) mngBtn.hidden = false;
+      if (addBtn) addBtn.hidden = false;
       subsState = res.subscriptions || [];
+      // 突合用に家計簿の当月明細も取る（失敗しても本体は出す）
+      try {
+        var fin = await apiFetch("/api/sheets/finance");
+        subsFinanceRows = (fin && fin.configured !== false && Array.isArray(fin.rows)) ? fin.rows : null;
+      } catch(e){ subsFinanceRows = null; }
       renderSubs();
       subsSetStatus("");
     } catch(err){
@@ -1032,7 +1317,7 @@
   }
 
   function newSubRow(){
-    return { name: "", amount: "", unit: "month", every: 1, month: (new Date().getMonth() + 1), day: 1, note: "" };
+    return { name: "", amount: "", unit: "month", every: 1, month: (new Date().getMonth() + 1), day: 1, note: "", category: "" };
   }
   // r.unit / r.every に応じて「月」入力の表示可否を切り替える(毎年 or 2ヶ月以上おき で表示)。
   function subsRowSyncMonth(r, moEl){
@@ -1091,13 +1376,18 @@
       subsRowSyncMonth(r, mo);
       l2.appendChild(amt); l2.appendChild(every); l2.appendChild(unit); l2.appendChild(mo); l2.appendChild(dy); l2.appendChild(dTxt);
       box.appendChild(l1); box.appendChild(l2);
-      // 3行目: 備考(任意)
+      // 3行目: カテゴリ + 備考(どちらも任意)
       var l3 = document.createElement("div"); l3.className = "subs-row-line";
+      var catIn = document.createElement("input");
+      catIn.type = "text"; catIn.maxLength = 40; catIn.placeholder = "カテゴリ(任意)"; catIn.value = r.category || "";
+      catIn.className = "subs-in subs-in-cat";
+      catIn.setAttribute("list", "sub-category-options");
+      catIn.addEventListener("input", function(){ r.category = catIn.value; });
       var note = document.createElement("input");
       note.type = "text"; note.maxLength = 200; note.placeholder = "備考(任意)"; note.value = r.note || "";
       note.className = "subs-in subs-in-note";
       note.addEventListener("input", function(){ r.note = note.value; });
-      l3.appendChild(note);
+      l3.appendChild(catIn); l3.appendChild(note);
       box.appendChild(l3);
       wrap.appendChild(box);
     });
@@ -1113,7 +1403,8 @@
         every: Math.min(120, Math.max(1, Number(s.every) || 1)),
         month: Number(s.month) || (new Date().getMonth() + 1),
         day: Math.min(31, Math.max(1, Number(s.day) || 1)),
-        note: s.note || ""
+        note: s.note || "",
+        category: s.category || ""
       };
     });
     if (!subsRows.length) subsRows.push(newSubRow());
@@ -1128,37 +1419,140 @@
     if (modal) modal.hidden = true;
     document.body.style.overflow = "";
   }
+  // 1行ぶんを API に渡す形へ正規化する（まとめて編集・1件編集の両方で使う）
+  function cleanSubRow(r){
+    var unit = r.unit === "year" ? "year" : "month";
+    var every = Math.min(120, Math.max(1, Math.round(Number(r.every) || 1)));
+    var needMonth = (unit === "year") || (every > 1);
+    return {
+      name: String(r.name).trim().slice(0, 80),
+      amount: Math.max(0, Math.round(Number(r.amount) || 0)),
+      unit: unit,
+      every: every,
+      day: Math.min(31, Math.max(1, Number(r.day) || 1)),
+      month: needMonth ? Math.min(12, Math.max(1, Number(r.month) || (new Date().getMonth() + 1))) : null,
+      note: String(r.note || "").trim().slice(0, 200),
+      category: String(r.category || "").trim().slice(0, 40)
+    };
+  }
+  // シートは全置換なので、1件編集でも常に全件を送る
+  async function putSubs(list){
+    await apiFetch("/api/sheets/subscriptions", {
+      method: "PUT",
+      body: JSON.stringify({ subscriptions: list })
+    });
+    await loadSubs(); // シート(正)から取り直す
+  }
+
   async function saveSubs(){
     var err = document.getElementById("subs-form-error");
     var cleaned = subsRows
       .filter(function(r){ return (r.name || "").trim(); })
-      .map(function(r){
-        var unit = r.unit === "year" ? "year" : "month";
-        var every = Math.min(120, Math.max(1, Math.round(Number(r.every) || 1)));
-        var needMonth = (unit === "year") || (every > 1);
-        return {
-          name: String(r.name).trim().slice(0, 80),
-          amount: Math.max(0, Math.round(Number(r.amount) || 0)),
-          unit: unit,
-          every: every,
-          day: Math.min(31, Math.max(1, Number(r.day) || 1)),
-          month: needMonth ? Math.min(12, Math.max(1, Number(r.month) || (new Date().getMonth() + 1))) : null,
-          note: String(r.note || "").trim().slice(0, 200)
-        };
-      });
+      .map(cleanSubRow);
     var saveBtn = document.getElementById("subs-save");
     if (saveBtn) saveBtn.disabled = true;
     try {
-      await apiFetch("/api/sheets/subscriptions", {
-        method: "PUT",
-        body: JSON.stringify({ subscriptions: cleaned })
-      });
-      await loadSubs(); // シート(正)から取り直す
+      await putSubs(cleaned);
       closeSubsModal();
     } catch(e){
       if (err){ err.hidden = false; err.textContent = apiErrorMessage(e, "サブスク") || "保存に失敗しました"; }
     } finally {
       if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+
+  /* ---- 1件だけ編集するモーダル（一覧の行クリック / ＋追加） ---- */
+  function subRowSyncForm(){
+    var unit = document.getElementById("sub-row-unit");
+    var every = document.getElementById("sub-row-every");
+    var moWrap = document.getElementById("sub-row-month-wrap");
+    var preview = document.getElementById("sub-row-preview");
+    if (!unit || !every || !moWrap) return;
+    var need = unit.value === "year" || Math.round(Number(every.value) || 1) > 1;
+    moWrap.hidden = !need;
+    if (preview){
+      var draft = {
+        unit: unit.value,
+        every: every.value,
+        month: document.getElementById("sub-row-month").value,
+        day: document.getElementById("sub-row-day").value
+      };
+      var days = subDaysUntil(draft);
+      preview.textContent = subWhenLabel(draft) + " ・ 次回 " + subNextDateLabel(draft) + "（" + subDaysLabel(days) + "）";
+    }
+  }
+  function openSubRowModal(index){
+    var modal = document.getElementById("sub-row-modal");
+    if (!modal) return;
+    subRowEditIndex = (index != null && index >= 0) ? index : -1;
+    var s = subRowEditIndex >= 0 ? subsState[subRowEditIndex] : null;
+    var nowMonth = subTodayParts()[1];
+    var moSel = document.getElementById("sub-row-month");
+    if (moSel && !moSel.options.length){
+      var html = "";
+      for (var m = 1; m <= 12; m++) html += '<option value="' + m + '">' + m + '月</option>';
+      moSel.innerHTML = html;
+    }
+    document.getElementById("sub-row-modal-title").textContent = s ? "サブスクを編集" : "サブスクを追加";
+    document.getElementById("sub-row-name").value = s ? (s.name || "") : "";
+    document.getElementById("sub-row-amount").value = s && (s.amount === 0 || s.amount) ? s.amount : "";
+    document.getElementById("sub-row-unit").value = s && s.unit === "year" ? "year" : "month";
+    document.getElementById("sub-row-every").value = s ? subEvery(s) : 1;
+    if (moSel) moSel.value = String(s && Number(s.month) ? Math.min(12, Math.max(1, Number(s.month))) : nowMonth);
+    document.getElementById("sub-row-day").value = s ? Math.min(31, Math.max(1, Number(s.day) || 1)) : 1;
+    document.getElementById("sub-row-category").value = s ? (s.category || "") : "";
+    document.getElementById("sub-row-note").value = s ? (s.note || "") : "";
+    var del = document.getElementById("sub-row-delete");
+    if (del) del.hidden = !s;
+    var err = document.getElementById("sub-row-error");
+    if (err){ err.hidden = true; err.textContent = ""; }
+    subRowSyncForm();
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+    document.getElementById("sub-row-name").focus();
+  }
+  function closeSubRowModal(){
+    var modal = document.getElementById("sub-row-modal");
+    if (modal) modal.hidden = true;
+    document.body.style.overflow = "";
+    subRowEditIndex = -1;
+  }
+  async function submitSubRow(remove){
+    var err = document.getElementById("sub-row-error");
+    var saveBtn = document.getElementById("sub-row-save");
+    var delBtn = document.getElementById("sub-row-delete");
+    function showErr(msg){ if (err){ err.hidden = false; err.textContent = msg; } }
+    if (err){ err.hidden = true; err.textContent = ""; }
+
+    var list = subsState.map(cleanSubRow);
+    if (remove){
+      if (subRowEditIndex < 0) return;
+      list.splice(subRowEditIndex, 1);
+    } else {
+      var draft = cleanSubRow({
+        name: document.getElementById("sub-row-name").value,
+        amount: document.getElementById("sub-row-amount").value,
+        unit: document.getElementById("sub-row-unit").value,
+        every: document.getElementById("sub-row-every").value,
+        month: document.getElementById("sub-row-month").value,
+        day: document.getElementById("sub-row-day").value,
+        category: document.getElementById("sub-row-category").value,
+        note: document.getElementById("sub-row-note").value
+      });
+      if (!draft.name){ showErr("サービス名を入力してください。"); return; }
+      if (subRowEditIndex >= 0) list[subRowEditIndex] = draft;
+      else list.push(draft);
+    }
+    if (saveBtn) saveBtn.disabled = true;
+    if (delBtn) delBtn.disabled = true;
+    try {
+      await putSubs(list);
+      closeSubRowModal();
+    } catch(e){
+      showErr(apiErrorMessage(e, "サブスク") || "保存に失敗しました");
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+      if (delBtn) delBtn.disabled = false;
     }
   }
   function wireSubs(){
@@ -1176,6 +1570,28 @@
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeSubsModal(); });
     var form = document.getElementById("subs-form");
     if (form) form.addEventListener("submit", function(e){ e.preventDefault(); saveSubs(); });
+
+    // 1件編集モーダル
+    var addOne = document.getElementById("pv-subs-add");
+    if (addOne) addOne.addEventListener("click", function(){ openSubRowModal(-1); });
+    var rModal = document.getElementById("sub-row-modal");
+    if (rModal) rModal.addEventListener("click", function(e){ if (e.target === rModal) closeSubRowModal(); });
+    var rClose = document.getElementById("sub-row-modal-close");
+    if (rClose) rClose.addEventListener("click", closeSubRowModal);
+    var rCancel = document.getElementById("sub-row-cancel");
+    if (rCancel) rCancel.addEventListener("click", closeSubRowModal);
+    var rForm = document.getElementById("sub-row-form");
+    if (rForm) rForm.addEventListener("submit", function(e){ e.preventDefault(); submitSubRow(false); });
+    var rDel = document.getElementById("sub-row-delete");
+    if (rDel) rDel.addEventListener("click", function(){
+      var s = subRowEditIndex >= 0 ? subsState[subRowEditIndex] : null;
+      if (!s) return;
+      if (window.confirm("「" + s.name + "」を削除します。よろしいですか？")) submitSubRow(true);
+    });
+    ["sub-row-unit", "sub-row-every", "sub-row-month", "sub-row-day"].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener(el.tagName === "SELECT" ? "change" : "input", subRowSyncForm);
+    });
   }
 
   /* ================= プライベート: 今月の収支 (v1b) =================
@@ -1189,11 +1605,35 @@
     "投資": ["日本株", "米国株", "iDeCo"]
   };
   var FIN_CIRC = 2 * Math.PI * 52; // ドーナツの円周 (r=52)
+  var FIN_TYPES = ["収入", "支出", "貯蓄", "投資"];
+  // 種別ごとの表示色。収入=アクセント / 支出=くすんだ茶 / 貯蓄・投資=薄アンバー。
+  // 「色は意味があるときだけ」なので4色までに留め、カテゴリーの内訳は同色の濃淡で割る。
+  var FIN_TYPE_COLOR = { "収入": "var(--accent)", "支出": "#a8836a", "貯蓄": "var(--violet)", "投資": "var(--violet)" };
+  var FIN_TYPE_SLUG = { "収入": "income", "支出": "expense", "貯蓄": "save", "投資": "invest" };
   var financeCategories = null;
   var financeModalWired = false;
+  var financeMonth = null;  // 表示中の月 "YYYY-MM"
+  var financeData = null;   // 直近のレスポンス
+  var financeCatType = "支出"; // 「カテゴリー別」で選択中の種別
 
   function finYen(n){
     return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP");
+  }
+  function finCurrentMonth(){ return jstDateKey(new Date()).slice(0, 7); }
+  function finShiftMonth(ym, n){
+    var p = String(ym).split("-").map(Number);
+    var t = (p[0] * 12 + (p[1] - 1)) + n;
+    return String(Math.floor(t / 12)) + "-" + String((t % 12) + 1).padStart(2, "0");
+  }
+  function finMonthLabel(ym){
+    var p = String(ym).split("-");
+    return p[0] + "年" + Number(p[1]) + "月";
+  }
+  // "YYYY-MM-DD" → "9/03(水)"。dowFmt は JST 固定なので UTC 正午で組んでズレを避ける。
+  function finDayLabel(key){
+    var p = String(key).split("-").map(Number);
+    var d = new Date(Date.UTC(p[0], p[1] - 1, p[2], 3));
+    return p[1] + "/" + String(p[2]).padStart(2, "0") + "(" + dowFmt.format(d) + ")";
   }
   function finSignedYen(n){
     var v = Math.round(Number(n) || 0);
@@ -1231,36 +1671,257 @@
     expArc.setAttribute("stroke-dashoffset", String(-incLen));
   }
 
+  /* 前月比のサブ行。当月を見ているときは前月の「同日まで」と比べる(月初に
+     「前月比 −90%」と出るのを避けるため)。過去月は前月まるごとと比べる。 */
+  function finDeltaLine(cur, prevVal, label, upIsGood){
+    if (!(prevVal > 0)) return { text: label + " —", tone: "" };
+    var d = cur - prevVal;
+    var pct = Math.round((d / prevVal) * 100);
+    var mark = d > 0 ? "▲" : (d < 0 ? "▼" : "±");
+    var tone = "";
+    if (d !== 0) tone = (d > 0) === !!upIsGood ? "is-good" : "is-bad";
+    return {
+      text: label + " " + finYen(prevVal) + " " + mark + Math.abs(pct) + "%",
+      tone: tone
+    };
+  }
+  function finSetSub(elId, info){
+    var el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = info ? info.text : "";
+    el.classList.remove("is-good", "is-bad");
+    if (info && info.tone) el.classList.add(info.tone);
+  }
+
+  // 左カード: 4種別の金額バー(貯蓄・投資も出す。差引には入らない)
+  function renderFinanceTypes(byType){
+    var wrap = document.getElementById("fin-types");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    var max = FIN_TYPES.reduce(function(a, t){ return Math.max(a, Number(byType[t]) || 0); }, 0);
+    FIN_TYPES.forEach(function(t){
+      var v = Number(byType[t]) || 0;
+      var row = document.createElement("div");
+      row.className = "fin-type-row is-" + FIN_TYPE_SLUG[t] + (v > 0 ? "" : " is-zero");
+      var name = document.createElement("span");
+      name.className = "fin-type-name"; name.textContent = t;
+      var bar = document.createElement("span");
+      bar.className = "fin-type-bar";
+      var fill = document.createElement("span");
+      fill.className = "fin-type-fill";
+      fill.style.width = (max > 0 ? (v / max) * 100 : 0) + "%";
+      fill.style.background = FIN_TYPE_COLOR[t];
+      bar.appendChild(fill);
+      var amt = document.createElement("span");
+      amt.className = "fin-type-amount"; amt.textContent = finYen(v);
+      row.appendChild(name); row.appendChild(bar); row.appendChild(amt);
+      wrap.appendChild(row);
+    });
+  }
+
+  // 右カード: 選択中の種別をカテゴリー別に割る。色は種別色の濃淡だけで足りる。
+  function renderFinanceCats(){
+    var tabsEl = document.getElementById("fin-cat-tabs");
+    var barEl = document.getElementById("fin-catbar");
+    var listEl = document.getElementById("fin-catlist");
+    if (!tabsEl || !barEl || !listEl) return;
+    var rows = (financeData && financeData.rows) || [];
+    var byType = (financeData && financeData.byType) || {};
+
+    // タブ: 金額のある種別だけ。選択中が空になったら金額の大きい方へ寄せる。
+    var avail = FIN_TYPES.filter(function(t){ return (Number(byType[t]) || 0) > 0; });
+    if (!avail.length) avail = ["支出"];
+    if (avail.indexOf(financeCatType) < 0) financeCatType = avail[0];
+    tabsEl.innerHTML = "";
+    avail.forEach(function(t){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "fin-cat-tab" + (t === financeCatType ? " is-active" : "");
+      b.textContent = t;
+      b.addEventListener("click", function(){ financeCatType = t; renderFinanceCats(); });
+      tabsEl.appendChild(b);
+    });
+
+    var map = Object.create(null);
+    var total = 0;
+    rows.forEach(function(r){
+      if (r.type !== financeCatType) return;
+      var k = (r.category || "").trim() || "未分類";
+      map[k] = (map[k] || 0) + (Number(r.amount) || 0);
+      total += Number(r.amount) || 0;
+    });
+    var items = Object.keys(map).map(function(k){ return { name: k, amount: map[k] }; })
+      .sort(function(a, b){ return b.amount - a.amount; });
+
+    barEl.innerHTML = "";
+    listEl.innerHTML = "";
+    if (!items.length || total <= 0){
+      listEl.innerHTML = '<div class="pv-habit-empty">' + financeCatType + 'の記録がありません。</div>';
+      return;
+    }
+    var base = FIN_TYPE_COLOR[financeCatType];
+    items.forEach(function(it, i){
+      var pct = (it.amount / total) * 100;
+      var op = Math.max(0.28, 1 - i * 0.16); // 大きい順に薄くしていく
+      var seg = document.createElement("span");
+      seg.className = "fin-catbar-seg";
+      seg.style.width = pct + "%";
+      seg.style.background = base;
+      seg.style.opacity = String(op);
+      seg.title = it.name + " " + finYen(it.amount);
+      barEl.appendChild(seg);
+
+      var row = document.createElement("div");
+      row.className = "fin-cat-row";
+      var dot = document.createElement("span");
+      dot.className = "fin-cat-dot";
+      dot.style.background = base; dot.style.opacity = String(op);
+      var name = document.createElement("span");
+      name.className = "fin-cat-name"; name.textContent = it.name;
+      var pctEl = document.createElement("span");
+      pctEl.className = "fin-cat-pct"; pctEl.textContent = (pct < 1 ? "<1" : Math.round(pct)) + "%";
+      var amt = document.createElement("span");
+      amt.className = "fin-cat-amount"; amt.textContent = finYen(it.amount);
+      row.appendChild(dot); row.appendChild(name); row.appendChild(pctEl); row.appendChild(amt);
+      listEl.appendChild(row);
+    });
+  }
+
+  // 下: 当月の明細（新しい順）。追加した取引をその場で確認できるようにするのが主目的。
+  function renderFinanceTx(){
+    var listEl = document.getElementById("fin-tx-list");
+    var countEl = document.getElementById("fin-tx-count");
+    var card = document.getElementById("fin-tx-card");
+    if (!listEl) return;
+    var rows = (financeData && financeData.rows) || [];
+    if (card) card.hidden = false;
+    if (countEl) countEl.textContent = rows.length ? rows.length + "件" : "";
+    listEl.innerHTML = "";
+    if (!rows.length){
+      listEl.innerHTML = '<div class="pv-habit-empty">この月の取引はまだありません。</div>';
+      return;
+    }
+    rows.forEach(function(r){
+      var row = document.createElement("div");
+      row.className = "fin-tx-row";
+      var date = document.createElement("span");
+      date.className = "fin-tx-date"; date.textContent = finDayLabel(r.date);
+      var type = document.createElement("span");
+      type.className = "fin-tx-type is-" + (FIN_TYPE_SLUG[r.type] || "expense");
+      type.textContent = r.type;
+      var cat = document.createElement("span");
+      cat.className = "fin-tx-cat"; cat.textContent = (r.category || "").trim() || "未分類";
+      var note = document.createElement("span");
+      note.className = "fin-tx-note"; note.textContent = r.note || "";
+      note.title = r.note || "";
+      var amt = document.createElement("span");
+      amt.className = "fin-tx-amount is-" + (FIN_TYPE_SLUG[r.type] || "expense");
+      amt.textContent = finYen(r.amount);
+      row.appendChild(date); row.appendChild(type); row.appendChild(cat);
+      row.appendChild(note); row.appendChild(amt);
+      listEl.appendChild(row);
+    });
+  }
+
+  function renderFinanceMonthNav(){
+    var label = document.getElementById("fin-month-label");
+    var next = document.getElementById("fin-month-next");
+    var today = document.getElementById("fin-month-today");
+    var cur = finCurrentMonth();
+    if (label) label.textContent = finMonthLabel(financeMonth || cur);
+    var isCurrent = (financeMonth || cur) === cur;
+    if (next) next.disabled = isCurrent;
+    if (today) today.hidden = isCurrent;
+    if (label) label.classList.toggle("is-past", !isCurrent);
+  }
+
+  function renderFinance(){
+    if (!financeData) return;
+    var res = financeData;
+    var byType = res.byType || {};
+    var income = Number(res.income) || 0;
+    var expense = Number(res.expense) || 0;
+    var diff = (res.diff != null) ? Number(res.diff) : (income - expense);
+    var isCurrent = res.month === finCurrentMonth();
+    var prev = res.prev || {};
+    // 当月は「前月の同日まで」、過去月は前月まるごとと比べる
+    var prevSrc = (isCurrent && prev.toDate) ? prev.toDate : (prev.byType || {});
+    var prevLabel = isCurrent ? "前月同日" : "前月";
+
+    document.getElementById("pv-fin-income").textContent = finYen(income);
+    document.getElementById("pv-fin-expense").textContent = finYen(expense);
+    var diffEl = document.getElementById("pv-fin-diff");
+    diffEl.textContent = finSignedYen(diff);
+    diffEl.classList.toggle("is-neg", diff < 0);
+    diffEl.classList.toggle("is-pos", diff >= 0);
+
+    finSetSub("fin-sub-income", finDeltaLine(income, Number(prevSrc["収入"]) || 0, prevLabel, true));
+    finSetSub("fin-sub-expense", finDeltaLine(expense, Number(prevSrc["支出"]) || 0, prevLabel, false));
+    var prevDiff = (Number(prevSrc["収入"]) || 0) - (Number(prevSrc["支出"]) || 0);
+    finSetSub("fin-sub-diff", prevDiff === 0 ? { text: prevLabel + " —", tone: "" }
+      : { text: prevLabel + " " + finSignedYen(prevDiff), tone: diff >= prevDiff ? "is-good" : "is-bad" });
+
+    var k4Label = document.getElementById("fin-kpi4-label");
+    var k4Value = document.getElementById("pv-fin-daysleft");
+    var count = (res.rows || []).length;
+    if (isCurrent){
+      if (k4Label) k4Label.textContent = "当月の残り日数";
+      if (k4Value) k4Value.textContent = finMonthDaysLeft() + "日";
+      finSetSub("fin-sub-days", { text: "取引 " + count + "件", tone: "" });
+    } else {
+      if (k4Label) k4Label.textContent = "取引件数";
+      if (k4Value) k4Value.textContent = count + "件";
+      finSetSub("fin-sub-days", null);
+    }
+
+    var donutDiff = document.getElementById("pv-fin-donut-diff");
+    if (donutDiff){
+      donutDiff.textContent = finSignedYen(diff);
+      donutDiff.classList.toggle("is-neg", diff < 0);
+      donutDiff.classList.toggle("is-pos", diff >= 0);
+    }
+    renderFinanceDonut(income, expense);
+    renderFinanceTypes(byType);
+    renderFinanceCats();
+    renderFinanceTx();
+    renderFinanceMonthNav();
+  }
+
+  function finShowBody(show){
+    ["fin-kpis", "fin-body", "fin-tx-card"].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.hidden = !show;
+    });
+  }
+
   async function loadFinance(){
-    var main = document.getElementById("pv-fin-main");
     var addBtn = document.getElementById("pv-fin-add");
-    if (!main) return;
+    if (!document.getElementById("pv-fin-main")) return;
+    if (!financeMonth) financeMonth = finCurrentMonth();
+    renderFinanceMonthNav();
     finSetStatus("読み込み中…", false);
     if (addBtn) addBtn.hidden = true;
     try {
-      var res = await apiFetch("/api/sheets/finance");
+      var res = await apiFetch("/api/sheets/finance?month=" + encodeURIComponent(financeMonth));
       if (!res || res.configured === false){
-        main.hidden = true;
+        financeData = null;
+        finShowBody(false);
         finSetStatus("設定 → 家計簿スプレッドシート に共有 URL を登録してください。", false);
         return;
       }
       financeCategories = (res.categories && Object.keys(res.categories).length) ? res.categories : FIN_FALLBACK_CATEGORIES;
-      var income = Number(res.income) || 0;
-      var expense = Number(res.expense) || 0;
-      var diff = (res.diff != null) ? Number(res.diff) : (income - expense);
-      document.getElementById("pv-fin-income").textContent = finYen(income);
-      document.getElementById("pv-fin-expense").textContent = finYen(expense);
-      var diffEl = document.getElementById("pv-fin-diff");
-      diffEl.textContent = finSignedYen(diff);
-      diffEl.classList.toggle("is-neg", diff < 0);
-      diffEl.classList.toggle("is-pos", diff >= 0);
-      document.getElementById("pv-fin-daysleft").textContent = finMonthDaysLeft() + "日";
-      renderFinanceDonut(income, expense);
-      main.hidden = false;
+      // 古いバックエンド(rows/byType なし)でも KPI だけは出せるように埋めておく
+      if (!res.byType) res.byType = { "収入": Number(res.income) || 0, "支出": Number(res.expense) || 0, "貯蓄": 0, "投資": 0 };
+      if (!res.rows) res.rows = [];
+      financeData = res;
+      financeMonth = res.month || financeMonth;
+      finShowBody(true);
+      renderFinance();
       if (addBtn) addBtn.hidden = false;
       finSetStatus("", false);
     } catch (err){
-      main.hidden = true;
+      financeData = null;
+      finShowBody(false);
       var code = err && err.code;
       if (code === "google_scope_missing" || code === "google_not_connected"){
         finSetStatus(apiErrorMessage(err, "家計簿"), true);
@@ -1268,6 +1929,13 @@
         finSetStatus(apiErrorMessage(err, "家計簿"), false);
       }
     }
+  }
+
+  function finGoMonth(ym){
+    var cur = finCurrentMonth();
+    if (ym > cur) ym = cur;      // 未来には進めない
+    financeMonth = ym;
+    loadFinance();
   }
 
   function finPopulateCategories(type){
@@ -1291,7 +1959,9 @@
     var errEl = document.getElementById("finance-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
     var dateEl = document.getElementById("fin-date");
-    if (dateEl) dateEl.value = jstDateKey(new Date());
+    // 過去月を見ているときは、その月の1日を既定にする(見ている月に足すのが自然)
+    var today = jstDateKey(new Date());
+    if (dateEl) dateEl.value = (financeMonth && financeMonth !== today.slice(0, 7)) ? (financeMonth + "-01") : today;
     var typeEl = document.getElementById("fin-type");
     if (typeEl) typeEl.value = "支出";
     var amtEl = document.getElementById("fin-amount");
@@ -1323,6 +1993,13 @@
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeFinanceModal(); });
     if (typeEl) typeEl.addEventListener("change", function(){ finPopulateCategories(typeEl.value); });
     if (reconnectBtn) reconnectBtn.addEventListener("click", function(){ startGoogleConnect("haruka"); });
+    // 月ナビ（未来には進めない。TODAY'S PLAN の日付ナビと同じ考え方）
+    var mPrev = document.getElementById("fin-month-prev");
+    var mNext = document.getElementById("fin-month-next");
+    var mToday = document.getElementById("fin-month-today");
+    if (mPrev) mPrev.addEventListener("click", function(){ finGoMonth(finShiftMonth(financeMonth || finCurrentMonth(), -1)); });
+    if (mNext) mNext.addEventListener("click", function(){ finGoMonth(finShiftMonth(financeMonth || finCurrentMonth(), 1)); });
+    if (mToday) mToday.addEventListener("click", function(){ finGoMonth(finCurrentMonth()); });
     if (form) form.addEventListener("submit", async function(e){
       e.preventDefault();
       var errEl = document.getElementById("finance-form-error");
@@ -1342,6 +2019,8 @@
       try {
         await apiFetch("/api/sheets/finance", { method: "POST", body: JSON.stringify(payload) });
         closeFinanceModal();
+        // 追加した取引が見えるよう、その取引の月へ移動してから読み直す
+        financeMonth = payload.date.slice(0, 7);
         loadFinance();
       } catch (err){
         showErr(apiErrorMessage(err, "家計簿"));

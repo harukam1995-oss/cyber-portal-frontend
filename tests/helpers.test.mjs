@@ -107,6 +107,57 @@ test("subCadenceWord", () => {
 
 /* ---- 収支 ---- */
 
+test("subChargesInRange: 毎月は窓のすべての月に1回ずつ当たる", () => {
+  const p = H.subTodayParts();
+  const from = H.subYm(p[0], p[1]);
+  const got = H.subChargesInRange({ unit: "month", every: 1, day: 25 }, from, 12);
+  assert.equal(got.length, 12);
+  assert.equal(got[0].ym, from);
+  assert.ok(got.every((c) => c.d === 25));
+});
+
+test("subChargesInRange: 毎年は基準月に年1回だけ", () => {
+  const p = H.subTodayParts();
+  const from = H.subYm(p[0], p[1]);
+  const got = H.subChargesInRange({ unit: "year", every: 1, month: 6, day: 25 }, from, 12);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].m, 6);
+  assert.equal(got[0].d, 25);
+});
+
+test("subChargesInRange: 半年ごとは12ヶ月窓に2回", () => {
+  const p = H.subTodayParts();
+  const from = H.subYm(p[0], p[1]);
+  const got = H.subChargesInRange({ unit: "month", every: 6, month: 3, day: 10 }, from, 12);
+  assert.equal(got.length, 2);
+  assert.equal(Math.abs(got[1].m - got[0].m) % 12, 6 % 12);
+});
+
+test("subChargesInRange: 支払日は月の実日数へ丸める（31日 → 2月は28/29日）", () => {
+  const got = H.subChargesInRange({ unit: "month", every: 1, day: 31 }, "2026-02", 1);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].d, 28); // 2026年2月
+});
+
+test("subDaysLabel", () => {
+  assert.equal(H.subDaysLabel(0), "今日");
+  assert.equal(H.subDaysLabel(-2), "今日");
+  assert.equal(H.subDaysLabel(1), "明日");
+  assert.equal(H.subDaysLabel(15), "あと15日");
+});
+
+test("finShiftMonth crosses year boundaries", () => {
+  assert.equal(H.finShiftMonth("2026-09", -1), "2026-08");
+  assert.equal(H.finShiftMonth("2026-01", -1), "2025-12");
+  assert.equal(H.finShiftMonth("2026-12", 1), "2027-01");
+  assert.equal(H.finShiftMonth("2026-03", -14), "2025-01");
+});
+
+test("finMonthLabel drops the leading zero", () => {
+  assert.equal(H.finMonthLabel("2026-09"), "2026年9月");
+  assert.equal(H.finMonthLabel("2026-12"), "2026年12月");
+});
+
 test("finYen / finSignedYen", () => {
   assert.equal(H.finYen(-500.4), "¥-500");           // finYen keeps the raw minus from toLocaleString
   assert.equal(H.finSignedYen(-1200), "−¥1,200");    // finSignedYen uses U+2212 and abs value

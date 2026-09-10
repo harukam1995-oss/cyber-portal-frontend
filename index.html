@@ -574,50 +574,103 @@
 </div>
 
 <!-- ================= 今月の収支 ページ（プライベートのクイックアクセスから遷移。
-     家計簿スプレッドシート連携。中身・IDはプライベートのカードから移設） ================= -->
+     家計簿スプレッドシート連携。KPIバンド＋2カラム（内訳／カテゴリー別）＋明細） ================= -->
 <div class="frame" id="view-finance" hidden>
   <header class="panel topbar" data-subhead="今月の収支" data-subtag="CYBER PORTAL"></header>
 
   <section class="panel cal-toolbar">
     <div class="cal-toolbar-left">
       <button class="cal-back-btn" id="finance-back" type="button">← 戻る</button>
+      <div class="month-nav">
+        <button type="button" class="month-nav-btn" id="fin-month-prev" aria-label="前の月">‹</button>
+        <span class="month-nav-label" id="fin-month-label">----年--月</span>
+        <button type="button" class="month-nav-btn" id="fin-month-next" aria-label="次の月">›</button>
+      </div>
+      <button type="button" class="cal-back-btn" id="fin-month-today" hidden>今月へ</button>
+    </div>
+    <div class="cal-toolbar-right">
+      <button type="button" class="ev-btn ev-btn-primary" id="pv-fin-add" hidden>＋ 取引を追加</button>
     </div>
   </section>
 
-  <div class="subpage-wrap">
-    <section class="panel pv-card pv-fin">
-      <div class="card-head">
-        <h2>今月の収支</h2>
-        <button type="button" class="pv-fin-add" id="pv-fin-add" hidden>＋ 追加</button>
+  <div class="subpage-wrap is-xwide">
+    <!-- KPIバンド（数値の主役。前月比は各値の下） -->
+    <section class="panel kpi-band" id="fin-kpis" hidden>
+      <div class="kpi">
+        <span class="kpi-label">収入合計</span>
+        <span class="kpi-value is-income" id="pv-fin-income">¥--</span>
+        <span class="kpi-sub" id="fin-sub-income"></span>
       </div>
-      <div class="card-body">
-        <div class="pv-fin-main" id="pv-fin-main" hidden>
-          <div class="pv-fin-donut-wrap">
-            <svg class="pv-fin-donut" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-              <circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.07)" stroke-width="10"/>
-              <circle id="pv-fin-arc-expense" cx="60" cy="60" r="52" stroke="#a8836a" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
-              <circle id="pv-fin-arc-income" cx="60" cy="60" r="52" stroke="var(--accent)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
-            </svg>
-            <div class="pv-fin-donut-center">
-              <span class="pv-fin-donut-label">収支差</span>
-              <span class="pv-fin-donut-value" id="pv-fin-diff">¥--</span>
-            </div>
-          </div>
-          <dl class="pv-fin-figures">
-            <div><dt>収入合計</dt><dd id="pv-fin-income" class="is-income">¥--</dd></div>
-            <div><dt>支出合計</dt><dd id="pv-fin-expense" class="is-expense">¥--</dd></div>
-            <div><dt>当月の残り日数</dt><dd id="pv-fin-daysleft">--日</dd></div>
-          </dl>
-        </div>
-        <p class="pv-fin-status" id="pv-fin-status">読み込み中…</p>
-        <button type="button" class="inbox-reconnect pv-fin-reconnect" id="pv-fin-reconnect" hidden>Google再連携</button>
+      <div class="kpi">
+        <span class="kpi-label">支出合計</span>
+        <span class="kpi-value is-expense" id="pv-fin-expense">¥--</span>
+        <span class="kpi-sub" id="fin-sub-expense"></span>
+      </div>
+      <div class="kpi is-lead">
+        <span class="kpi-label">収支差</span>
+        <span class="kpi-value" id="pv-fin-diff">¥--</span>
+        <span class="kpi-sub" id="fin-sub-diff"></span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label" id="fin-kpi4-label">当月の残り日数</span>
+        <span class="kpi-value" id="pv-fin-daysleft">--日</span>
+        <span class="kpi-sub" id="fin-sub-days"></span>
       </div>
     </section>
+
+    <div class="fin-cols" id="fin-body" hidden>
+      <section class="panel pv-card pv-fin">
+        <div class="card-head"><h2>収支の内訳</h2></div>
+        <div class="card-body">
+          <div class="pv-fin-main" id="pv-fin-main">
+            <div class="pv-fin-donut-wrap">
+              <svg class="pv-fin-donut" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.07)" stroke-width="10"/>
+                <circle id="pv-fin-arc-expense" cx="60" cy="60" r="52" stroke="#a8836a" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+                <circle id="pv-fin-arc-income" cx="60" cy="60" r="52" stroke="var(--accent)" stroke-width="10" stroke-linecap="butt" stroke-dasharray="0 326.726" transform="rotate(-90 60 60)"/>
+              </svg>
+              <div class="pv-fin-donut-center">
+                <span class="pv-fin-donut-label">収支差</span>
+                <span class="pv-fin-donut-value" id="pv-fin-donut-diff">¥--</span>
+              </div>
+            </div>
+            <!-- 4種別（貯蓄・投資も含む。差引には入らない旨は下の注記） -->
+            <div class="fin-types" id="fin-types"></div>
+          </div>
+          <p class="fin-note">貯蓄・投資は収支差に含みません。</p>
+        </div>
+      </section>
+
+      <section class="panel pv-card fin-cat-card">
+        <div class="card-head">
+          <h2>カテゴリー別</h2>
+          <div class="fin-cat-tabs" id="fin-cat-tabs"></div>
+        </div>
+        <div class="card-body">
+          <div class="fin-catbar" id="fin-catbar" aria-hidden="true"></div>
+          <div class="fin-catlist" id="fin-catlist"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel pv-card fin-tx-card" id="fin-tx-card" hidden>
+      <div class="card-head">
+        <h2>明細</h2>
+        <span class="card-head-note" id="fin-tx-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="fin-tx-list" id="fin-tx-list"></div>
+      </div>
+    </section>
+
+    <p class="pv-fin-status" id="pv-fin-status">読み込み中…</p>
+    <button type="button" class="inbox-reconnect pv-fin-reconnect" id="pv-fin-reconnect" hidden>Google再連携</button>
   </div>
 </div>
 
 <!-- ================= サブスク ページ（プライベートのクイックアクセスから遷移。
-     家計簿スプレッドシートの「サブスク管理」タブ連携。中身・IDはカードから移設） ================= -->
+     家計簿スプレッドシートの「サブスク管理」タブ連携。
+     KPIバンド＋2カラム（一覧／今月の請求・年間の分布）＋家計簿との突合） ================= -->
 <div class="frame" id="view-subs" hidden>
   <header class="panel topbar" data-subhead="サブスク" data-subtag="CYBER PORTAL"></header>
 
@@ -625,20 +678,81 @@
     <div class="cal-toolbar-left">
       <button class="cal-back-btn" id="subs-back" type="button">← 戻る</button>
     </div>
+    <div class="cal-toolbar-right">
+      <button type="button" class="ev-btn" id="pv-subs-manage" hidden>まとめて編集</button>
+      <button type="button" class="ev-btn ev-btn-primary" id="pv-subs-add" hidden>＋ 追加</button>
+    </div>
   </section>
 
-  <div class="subpage-wrap is-wide">
-    <section class="panel pv-card">
-      <div class="card-head">
-        <h2>サブスク</h2>
-        <button type="button" class="pv-habit-manage" id="pv-subs-manage">管理</button>
+  <div class="subpage-wrap is-xwide">
+    <section class="panel kpi-band" id="subs-kpis" hidden>
+      <div class="kpi is-lead">
+        <span class="kpi-label">月あたり</span>
+        <span class="kpi-value" id="subs-kpi-month">¥--</span>
+        <span class="kpi-sub">周期を月に均した額</span>
       </div>
-      <div class="card-body">
-        <div class="pv-subs-list" id="pv-subs-list"></div>
-        <div class="pv-subs-total" id="pv-subs-total" hidden></div>
-        <p class="pv-subs-status" id="pv-subs-status">読み込み中…</p>
+      <div class="kpi">
+        <span class="kpi-label">年間</span>
+        <span class="kpi-value" id="subs-kpi-year">¥--</span>
+        <span class="kpi-sub">月あたり × 12</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">今月の請求</span>
+        <span class="kpi-value" id="subs-kpi-thismonth">¥--</span>
+        <span class="kpi-sub" id="subs-kpi-thismonth-sub"></span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">登録件数</span>
+        <span class="kpi-value" id="subs-kpi-count">--</span>
+        <span class="kpi-sub" id="subs-kpi-count-sub"></span>
       </div>
     </section>
+
+    <div class="subs-cols" id="subs-body" hidden>
+      <section class="panel pv-card subs-list-card">
+        <div class="card-head">
+          <h2>登録中のサブスク</h2>
+          <span class="card-head-note">次回課金日順</span>
+        </div>
+        <div class="card-body">
+          <div class="pv-subs-list" id="pv-subs-list"></div>
+        </div>
+      </section>
+
+      <div class="subs-side">
+        <section class="panel pv-card">
+          <div class="card-head">
+            <h2>今月の請求</h2>
+            <span class="card-head-note" id="subs-month-label"></span>
+          </div>
+          <div class="card-body">
+            <div class="subs-month-list" id="subs-month-list"></div>
+          </div>
+        </section>
+
+        <section class="panel pv-card">
+          <div class="card-head">
+            <h2>年間の課金分布</h2>
+            <span class="card-head-note">これから12ヶ月</span>
+          </div>
+          <div class="card-body">
+            <div class="subs-year-chart" id="subs-year-chart"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel pv-card subs-recon-card" id="subs-recon-card" hidden>
+      <div class="card-head">
+        <h2>家計簿との突合</h2>
+        <span class="card-head-note" id="subs-recon-note"></span>
+      </div>
+      <div class="card-body">
+        <div class="subs-recon" id="subs-recon"></div>
+      </div>
+    </section>
+
+    <p class="pv-subs-status" id="pv-subs-status">読み込み中…</p>
   </div>
 </div>
 
@@ -1481,6 +1595,59 @@
         <div class="event-form-actions-right">
           <button type="button" id="subs-cancel" class="ev-btn">キャンセル</button>
           <button type="submit" id="subs-save" class="ev-btn ev-btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= サブスク: 1件だけ編集するモーダル（一覧の行クリック／＋追加） ================= -->
+<div class="modal-overlay" id="sub-row-modal" hidden role="dialog" aria-modal="true" aria-labelledby="sub-row-modal-title">
+  <div class="modal-panel event-modal-panel">
+    <div class="modal-head">
+      <h3 id="sub-row-modal-title">サブスクを編集</h3>
+      <button class="modal-close" type="button" id="sub-row-modal-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="event-form" id="sub-row-form">
+      <label>サービス名
+        <input type="text" id="sub-row-name" maxlength="80" required>
+      </label>
+      <label>金額（円）
+        <input type="number" id="sub-row-amount" min="0" step="1" inputmode="numeric" required>
+      </label>
+      <div class="sub-row-cycle">
+        <label>周期
+          <div class="sub-row-cycle-inputs">
+            <input type="number" id="sub-row-every" min="1" max="120" step="1" inputmode="numeric" value="1">
+            <select id="sub-row-unit">
+              <option value="month">ヶ月ごと</option>
+              <option value="year">年ごと</option>
+            </select>
+          </div>
+        </label>
+        <label id="sub-row-month-wrap">基準月
+          <select id="sub-row-month"></select>
+        </label>
+        <label>支払日
+          <input type="number" id="sub-row-day" min="1" max="31" step="1" inputmode="numeric" value="1">
+        </label>
+      </div>
+      <p class="settings-hint" id="sub-row-preview"></p>
+      <label>カテゴリ
+        <input type="text" id="sub-row-category" maxlength="40" list="sub-category-options" placeholder="動画 / 音楽 / 仕事 など（任意）">
+        <datalist id="sub-category-options"></datalist>
+      </label>
+      <label>備考
+        <textarea id="sub-row-note" rows="2" maxlength="200"></textarea>
+      </label>
+      <div class="event-form-error" id="sub-row-error" hidden></div>
+      <div class="event-form-actions">
+        <button type="button" class="ev-btn ev-btn-danger" id="sub-row-delete">削除</button>
+        <div class="event-form-actions-right">
+          <button type="button" id="sub-row-cancel" class="ev-btn">キャンセル</button>
+          <button type="submit" id="sub-row-save" class="ev-btn ev-btn-primary">保存</button>
         </div>
       </div>
     </form>

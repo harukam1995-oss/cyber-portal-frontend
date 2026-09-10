@@ -1246,12 +1246,6 @@
 
   /* ---------- 今月の収支 (v1b) ---------- */
   .pv-fin .card-head{ display:flex; align-items:center; justify-content:space-between; }
-  .pv-fin-add{
-    font-family: var(--font-body); font-size:11.5px; letter-spacing:.4px;
-    color: var(--cyan); background: rgba(255,143,63,0.06);
-    border:1px solid var(--panel-border); border-radius:6px; padding:3px 10px; cursor:pointer;
-  }
-  .pv-fin-add:hover{ border-color: var(--cyan); }
   .pv-fin-main{ display:flex; align-items:center; gap:16px; }
   .pv-fin-donut-wrap{ position:relative; width:104px; height:104px; flex:none; }
   .pv-fin-donut{ width:100%; height:100%; transform: rotate(0deg); }
@@ -1264,12 +1258,6 @@
   .pv-fin-donut-value{ font-family: var(--font-mono); font-size:13px; font-weight:700; color: var(--text); }
   .pv-fin-donut-value.is-neg{ color: var(--err); }
   .pv-fin-donut-value.is-pos{ color: var(--ok); }
-  .pv-fin-figures{ margin:0; flex:1 1 auto; display:flex; flex-direction:column; gap:7px; min-width:0; }
-  .pv-fin-figures > div{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-  .pv-fin-figures dt{ font-size:11px; letter-spacing:.4px; color: var(--text-faint); }
-  .pv-fin-figures dd{ margin:0; font-family: var(--font-mono); font-size:13px; color: var(--text); }
-  .pv-fin-figures dd.is-income{ color: var(--accent); }
-  .pv-fin-figures dd.is-expense{ color: #a8836a; }
   .pv-fin-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-fin-reconnect{ margin-top:8px; }
 
@@ -1895,8 +1883,10 @@
   .pv-up-date{ font-family: var(--font-mono); font-size:11.5px; color: var(--text-faint); min-width:66px; flex:none; }
   .pv-up-title{ color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  /* ---------- プライベート: サブスク管理 ---------- */
-  .pv-subs-list{ display:flex; flex-direction:column; gap:8px; max-height:170px; overflow-y:auto; }
+  /* ---------- プライベート: サブスク管理 ----------
+     ページ専用（v2.33.14 でカードから独立ページへ移設済み）。行の詳細な組みは
+     末尾の「収支 / サブスク ページ」ブロックで上書きする。 */
+  .pv-subs-list{ display:flex; flex-direction:column; gap:8px; }
   .pv-sub-row{
     display:flex; align-items:center; gap:8px; padding:6px 8px; cursor:pointer;
     border:1px solid var(--panel-border); border-left:3px solid var(--cyan); border-radius:8px;
@@ -1905,7 +1895,6 @@
   .pv-sub-name{ flex:1; min-width:0; font-size:12.5px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pv-sub-when{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; }
   .pv-sub-amount{ font-family: var(--font-mono); font-size:12px; color: var(--text); flex:none; }
-  .pv-subs-total{ margin-top:9px; font-family: var(--font-mono); font-size:11.5px; color: var(--text-dim); letter-spacing:.3px; }
   .pv-subs-status{ font-size:11.5px; color: var(--text-faint); margin:8px 0 0; line-height:1.6; }
   .pv-subs-status.is-err{ color: var(--err); }
 
@@ -2307,17 +2296,15 @@
      ===================================================================== */
   .pv-habit-cell{ border-radius: 2px; }
   .pv-habit-weeknav button{ border-radius: 2px; }
-  .pv-habit-manage,
-  .pv-subs-manage,
-  .pv-fin-add{
+  .pv-habit-manage{
     border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
     color: var(--accent); background: rgba(255,143,63,0.08);
   }
   .habit-list-row, .habit-count-pop, .habit-count-pop button, .habit-count-pop input{ border-radius: 2px; }
   .pv-fin-donut-value{ letter-spacing: .3px; }
-  .pv-fin-figures dd, .pv-fin-donut-value{ font-variant-numeric: tabular-nums; }
-  /* サブスクカードの行: 左の 3px アクセント帯は残しつつ数字を等幅・桁揃え */
-  .pv-sub-amount, .pv-subs-total{ font-variant-numeric: tabular-nums; }
+  .pv-fin-donut-value{ font-variant-numeric: tabular-nums; }
+  /* サブスクの行: 左の 3px アクセント帯は残しつつ数字を等幅・桁揃え */
+  .pv-sub-amount{ font-variant-numeric: tabular-nums; }
   .pv-sub-row{ border-radius: 2px; }
   /* 習慣・PLAN の曜日ヘッダは字送りを詰める */
   .pv-habit-dowhead span{ letter-spacing: 0; font-weight: 500; }
@@ -2548,4 +2535,241 @@
     #view-calendar .cal-timeline-scroll{ max-height: 60vh; }
     #view-calendar .cal-month-grid{ grid-auto-rows: minmax(64px, auto); }
     #view-calendar .cal-range-label{ padding-left: 0; border-left: none; }
+  }
+
+  /* =====================================================================
+     収支 / サブスク ページ（v2.33.36）
+     どちらも v2.33.14 でカードから独立ページへ出したまま、中身はカード時代の
+     組みが残っていた（520/680px 幅・一覧に max-height）。ページとして組み直す:
+     上に KPIバンド → 2カラム → 下に一覧、という並びで両ページを揃える。
+     数値は全部 --font-mono + tabular-nums、色は意味があるところだけ。
+     このブロックを消せばこの段階の見た目変更はほぼ戻せる。
+     ===================================================================== */
+  .subpage-wrap.is-xwide{ max-width:1100px; }
+
+  /* 月ナビ（TODAY'S PLAN の日付ナビと同じ考え方。未来へは進めない） */
+  .month-nav{ display:flex; align-items:center; gap:2px; }
+  .month-nav-btn{
+    font-family: var(--font-mono); font-size:14px; line-height:1; color: var(--text-dim);
+    background:transparent; border:1px solid var(--panel-border); border-radius:2px;
+    padding:4px 9px; cursor:pointer;
+  }
+  .month-nav-btn:hover:not(:disabled){ border-color: var(--accent); color: var(--text); }
+  .month-nav-btn:disabled{ opacity:.35; cursor:not-allowed; }
+  .month-nav-label{
+    font-family: var(--font-mono); font-size:12.5px; letter-spacing:.5px; color: var(--text);
+    min-width:96px; text-align:center; font-variant-numeric: tabular-nums;
+  }
+  .month-nav-label.is-past{ color: var(--accent); }
+
+  /* KPIバンド（契約書トラッカーの KPI と同じ役回りの、ページ用の大きい版） */
+  .kpi-band{ display:grid; grid-template-columns: repeat(4, 1fr); padding:14px 4px; margin-bottom:12px; }
+  .kpi-band[hidden]{ display:none; }
+  .kpi{
+    display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;
+    padding:2px 12px; border-left:1px solid var(--hairline); min-width:0;
+  }
+  .kpi:first-child{ border-left:none; }
+  .kpi-label{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); }
+  .kpi-value{
+    font-family: var(--font-mono); font-size:20px; font-weight:600; letter-spacing:.2px; line-height:1.2;
+    color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .kpi.is-lead .kpi-value{ font-size:24px; }
+  .kpi-value.is-income{ color: var(--accent); }
+  .kpi-value.is-expense{ color:#a8836a; }
+  .kpi-value.is-neg{ color: var(--err); }
+  .kpi-value.is-pos{ color: var(--ok); }
+  .kpi-sub{
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-sub.is-good{ color: var(--ok); }
+  .kpi-sub.is-bad{ color: var(--warn); }
+
+  .card-head-note{ font-family: var(--font-mono); font-size:10px; letter-spacing:1px; color: var(--text-faint); }
+  .fin-note{ margin:10px 0 0; font-size:10.5px; color: var(--text-faint); line-height:1.6; }
+
+  /* ---- 今月の収支 ---- */
+  .fin-cols{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px; align-items:start; }
+  .fin-cols[hidden]{ display:none; }
+  .fin-cols > .pv-card{ display:flex; flex-direction:column; }
+
+  /* 4種別。貯蓄・投資も出す（入力できるのに見えない状態だった） */
+  .fin-types{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:9px; }
+  .fin-type-row{ display:grid; grid-template-columns: 40px 1fr auto; align-items:center; gap:9px; }
+  .fin-type-row.is-zero{ opacity:.4; }
+  .fin-type-name{ font-size:11.5px; color: var(--text-dim); }
+  .fin-type-bar{ height:6px; background: rgba(255,255,255,0.05); border-radius:1px; overflow:hidden; }
+  .fin-type-fill{ display:block; height:100%; border-radius:1px; transition: width .35s ease; }
+  .fin-type-amount{
+    font-family: var(--font-mono); font-size:12px; color: var(--text); font-variant-numeric: tabular-nums;
+  }
+
+  /* カテゴリー別（色は種別色の濃淡だけ。虹色にしない） */
+  .fin-cat-card .card-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .fin-cat-tabs{ display:flex; gap:4px; flex-wrap:wrap; }
+  .fin-cat-tab{
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; padding:3px 8px;
+    color: var(--text-faint); background:transparent; border:1px solid var(--panel-border);
+    border-radius:2px; cursor:pointer;
+  }
+  .fin-cat-tab:hover{ color: var(--text-dim); border-color: var(--accent-dim); }
+  .fin-cat-tab.is-active{ color: var(--accent); background: rgba(255,143,63,0.08); border-color: var(--accent-dim); }
+  .fin-catbar{
+    display:flex; gap:1px; height:10px; margin-bottom:12px; border-radius:1px; overflow:hidden;
+    background: rgba(255,255,255,0.05);
+  }
+  .fin-catbar-seg{ display:block; height:100%; }
+  .fin-catlist{ display:flex; flex-direction:column; gap:7px; max-height:214px; overflow-y:auto; }
+  .fin-cat-row{ display:grid; grid-template-columns: 8px 1fr 42px auto; align-items:center; gap:9px; }
+  .fin-cat-dot{ width:8px; height:8px; border-radius:1px; }
+  .fin-cat-name{ font-size:12px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fin-cat-pct{
+    font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); text-align:right;
+    font-variant-numeric: tabular-nums;
+  }
+  .fin-cat-amount{
+    font-family: var(--font-mono); font-size:12px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+  }
+
+  /* 明細（これが無いと追加した取引を画面で確認できなかった） */
+  .fin-tx-card[hidden]{ display:none; }
+  .fin-tx-list{ display:flex; flex-direction:column; max-height:420px; overflow-y:auto; }
+  .fin-tx-row{
+    display:grid; grid-template-columns: 80px 54px 110px 1fr auto; align-items:center; gap:10px;
+    padding:7px 4px; border-bottom:1px solid var(--hairline);
+  }
+  .fin-tx-row:last-child{ border-bottom:none; }
+  .fin-tx-date{
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums;
+  }
+  .fin-tx-type{
+    font-family: var(--font-mono); font-size:9.5px; letter-spacing:.5px; text-align:center; padding:2px 0;
+    border:1px solid var(--hairline); border-radius:2px; color: var(--text-dim);
+  }
+  .fin-tx-type.is-income{ color: var(--accent); border-color: var(--accent-dim); }
+  .fin-tx-type.is-expense{ color:#a8836a; border-color: rgba(168,131,106,0.45); }
+  .fin-tx-cat{ font-size:11.5px; color: var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fin-tx-note{
+    font-size:11.5px; color: var(--text-faint); min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .fin-tx-amount{
+    font-family: var(--font-mono); font-size:12.5px; color: var(--text); text-align:right;
+    font-variant-numeric: tabular-nums;
+  }
+  .fin-tx-amount.is-income{ color: var(--accent); }
+  .fin-tx-amount.is-expense{ color:#a8836a; }
+
+  /* ---- サブスク ---- */
+  .subs-cols{ display:grid; grid-template-columns: 1.5fr 1fr; gap:12px; margin-bottom:12px; align-items:start; }
+  .subs-cols[hidden]{ display:none; }
+  .subs-side{ display:flex; flex-direction:column; gap:12px; }
+
+  /* 行を「次回課金日ガター / 名前・備考 / 金額」の3カラムに組み直す。
+     ソートに使うだけで捨てていた次回課金日を、実日付と「あとN日」で出す。 */
+  #view-subs .pv-subs-list{ gap:0; }
+  #view-subs .pv-sub-row{
+    display:grid; grid-template-columns: 68px 1fr auto; align-items:center; gap:12px;
+    padding:9px 8px; border:none; border-left:2px solid transparent;
+    border-bottom:1px solid var(--hairline); border-radius:0;
+  }
+  #view-subs .pv-sub-row:last-child{ border-bottom:none; }
+  #view-subs .pv-sub-row.is-thismonth{ border-left-color: var(--accent); }
+  .pv-sub-gutter{ display:flex; flex-direction:column; gap:1px; }
+  .pv-sub-date{
+    font-family: var(--font-mono); font-size:12.5px; color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .pv-sub-until{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px; color: var(--text-faint); }
+  .pv-sub-until.is-soon{ color: var(--warn); }
+  .pv-sub-main{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .pv-sub-line1{ display:flex; align-items:center; gap:7px; min-width:0; }
+  #view-subs .pv-sub-name{ flex:0 1 auto; font-size:13px; }
+  .pv-sub-cat{
+    font-family: var(--font-mono); font-size:9px; letter-spacing:.5px; padding:1px 6px; flex:none;
+    border:1px solid var(--hairline); border-radius:2px; color: var(--text-faint);
+  }
+  .pv-sub-meta{
+    font-size:10.5px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pv-sub-amtwrap{ display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+  #view-subs .pv-sub-amount{ font-size:13px; }
+  .pv-sub-permonth{
+    font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); font-variant-numeric: tabular-nums;
+  }
+
+  .subs-month-list{ display:flex; flex-direction:column; }
+  .subs-month-row{
+    display:grid; grid-template-columns: 42px 1fr auto; align-items:center; gap:9px;
+    padding:6px 2px; border-bottom:1px solid var(--hairline);
+  }
+  .subs-month-row.is-done{ opacity:.45; }
+  .subs-month-day{
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums;
+  }
+  .subs-month-name{ font-size:12px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .subs-month-amount{
+    font-family: var(--font-mono); font-size:12px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+  }
+  .subs-month-foot{
+    margin-top:9px; font-family: var(--font-mono); font-size:11px; letter-spacing:.3px;
+    color: var(--text-dim); font-variant-numeric: tabular-nums;
+  }
+
+  /* 年間の課金分布（年払いが重なる月を見つける用） */
+  .subs-year-chart{ display:grid; grid-template-columns: repeat(12, 1fr); gap:4px; align-items:end; }
+  .subs-year-col{
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:5px; height:96px;
+  }
+  .subs-year-bar{
+    width:100%; flex:1 1 auto; display:flex; align-items:flex-end;
+    background: rgba(255,255,255,0.04); border-radius:1px;
+  }
+  .subs-year-fill{ display:block; width:100%; background: var(--accent); opacity:.5; border-radius:1px; }
+  .subs-year-col.is-current .subs-year-fill{ opacity:1; }
+  .subs-year-label{ font-family: var(--font-mono); font-size:9px; color: var(--text-faint); }
+  .subs-year-col.is-current .subs-year-label{ color: var(--accent); }
+  .subs-year-note{
+    grid-column: 1 / -1; margin-top:10px; font-family: var(--font-mono); font-size:10px; color: var(--text-faint);
+  }
+
+  /* 家計簿との突合（登録漏れ・記帳漏れの気づき用。補助情報なので静かに） */
+  .subs-recon-card[hidden]{ display:none; }
+  .subs-recon{ display:flex; flex-direction:column; gap:14px; }
+  .subs-recon-sum{
+    font-family: var(--font-mono); font-size:11.5px; letter-spacing:.3px; color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .subs-recon-block{ display:flex; flex-direction:column; gap:5px; }
+  .subs-recon-title{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); }
+  .subs-recon-row{
+    font-size:12px; color: var(--text); padding:5px 8px;
+    border-left:2px solid var(--warn); background: rgba(216,194,74,0.05);
+  }
+  .subs-recon-ok{ font-size:11.5px; color: var(--text-faint); }
+
+  /* 1件編集モーダル */
+  .sub-row-cycle{ display:grid; grid-template-columns: 1.5fr 1fr 1fr; gap:10px; align-items:start; }
+  .sub-row-cycle > label{ min-width:0; }
+  .event-form .sub-row-cycle > label[hidden]{ display:none; }
+  .sub-row-cycle-inputs{ display:flex; gap:6px; }
+  .sub-row-cycle-inputs input{ flex:none; width:60px; text-align:center; }
+  .sub-row-cycle-inputs select{ flex:1 1 auto; min-width:0; }
+  #sub-row-preview{ margin:0; }
+  /* まとめて編集の3行目: カテゴリ + 備考 */
+  .subs-row .subs-in-cat{ flex:0 0 132px !important; width:auto !important; }
+  .subs-row .subs-in-note{ flex:1 1 140px !important; }
+
+  @media (max-width: 1000px){
+    .fin-cols, .subs-cols{ grid-template-columns: 1fr; }
+    .kpi-band{ grid-template-columns: repeat(2, 1fr); row-gap:16px; }
+    .kpi:nth-child(3){ border-left:none; }
+  }
+  @media (max-width: 640px){
+    .fin-tx-row{ grid-template-columns: 70px 48px 1fr auto; }
+    .fin-tx-note{ display:none; }
+    .sub-row-cycle{ grid-template-columns: 1fr 1fr; }
+    .subs-year-chart{ gap:3px; }
+    .subs-year-col{ height:78px; }
   }
