@@ -3210,3 +3210,14 @@
   }
   /* 見出し行は タイトル(伸びる) → ピン → タグバッジ の順。タイトルだけが縮む。 */
   .note-card .note-title{ flex:1 1 auto; }
+  /* タスク行のプロジェクトチップ（自由タグより一段落ち着いた見た目） */
+  .task-project-chip{
+    font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px; color: var(--text-faint);
+    border:1px solid var(--hairline); border-radius:2px; padding:1px 6px; flex:none;
+    max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  /* 優先度の帯（inset 3px）とキーボードカーソルの帯（2px）が重ならないよう、
+     優先度付きの行ではカーソル帯を 3px ぶん右へずらす。 */
+  .task-item.prio-high.is-cursor > .task-row::before,
+  .task-item.prio-mid.is-cursor > .task-row::before,
+  .task-item.prio-low.is-cursor > .task-row::before{ left:3px; }

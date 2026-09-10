@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 128;
+  var BUILD_V = 129;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -6252,6 +6252,17 @@
         row.appendChild(relEl);
       }
     }
+    // プロジェクト名のチップ。すでにそのプロジェクトで絞り込んでいるときは冗長なので出さない。
+    if (task.projectId && taskProjectFilter !== task.projectId){
+      var pn = projectName(task.projectId);
+      if (pn){
+        var pc = document.createElement("span");
+        pc.className = "task-project-chip";
+        pc.textContent = pn;
+        pc.title = "プロジェクト：" + pn;
+        row.appendChild(pc);
+      }
+    }
     if (task.priority){
       var prio = document.createElement("span");
       prio.className = "task-prio-badge is-" + task.priority;
@@ -6643,7 +6654,10 @@
     if (viewTasks.hidden) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     // モーダルが開いている間はモーダル側の操作に任せる
+    // （削除の確認ダイアログ中に n が効いて裏で新規モーダルが開く、を防ぐ）
     if (!taskModal.hidden) return;
+    if (confirmModal && !confirmModal.hidden) return;
+    if (noteModal && !noteModal.hidden) return;
     var active = document.activeElement;
 
     if (e.key === "/" && !typingInField(active)){
