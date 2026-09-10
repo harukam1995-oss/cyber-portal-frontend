@@ -228,6 +228,12 @@
           <span class="inbox-count-label">件の契約書が自動更新</span>
           <span class="inbox-count-acct">SYSLEA</span>
         </button>
+        <!-- 期限切れタスク。0件のときは hidden。押すとタスク管理を「期限切れ」ビューで開く。 -->
+        <button type="button" class="inbox-count-btn inbox-alert-btn" id="home-task-overdue-btn" hidden>
+          <span class="inbox-count-num" id="home-task-overdue-num">0</span>
+          <span class="inbox-count-label">件のタスクが期限切れ</span>
+          <span class="inbox-count-acct" id="home-task-overdue-acct">はるか</span>
+        </button>
         <button type="button" class="inbox-reconnect" id="home-google-connect-btn" hidden>
           Google再連携
         </button>
@@ -241,7 +247,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.45</span>
+      <span>v2.33.46</span>
     </div>
   </footer>
 </div>
@@ -1123,7 +1129,37 @@
       <div class="cal-status-chip" id="tasks-status-bar">接続確認中…</div>
     </div>
     <div class="cal-toolbar-right">
+      <select class="task-sort-select" id="task-sort" aria-label="並べ替え">
+        <option value="due">期限順（グループ表示）</option>
+        <option value="prio">優先度順</option>
+        <option value="created">追加順（新しい順）</option>
+        <option value="title">タイトル順</option>
+      </select>
       <button type="button" class="task-add-btn" id="task-new">+ 新規タスク</button>
+    </div>
+  </section>
+
+  <!-- KPIバンド（収支/サブスク/契約書と同じ .kpi-band を流用） -->
+  <section class="panel kpi-band task-kpis" id="task-kpis">
+    <div class="kpi">
+      <span class="kpi-label">今日</span>
+      <span class="kpi-value" id="task-kpi-today">0</span>
+      <span class="kpi-sub">期限が今日</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">今週</span>
+      <span class="kpi-value" id="task-kpi-week">0</span>
+      <span class="kpi-sub">7日以内</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">期限切れ</span>
+      <span class="kpi-value" id="task-kpi-overdue">0</span>
+      <span class="kpi-sub" id="task-kpi-overdue-sub"></span>
+    </div>
+    <div class="kpi is-lead">
+      <span class="kpi-label">完了率</span>
+      <span class="kpi-value" id="task-kpi-rate">--%</span>
+      <span class="kpi-sub" id="task-kpi-rate-sub"></span>
     </div>
   </section>
 
@@ -1140,6 +1176,11 @@
       <div class="task-side-group" id="task-side-tags-group">
         <div class="task-side-title">タグ</div>
         <ul class="task-side-list" id="task-side-tags"></ul>
+      </div>
+      <div class="task-keyhint">
+        <b>n</b> 新規 ・ <b>/</b> 検索<br>
+        <b>j k</b> 移動 ・ <b>x</b> 完了<br>
+        <b>e</b> 編集 ・ <b>Enter</b> 詳細
       </div>
     </aside>
     <div class="task-main">
@@ -1222,6 +1263,12 @@
       <button type="button" class="mail-act-btn" id="mail-forward-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
         <span>転送</span>
+      </button>
+      <!-- このスレッドをタスク化。件名を本文に、Gmail の permalink を URL 欄に入れて
+           タスクモーダルを開く（保存はいつもどおりモーダルの「保存」で）。 -->
+      <button type="button" class="mail-act-btn" id="mail-to-task-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>タスクにする</span>
       </button>
       <button type="button" class="mail-act-btn" data-mail-action="archive">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
@@ -1344,6 +1391,15 @@
           </div>
         </label>
       </div>
+      <label>優先度
+        <!-- 色は意味色のみ（高=err / 中=warn / 低=ニュートラル）。アクセントは増やさない。 -->
+        <div class="task-prio-picker" role="radiogroup" id="task-prio-picker">
+          <button type="button" class="task-prio-btn is-active" data-prio="">なし</button>
+          <button type="button" class="task-prio-btn is-low" data-prio="low">低</button>
+          <button type="button" class="task-prio-btn is-mid" data-prio="mid">中</button>
+          <button type="button" class="task-prio-btn is-high" data-prio="high">高</button>
+        </div>
+      </label>
       <label>タグ（自由）
         <input type="text" id="task-tags-input" placeholder="月次決算, 経理, 総務  （カンマ・スペース区切り）" autocomplete="off" maxlength="200">
       </label>
@@ -1362,6 +1418,7 @@
           <option value="daily">毎日</option>
           <option value="weekly">毎週</option>
           <option value="monthly">毎月</option>
+          <option value="yearly">毎年</option>
         </select>
       </label>
       <div class="task-repeat-detail" id="task-repeat-weekly" hidden>

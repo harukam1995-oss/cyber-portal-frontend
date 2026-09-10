@@ -2970,3 +2970,115 @@
     .task-input{ width: 100%; }
     .notes-grid{ grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   }
+
+  /* ========================================================================
+     メモ / タスク 強化 v2 (v2.33.46) — タスク側
+     優先度 / 期限グループ / 相対期限 / KPIバンド / 並べ替え / 空状態
+     ======================================================================== */
+
+  /* ---- 並べ替えセレクト ---- */
+  .task-sort-select{
+    background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:2px;
+    color: var(--text-dim); font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
+    padding:7px 8px; cursor:pointer; color-scheme: dark;
+  }
+  .task-sort-select:focus{ outline:none; border-color: var(--accent); }
+
+  /* ---- KPIバンド（.kpi-band を流用。タスク用に少し詰める） ---- */
+  .task-kpis{ padding:12px 4px; margin-bottom:0; }
+  .task-kpis .kpi-value{ font-size:20px; }
+  .task-kpis .kpi.is-lead .kpi-value{ font-size:20px; }
+
+  /* ---- 優先度 ---- */
+  /* 行の左帯。契約書トラッカーの status 左帯と同じ語彙（3px のベタ帯）。 */
+  .task-item.prio-high > .task-row{ box-shadow: inset 3px 0 0 var(--err); }
+  .task-item.prio-mid  > .task-row{ box-shadow: inset 3px 0 0 var(--warn); }
+  .task-item.prio-low  > .task-row{ box-shadow: inset 3px 0 0 var(--panel-border); }
+  .task-item.prio-high > .task-row,
+  .task-item.prio-mid  > .task-row,
+  .task-item.prio-low  > .task-row{ padding-left:14px; }
+  .task-item.done > .task-row{ box-shadow:none; }
+
+  .task-prio-badge{
+    display:inline-flex; align-items:center; justify-content:center; flex:none;
+    width:18px; height:18px; border-radius:2px; border:1px solid;
+    font-family: var(--font-mono); font-size:9.5px; line-height:1;
+  }
+  .task-prio-badge.is-high{ color: var(--err); border-color: rgba(255,92,92,.45); background: rgba(255,92,92,.10); }
+  .task-prio-badge.is-mid { color: var(--warn); border-color: rgba(216,194,74,.45); background: rgba(216,194,74,.10); }
+  .task-prio-badge.is-low { color: var(--text-faint); border-color: var(--panel-border); background: rgba(255,255,255,0.03); }
+
+  /* モーダルの優先度ピッカー（.acct-tabs と同じ質感） */
+  .task-prio-picker{ display:flex; gap:2px; border:1px solid var(--panel-border); border-radius:2px; width:fit-content; }
+  .task-prio-btn{
+    background:transparent; border:none; cursor:pointer; padding:5px 12px;
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; color: var(--text-faint);
+    border-right:1px solid var(--hairline);
+  }
+  .task-prio-btn:last-child{ border-right:none; }
+  .task-prio-btn.is-active{ background: rgba(255,143,63,0.10); color: var(--accent); }
+  .task-prio-btn.is-high.is-active{ background: rgba(255,92,92,.12); color: var(--err); }
+  .task-prio-btn.is-mid.is-active{ background: rgba(216,194,74,.12); color: var(--warn); }
+
+  /* ---- 期限の相対表示 ---- */
+  .task-due-rel{
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; color: var(--text-faint);
+    white-space:nowrap; flex:none;
+  }
+  .task-due-rel.is-soon{ color: var(--warn); }
+  .task-due-rel.is-over{ color: var(--err); }
+
+  /* ---- 期限グループ ---- */
+  .task-section{ display:flex; flex-direction:column; }
+  .task-section-head{
+    display:flex; align-items:center; gap:8px; padding:10px 8px 7px; cursor:pointer; user-select:none; width:100%;
+    background:transparent; border:none; text-align:left;
+    font-family: var(--font-mono); font-size:10px; font-weight:400; letter-spacing:1.5px; color: var(--text-dim);
+    border-bottom:1px solid var(--hairline);
+  }
+  .task-section-head:hover{ color: var(--text); }
+  .task-section-head.is-over{ color: var(--err); }
+  .task-section-head.is-soon{ color: var(--warn); }
+  .task-section-head .chevron{ width:11px; height:11px; stroke: currentColor; transition: transform .2s ease; flex:none; }
+  .task-section.collapsed .task-section-head .chevron{ transform: rotate(-90deg); }
+  .task-section-count{
+    margin-left:auto; font-family: var(--font-mono); font-size:10px; letter-spacing:0; color: var(--text-faint);
+    border:1px solid var(--panel-border); border-radius:2px; padding:1px 6px;
+  }
+  .task-section.collapsed .task-tree{ display:none; }
+
+  /* ---- 空状態のスポット絵（ink + accent の2色・線幅1.5px・発光なし） ---- */
+  .empty-state{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:40px 20px; }
+  .empty-art{ width:96px; height:72px; opacity:.9; }
+  .empty-art .ink{ stroke: var(--text-faint); }
+  .empty-art .accent{ stroke: var(--accent); }
+  .empty-title{ font-family: var(--font-display); font-size:13px; letter-spacing:.5px; color: var(--text-dim); }
+  .empty-sub{ font-size:11.5px; color: var(--text-faint); text-align:center; line-height:1.6; }
+
+  /* ---- 完了の整理バー ---- */
+  .task-oldbar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:9px 10px; margin-bottom:10px;
+    border:1px solid var(--panel-border); border-radius:2px; background: rgba(255,255,255,0.02);
+  }
+  .task-oldbar-msg{ font-size:11.5px; color: var(--text-dim); flex:1 1 200px; }
+  .task-oldbar-btn{
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; padding:4px 10px;
+    border:1px solid var(--panel-border); border-radius:2px; background:transparent;
+    color: var(--text-dim); cursor:pointer; flex:none;
+  }
+  .task-oldbar-btn:hover{ border-color: var(--accent); color: var(--accent); }
+  .task-oldbar-btn.is-danger:hover{ border-color: var(--err); color: var(--err); }
+
+  /* ---- キーボード操作のカーソル ---- */
+  .task-item.is-cursor > .task-row{ background: rgba(255,143,63,0.06); }
+  .task-item.is-cursor > .task-row::before{
+    content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background: var(--accent);
+  }
+  .task-row{ position:relative; }
+  .task-keyhint{
+    margin-top:auto; padding-top:14px; font-family: var(--font-mono); font-size:9px;
+    letter-spacing:.5px; color: var(--text-faint); line-height:1.9;
+  }
+  .task-keyhint b{ color: var(--text-dim); font-weight:400; }
+  @media (max-width: 860px){ .task-keyhint{ display:none; } }

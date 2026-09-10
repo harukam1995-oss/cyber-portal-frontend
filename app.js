@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 126;
+  var BUILD_V = 127;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -4181,6 +4181,35 @@
     showView("contracts");
   });
 
+  /* ---- HOME の INBOX に出す「期限切れタスク」行 ----
+     タスク管理タブを開かないと期限切れに気づけなかったため。件数は tasksState から
+     直に数えるので、タスクを触った瞬間に HOME 側も正しくなる（再取得なし）。 */
+  var homeTaskOverdueBtn = document.getElementById("home-task-overdue-btn");
+  var homeTaskOverdueNum = document.getElementById("home-task-overdue-num");
+  var homeTaskOverdueAcct = document.getElementById("home-task-overdue-acct");
+  function renderHomeTaskOverdue(){
+    if (!homeTaskOverdueBtn) return;
+    var todayKey = jstDateKey(new Date());
+    var over = tasksState.filter(function(t){
+      return !t.done && t.due && t.due < todayKey;
+    });
+    homeTaskOverdueBtn.hidden = over.length === 0;
+    if (homeTaskOverdueNum) homeTaskOverdueNum.textContent = String(over.length);
+    if (homeTaskOverdueAcct){
+      // 全部が同じアカウントならその名前、混在なら「両方」
+      var tags = {};
+      over.forEach(function(t){ tags[t.tag || "haruka"] = 1; });
+      var keys = Object.keys(tags);
+      homeTaskOverdueAcct.textContent = keys.length === 1 ? (TASK_TAG_LABEL[keys[0]] || keys[0]) : "両方";
+    }
+  }
+  if (homeTaskOverdueBtn) homeTaskOverdueBtn.addEventListener("click", function(){
+    taskView = "overdue";
+    taskStatusTab = "pending";
+    showView("tasks");
+    if (tasksInitialized) renderTasks();
+  });
+
   // Gmail/Calendar/DriveへのアクセスはFirebase Authenticationのログインとは別に、
   // 追加のGoogle同意(googleAuth.js)が必要。未連携時はもちろん、連携済みでも
   // トークン失効やスコープ変更に備えて「再連携」ボタンを常時出しておく。
@@ -4810,6 +4839,38 @@
       btn.addEventListener("click", function(){ runMailAction(btn.getAttribute("data-mail-action")); });
     });
   }
+
+  /* ---- メール → タスク化 ----
+     件名をタスク名、Gmail の permalink を URL 欄に入れてタスクモーダルを開く。
+     即保存はしない（期限や優先度を入れてから保存できるように）。
+     アカウント枠 = そのままタグに使う（SYSLEA のメール → SYSLEA タスク）。 */
+  var mailToTaskBtn = document.getElementById("mail-to-task-btn");
+  // authuser にアドレスを渡すと、ブラウザに複数の Google アカウントがログインしていても
+  // 正しい方の Gmail が開く（/u/0 固定だと SYSLEA 側で別人の受信箱が開いてしまう）。
+  function gmailThreadUrl(threadId, selfAddress){
+    if (!threadId) return "";
+    var base = "https://mail.google.com/mail/";
+    if (selfAddress) base += "?authuser=" + encodeURIComponent(selfAddress);
+    return base + "#all/" + encodeURIComponent(threadId);
+  }
+  if (mailToTaskBtn) mailToTaskBtn.addEventListener("click", function(){
+    if (!currentMailInfo) return;
+    var subject = (currentMailInfo.subject || "").trim() || "(件名なし)";
+    var self = (currentMailReply && currentMailReply.self) || "";
+    var url = gmailThreadUrl(currentMailThread, self);
+    var from = (currentMailInfo.from || currentMailInfo.name || "").trim();
+
+    // タスク側が未初期化だと openNewTask が空の tasksState を触るので先に読み込む
+    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
+
+    closeMailModal();
+    openNewTask(mailState.account === "syslea" ? "syslea" : "haruka");
+    taskTitleInput.value = subject.slice(0, 200);
+    taskUrlInput.value = url;
+    if (from) taskRemarksInput.value = "差出人: " + from;
+    taskTitleInput.focus();
+    taskTitleInput.select();
+  });
 
   /* ================= メール作成(新規 / 返信 / 全員に返信 / 転送) =================
      送信は POST /api/google/gmail/send。必要スコープは users.messages.send の
@@ -5818,7 +5879,45 @@
       var day = Math.min(dom, lastDay);
       return y + "-" + String(m).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     }
+    if (task.repeat === "yearly"){
+      // 同じ月日の翌年。2/29 は翌年が平年なら 2/28 に丸める(monthly と同じ考え方)。
+      var q = keyParts(fromKey);
+      var ny = q.y + 1;
+      var nLast = new Date(Date.UTC(ny, q.m, 0)).getUTCDate();
+      return ny + "-" + String(q.m).padStart(2, "0") + "-" + String(Math.min(q.d, nLast)).padStart(2, "0");
+    }
     return null;
+  }
+
+  /* ---- タスクの優先度 ---- */
+  // 色は意味色のみ（高=err / 中=warn / 低=ニュートラル）。アクセントは増やさない。
+  var TASK_PRIO_LABEL = { high: "高", mid: "中", low: "低" };
+  // 並べ替え用の重み。未設定は「中の下」= 1.5 相当に置いて、
+  // 「高」より下・「低」より上になるようにする(未設定を最下位に落とさない)。
+  var TASK_PRIO_RANK = { high: 3, mid: 2, low: 1 };
+  function taskPrioRank(t){
+    var p = t && t.priority;
+    return TASK_PRIO_RANK[p] !== undefined ? TASK_PRIO_RANK[p] : 1.5;
+  }
+
+  // 期限の相対表示。サブスクの「あとN日」と同じ語彙。
+  // 返り値は { text, cls } で cls は "" | "soon" | "over"。
+  function dueRelLabel(dueKey, todayKey){
+    if (!dueKey) return null;
+    var d = diffDaysKey(todayKey, dueKey);
+    if (d === null) return null;
+    if (d < 0) return { text: (-d) + "日超過", cls: "over" };
+    if (d === 0) return { text: "今日", cls: "soon" };
+    if (d === 1) return { text: "明日", cls: "soon" };
+    if (d <= 7) return { text: "あと" + d + "日", cls: "soon" };
+    return { text: "あと" + d + "日", cls: "" };
+  }
+  // 2つの日付キー(YYYY-MM-DD)の日数差 = to - from。不正なら null。
+  function diffDaysKey(fromKey, toKey){
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey || "") || !/^\d{4}-\d{2}-\d{2}$/.test(toKey || "")) return null;
+    var a = Date.UTC(+fromKey.slice(0, 4), +fromKey.slice(5, 7) - 1, +fromKey.slice(8, 10));
+    var b = Date.UTC(+toKey.slice(0, 4), +toKey.slice(5, 7) - 1, +toKey.slice(8, 10));
+    return Math.round((b - a) / 86400000);
   }
 
   /* ================= TASKS (self-persisted in the portal via the artifact capability) ================= */
@@ -5836,6 +5935,8 @@
   var taskView = "all";           // "all" | "today" | "week" | "overdue" — サイドバー
   var taskProjectFilter = "";     // "" | "__none" | <projectId> — サイドバー
   var taskSearchQuery = "";       // ツールバーの検索窓（本文・備考・タグ・プロジェクト名を横断）
+  var taskSortMode = "due";       // "due"(期限順＝グループ表示) | "prio" | "created" | "title"
+  var taskGroupCollapsed = {};    // 期限グループの折りたたみ状態 key -> true
   var projectsForLink = [];       // [{ id, name, archived }] — タスク⇔プロジェクト用に独立ロード
   var projectsLoaded = false;
   var editingTaskId = null; // null = creating a new task
@@ -6052,7 +6153,10 @@
   function buildTaskRow(task, todayKey, depth){
     var li = document.createElement("li");
     li.className = "task-item" + (task.done ? " done" : "") + (taskExpandedIds[task.id] ? " expanded" : "")
-      + (depth ? " is-child" : "");
+      + (depth ? " is-child" : "")
+      + (task.priority ? " prio-" + task.priority : "")
+      + (task.id === taskCursorId ? " is-cursor" : "");
+    li.setAttribute("data-task-id", task.id);
     var kids = depth ? [] : tasksState.filter(function(t){ return t.parentId === task.id; });
 
     var row = document.createElement("div");
@@ -6079,6 +6183,9 @@
       } else {
         task.done = !task.done;
       }
+      // 完了時刻。完了タブの「古い完了」の畳み込み・整理に使う。
+      if (task.done) task.completedAt = Date.now();
+      else delete task.completedAt;
       renderTasks();
       scheduleTasksSave();
     });
@@ -6136,6 +6243,21 @@
       due.setAttribute("data-overdue", String(!task.done && task.due < todayKey));
       due.textContent = task.due.slice(5).replace("-", "/") + (task.dueTime ? " " + task.dueTime : "");
       row.appendChild(due);
+      // 相対表示（サブスクの「あとN日」と同じ語彙）。完了済みには出さない。
+      var rel = task.done ? null : dueRelLabel(task.due, todayKey);
+      if (rel){
+        var relEl = document.createElement("span");
+        relEl.className = "task-due-rel" + (rel.cls ? " is-" + rel.cls : "");
+        relEl.textContent = rel.text;
+        row.appendChild(relEl);
+      }
+    }
+    if (task.priority){
+      var prio = document.createElement("span");
+      prio.className = "task-prio-badge is-" + task.priority;
+      prio.textContent = TASK_PRIO_LABEL[task.priority] || "";
+      prio.title = "優先度：" + (TASK_PRIO_LABEL[task.priority] || "");
+      row.appendChild(prio);
     }
     row.appendChild(tagBadge);
     row.appendChild(expandBtn);
@@ -6210,6 +6332,7 @@
   function renderTaskCards(){
     renderMiniTasks("biz-task-list", "syslea");
     renderMiniTasks("pv-task-list", "haruka");
+    renderHomeTaskOverdue(); // HOME の INBOX の「期限切れ」行も同じタイミングで
   }
 
   function renderTasks(){
@@ -6238,27 +6361,221 @@
       return true;
     });
 
+    renderTaskKpis(acctSet, todayKey);
+
     taskList.innerHTML = "";
+
+    // 完了タブ: 古い完了は既定で畳む。全件置換で保存する構造上、溜めると保存が重くなるので
+    // 「まとめて削除」も添える（自動削除はしない＝データを黙って消さない）。
+    if (taskStatusTab === "done"){
+      var oldOnes = matched.filter(taskIsOldDone);
+      if (oldOnes.length){
+        taskList.appendChild(buildOldDoneBar(oldOnes.length));
+        if (!taskShowOldDone) matched = matched.filter(function(t){ return !taskIsOldDone(t); });
+      }
+    }
+
     if (!matched.length){
-      taskList.innerHTML = '<div class="task-empty">該当するタスクはありません。</div>';
+      taskList.appendChild(taskEmptyState());
       return;
     }
 
     // matched から親子ツリーを組む(1階層)。親が matched に無い子はトップレベル扱い。
     var inMatched = {};
     matched.forEach(function(t){ inMatched[t.id] = true; });
-    var byDue = function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); };
-    var roots = matched.filter(function(t){ return !t.parentId || !inMatched[t.parentId]; }).sort(byDue);
-
-    var ul = document.createElement("ul");
-    ul.className = "task-tree";
-    roots.forEach(function(root){
+    var cmp = taskComparator(taskSortMode);
+    var roots = matched.filter(function(t){ return !t.parentId || !inMatched[t.parentId]; }).sort(cmp);
+    // 子は常に期限順（親の下でのグルーピングはしない）
+    var byDue = taskComparator("due");
+    function appendTree(ul, root){
       ul.appendChild(buildTaskRow(root, todayKey, 0));
       matched.filter(function(t){ return t.parentId === root.id; }).sort(byDue).forEach(function(ch){
         ul.appendChild(buildTaskRow(ch, todayKey, 1));
       });
+    }
+
+    // 期限順のときだけ「期限切れ / 今日 / 明日 / 今週 / それ以降 / 期限なし」に畳む。
+    // 他の並べ替えではグループの意味が無くなるのでフラットに出す。
+    if (taskSortMode !== "due"){
+      var flat = document.createElement("ul");
+      flat.className = "task-tree";
+      roots.forEach(function(r){ appendTree(flat, r); });
+      taskList.appendChild(flat);
+      return;
+    }
+
+    var buckets = TASK_DUE_GROUPS.map(function(g){ return { g: g, items: [] }; });
+    roots.forEach(function(t){
+      var key = taskDueGroupKey(t, todayKey);
+      var b = buckets.filter(function(x){ return x.g.key === key; })[0] || buckets[buckets.length - 1];
+      b.items.push(t);
     });
-    taskList.appendChild(ul);
+    buckets.forEach(function(b){
+      if (!b.items.length) return;
+      taskList.appendChild(buildTaskGroup(b.g, b.items, todayKey, appendTree));
+    });
+  }
+
+  /* ---- 完了タスクの整理（自動アーカイブ） ----
+     タスクは `PUT /api/tasks/bulk` で毎回コレクション全体を置換するので、完了が溜まると
+     保存の往復がそのぶん重くなる。ただし黙って消すのは危険なので「既定で畳む」＋
+     「まとめて削除は確認つき」の2段にしてある。 */
+  var TASK_OLD_DONE_DAYS = 30;
+  var taskShowOldDone = false;
+  function taskIsOldDone(t){
+    if (!t.done) return false;
+    // completedAt が無い(この機能より前に完了した)行は updatedAt で代用。
+    // どちらも無ければ「いつ完了したか不明」なので畳まない（消す対象にもしない）。
+    var at = Number(t.completedAt || t.updatedAt || 0);
+    if (!at) return false;
+    return (Date.now() - at) > TASK_OLD_DONE_DAYS * 86400000;
+  }
+  function buildOldDoneBar(n){
+    var bar = document.createElement("div");
+    bar.className = "task-oldbar";
+
+    var msg = document.createElement("span");
+    msg.className = "task-oldbar-msg";
+    msg.textContent = TASK_OLD_DONE_DAYS + "日以上前に完了したタスクが " + n + " 件あります";
+
+    var toggle = document.createElement("button");
+    toggle.type = "button"; toggle.className = "task-oldbar-btn";
+    toggle.textContent = taskShowOldDone ? "畳む" : "表示する";
+    toggle.addEventListener("click", function(){ taskShowOldDone = !taskShowOldDone; renderTasks(); });
+
+    var purge = document.createElement("button");
+    purge.type = "button"; purge.className = "task-oldbar-btn is-danger";
+    purge.textContent = "まとめて削除";
+    purge.addEventListener("click", async function(){
+      if (!(await askConfirm(TASK_OLD_DONE_DAYS + "日以上前に完了した " + n + " 件を削除しますか?\nこの操作は取り消せません。"))) return;
+      // 子タスクだけが残って迷子にならないよう、消す行を親に持つ子の parentId も外す。
+      var goneIds = {};
+      tasksState.filter(taskIsOldDone).forEach(function(t){ goneIds[t.id] = true; });
+      tasksState = tasksState.filter(function(t){ return !goneIds[t.id]; });
+      tasksState.forEach(function(t){ if (t.parentId && goneIds[t.parentId]) t.parentId = null; });
+      taskShowOldDone = false;
+      renderTasks();
+      scheduleTasksSave();
+    });
+
+    bar.appendChild(msg); bar.appendChild(toggle); bar.appendChild(purge);
+    return bar;
+  }
+
+  // 期限グループの定義。上から出る順。
+  var TASK_DUE_GROUPS = [
+    { key: "overdue", label: "期限切れ", cls: "is-over" },
+    { key: "today",   label: "今日",     cls: "is-soon" },
+    { key: "tomorrow",label: "明日",     cls: "is-soon" },
+    { key: "week",    label: "今週",     cls: "" },
+    { key: "later",   label: "それ以降", cls: "" },
+    { key: "none",    label: "期限なし", cls: "" }
+  ];
+  function taskDueGroupKey(t, todayKey){
+    if (!t.due) return "none";
+    var d = diffDaysKey(todayKey, t.due);
+    if (d === null) return "none";
+    if (d < 0) return t.done ? "later" : "overdue"; // 完了済みは「期限切れ」に出さない
+    if (d === 0) return "today";
+    if (d === 1) return "tomorrow";
+    if (d <= 7) return "week";
+    return "later";
+  }
+  function buildTaskGroup(g, items, todayKey, appendTree){
+    var sec = document.createElement("div");
+    sec.className = "task-section" + (taskGroupCollapsed[g.key] ? " collapsed" : "");
+
+    var head = document.createElement("button");
+    head.type = "button";
+    head.className = "task-section-head " + g.cls;
+    head.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>';
+    var lbl = document.createElement("span"); lbl.textContent = g.label;
+    var cnt = document.createElement("span"); cnt.className = "task-section-count"; cnt.textContent = items.length;
+    head.appendChild(lbl); head.appendChild(cnt);
+    head.addEventListener("click", function(){
+      if (taskGroupCollapsed[g.key]) delete taskGroupCollapsed[g.key];
+      else taskGroupCollapsed[g.key] = true;
+      renderTasks();
+    });
+
+    var ul = document.createElement("ul");
+    ul.className = "task-tree";
+    items.forEach(function(t){ appendTree(ul, t); });
+
+    sec.appendChild(head); sec.appendChild(ul);
+    return sec;
+  }
+
+  // 並べ替え。第2キーは常に期限→タイトルで、同点でも並びがぶれないようにする。
+  function taskComparator(mode){
+    var byDue = function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); };
+    var byTitle = function(a, b){ return (a.text || "").localeCompare(b.text || "", "ja"); };
+    if (mode === "prio"){
+      return function(a, b){ return (taskPrioRank(b) - taskPrioRank(a)) || byDue(a, b) || byTitle(a, b); };
+    }
+    if (mode === "created"){
+      return function(a, b){ return ((b.createdAt || 0) - (a.createdAt || 0)) || byTitle(a, b); };
+    }
+    if (mode === "title"){
+      return function(a, b){ return byTitle(a, b) || byDue(a, b); };
+    }
+    // "due": 期限順。同じ期限なら優先度が高い方を上に。
+    return function(a, b){ return byDue(a, b) || (taskPrioRank(b) - taskPrioRank(a)) || byTitle(a, b); };
+  }
+
+  // KPIバンド。アカウントタブ通過後の全件（未完了/完了タブの絞り込みは掛けない）で数える。
+  function renderTaskKpis(acctSet, todayKey){
+    var pending = acctSet.filter(function(t){ return !t.done; });
+    var today = pending.filter(function(t){ return t.due === todayKey; }).length;
+    var week = pending.filter(function(t){
+      var d = t.due ? diffDaysKey(todayKey, t.due) : null;
+      return d !== null && d >= 0 && d <= 7;
+    }).length;
+    var overdue = pending.filter(function(t){
+      var d = t.due ? diffDaysKey(todayKey, t.due) : null;
+      return d !== null && d < 0;
+    });
+    var doneN = acctSet.filter(function(t){ return t.done; }).length;
+    var rate = acctSet.length ? Math.round((doneN / acctSet.length) * 100) : null;
+
+    function set(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; }
+    set("task-kpi-today", String(today));
+    set("task-kpi-week", String(week));
+    set("task-kpi-overdue", String(overdue.length));
+    set("task-kpi-rate", rate === null ? "--%" : rate + "%");
+    set("task-kpi-rate-sub", acctSet.length ? doneN + " / " + acctSet.length + " 件" : "");
+
+    // 期限切れの最も古いものを添える（どれだけ放置しているかが一目で分かる）
+    var oldest = overdue.slice().sort(function(a, b){ return (a.due || "").localeCompare(b.due || ""); })[0];
+    var sub = "";
+    if (oldest){
+      var d = diffDaysKey(todayKey, oldest.due);
+      sub = "最長 " + (-d) + "日";
+    }
+    set("task-kpi-overdue-sub", sub);
+
+    var ov = document.getElementById("task-kpi-overdue");
+    if (ov) ov.className = "kpi-value" + (overdue.length ? " is-neg" : "");
+    var rt = document.getElementById("task-kpi-rate");
+    if (rt) rt.className = "kpi-value" + (rate !== null && rate >= 80 ? " is-pos" : "");
+  }
+
+  // 空状態。デザイン方針が「スポット絵は空状態・エラー・404 など普段見えない所に限る」と
+  // 明記している場所なので、ink(text-faint)＋accent の2色・線幅1.5px・発光なしの線画を置く。
+  function taskEmptyState(){
+    var wrap = document.createElement("div");
+    wrap.className = "task-empty empty-state";
+    var searching = taskSearchQuery.trim() || taskTagFilter || taskProjectFilter || taskView !== "all";
+    wrap.innerHTML =
+      '<svg class="empty-art" viewBox="0 0 96 72" fill="none" stroke-width="1.5" aria-hidden="true">' +
+        '<rect class="ink" x="18" y="10" width="60" height="54" rx="2"/>' +
+        '<path class="ink" d="M30 10V6M66 10V6M18 22h60"/>' +
+        '<path class="ink" d="M28 34h26M28 44h34M28 54h18"/>' +
+        '<path class="accent" d="M64 46l5 5 11-13"/>' +
+      '</svg>' +
+      '<div class="empty-title">' + (searching ? "該当するタスクはありません" : (taskStatusTab === "done" ? "完了したタスクはまだありません" : "未完了のタスクはありません")) + '</div>' +
+      '<div class="empty-sub">' + (searching ? "検索やサイドバーの絞り込みを外すと全件に戻ります。" : "右上の「+ 新規タスク」から追加できます。") + '</div>';
+    return wrap;
   }
 
   function scheduleTasksSave(){
@@ -6285,6 +6602,104 @@
     renderTasks();
   });
   wireAcctTabs("task-tag-tabs", function(){ return taskFormTag; }, function(v){ taskFormTag = v; });
+
+  /* ---- キーボード操作（#view-tasks を表示中のみ） ----
+     n=新規 / /=検索へ / j,k=カーソル移動 / x=完了切替 / e=編集 / Enter=詳細開閉 / Esc=解除。
+     入力欄やモーダルにフォーカスがあるときは何もしない（通常の文字入力を邪魔しない）。 */
+  var taskCursorId = null;   // カーソル位置のタスク id
+  function taskRowsInOrder(){
+    return Array.prototype.slice.call(taskList.querySelectorAll(".task-item"))
+      .map(function(li){ return li.getAttribute("data-task-id"); })
+      .filter(Boolean);
+  }
+  function moveTaskCursor(delta){
+    var ids = taskRowsInOrder();
+    if (!ids.length) return;
+    var i = ids.indexOf(taskCursorId);
+    i = (i === -1) ? (delta > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, i + delta));
+    taskCursorId = ids[i];
+    paintTaskCursor();
+    var el = taskList.querySelector('.task-item[data-task-id="' + cssEscapeId(taskCursorId) + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  }
+  function paintTaskCursor(){
+    taskList.querySelectorAll(".task-item").forEach(function(li){
+      li.classList.toggle("is-cursor", li.getAttribute("data-task-id") === taskCursorId);
+    });
+  }
+  // id は uid() 由来の英数なので実質エスケープ不要だが、属性セレクタに入れる以上は保険をかける
+  function cssEscapeId(id){
+    return String(id == null ? "" : id).replace(/["\\]/g, "\\$&");
+  }
+  function taskByCursor(){
+    return tasksState.filter(function(t){ return t.id === taskCursorId; })[0] || null;
+  }
+  function typingInField(el){
+    if (!el) return false;
+    var t = (el.tagName || "").toLowerCase();
+    return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
+  }
+  document.addEventListener("keydown", function(e){
+    if (viewTasks.hidden) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // モーダルが開いている間はモーダル側の操作に任せる
+    if (!taskModal.hidden) return;
+    var active = document.activeElement;
+
+    if (e.key === "/" && !typingInField(active)){
+      e.preventDefault();
+      if (taskSearchInput) taskSearchInput.focus();
+      return;
+    }
+    if (e.key === "Escape" && typingInField(active) && active === taskSearchInput){
+      taskSearchInput.value = ""; taskSearchQuery = ""; taskSearchInput.blur(); renderTasks();
+      return;
+    }
+    if (typingInField(active)) return;
+
+    if (e.key === "n"){ e.preventDefault(); openNewTask(taskFilterTag === "syslea" ? "syslea" : "haruka"); return; }
+    if (e.key === "j"){ e.preventDefault(); moveTaskCursor(1); return; }
+    if (e.key === "k"){ e.preventDefault(); moveTaskCursor(-1); return; }
+    if (e.key === "Escape"){ taskCursorId = null; paintTaskCursor(); return; }
+
+    var cur = taskByCursor();
+    if (!cur) return;
+    if (e.key === "x"){
+      e.preventDefault();
+      var btn = taskList.querySelector('.task-item[data-task-id="' + cssEscapeId(cur.id) + '"] .task-check');
+      if (btn) btn.click();   // 繰り返しタスクのロールも含めて既存の処理をそのまま使う
+      return;
+    }
+    if (e.key === "e"){ e.preventDefault(); openEditTask(cur); return; }
+    if (e.key === "Enter"){
+      e.preventDefault();
+      if (taskExpandedIds[cur.id]) delete taskExpandedIds[cur.id];
+      else taskExpandedIds[cur.id] = true;
+      renderTasks();
+      return;
+    }
+  });
+
+  var taskSortSelect = document.getElementById("task-sort");
+  if (taskSortSelect) taskSortSelect.addEventListener("change", function(){
+    taskSortMode = taskSortSelect.value || "due";
+    renderTasks();
+  });
+
+  // モーダルの優先度ピッカー（ラジオ相当）。値は taskFormPrio に持つ。
+  var taskFormPrio = "";
+  var taskPrioPicker = document.getElementById("task-prio-picker");
+  function setTaskFormPrio(v){
+    taskFormPrio = (v === "high" || v === "mid" || v === "low") ? v : "";
+    if (!taskPrioPicker) return;
+    taskPrioPicker.querySelectorAll(".task-prio-btn").forEach(function(b){
+      b.classList.toggle("is-active", (b.getAttribute("data-prio") || "") === taskFormPrio);
+    });
+  }
+  if (taskPrioPicker) taskPrioPicker.addEventListener("click", function(e){
+    var b = e.target.closest(".task-prio-btn");
+    if (b) setTaskFormPrio(b.getAttribute("data-prio") || "");
+  });
 
   var taskSearchInput = document.getElementById("task-search");
   if (taskSearchInput) taskSearchInput.addEventListener("input", function(){
@@ -6360,6 +6775,7 @@
     updateRepeatDetailVisibility();
     taskUrlInput.value = "";
     taskRemarksInput.value = "";
+    setTaskFormPrio("");
     taskFormTag = defaultTag === "syslea" ? "syslea" : "haruka";
     setActiveTab("task-tag-tabs", taskFormTag);
     populateTaskModalSelects(null, (typeof parentId === "string" ? parentId : ""), "");
@@ -6386,6 +6802,7 @@
     updateRepeatDetailVisibility();
     taskUrlInput.value = task.url || "";
     taskRemarksInput.value = task.remarks || "";
+    setTaskFormPrio(task.priority || "");
     taskFormTag = task.tag || "haruka";
     setActiveTab("task-tag-tabs", taskFormTag);
     taskFormError.hidden = true;
@@ -6433,6 +6850,7 @@
       repeatDays: repeat === "weekly" ? taskFormRepeatDays.slice() : null,
       repeatDayOfMonth: repeat === "monthly" && taskMonthdayInput.value ? Number(taskMonthdayInput.value) : null,
       url: url || null,
+      priority: taskFormPrio || null,
       remarks: taskRemarksInput.value.trim() || null
     };
     if (editingTaskId){
@@ -7970,7 +8388,13 @@
       loadWeather();
       checkReauthReminder();
     }
-    scheduleIdle(function(){ loadHarukaMail(); warmCalendarView(); });
+    // タスクは HOME の INBOX（期限切れ行）とプライベート/ビジネスのカードで使うので、
+    // アイドルになったら先に取っておく。以後のタブ切り替えは再取得なし。
+    scheduleIdle(function(){
+      loadHarukaMail();
+      warmCalendarView();
+      if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
+    });
   }
   document.addEventListener("cyberportal:authready", warmOnAuthReady);
   // 未読件数を定期的に取り直す(通知センター/デスクトップ通知のため)。
