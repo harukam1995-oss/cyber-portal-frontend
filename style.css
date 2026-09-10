@@ -3082,3 +3082,131 @@
   }
   .task-keyhint b{ color: var(--text-dim); font-weight:400; }
   @media (max-width: 860px){ .task-keyhint{ display:none; } }
+
+  /* ========================================================================
+     メモ / タスク 強化 v2 (v2.33.47) — メモ側
+     ピン留め / 自由タグ / 並べ替え・表示密度 / 検索ハイライト / Markdown プレビュー
+     ======================================================================== */
+
+  /* ---- 検索ハイライト ---- */
+  mark{ background: rgba(255,143,63,0.22); color: var(--text); border-radius:1px; padding:0 1px; }
+
+  /* ---- 表示密度スイッチ ---- */
+  .note-density-switch{ display:flex; border:1px solid var(--panel-border); border-radius:2px; }
+  .note-density-btn{
+    background:transparent; border:none; cursor:pointer; padding:6px 9px; color: var(--text-faint);
+    display:flex; align-items:center; border-right:1px solid var(--hairline);
+  }
+  .note-density-btn:last-child{ border-right:none; }
+  .note-density-btn svg{ width:13px; height:13px; stroke: currentColor; }
+  .note-density-btn.is-active{ background: rgba(255,143,63,0.12); color: var(--accent); }
+
+  /* ---- 自由タグのチップ列（ツールバー下段） ---- */
+  .note-tagbar{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex-basis:100%; padding-top:9px; border-top:1px solid var(--hairline); }
+  .note-tagbar[hidden]{ display:none; }
+  .note-tagbar-label{ font-family: var(--font-mono); font-size:9px; letter-spacing:1.5px; color: var(--text-faint); margin-right:2px; }
+  .note-tagchip{
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; padding:3px 9px;
+    border:1px solid var(--panel-border); border-radius:2px; background: rgba(255,255,255,0.02);
+    color: var(--text-dim); cursor:pointer;
+  }
+  .note-tagchip:hover{ border-color: var(--accent); color: var(--text); }
+  .note-tagchip.is-on{ background: rgba(255,143,63,0.12); color: var(--accent); border-color: rgba(255,143,63,0.4); }
+
+  /* ---- カード: ピン / タグ色の左帯 / 進捗 ---- */
+  .note-card{ position:relative; border-left:2px solid transparent; }
+  .note-card.tagcol-haruka{ border-left-color: rgba(255,143,63,0.45); }
+  .note-card.tagcol-syslea{ border-left-color: rgba(235,170,120,0.16); }
+  .note-card.is-pinned{ background: rgba(255,143,63,0.045); }
+  .note-pin-btn{
+    background:transparent; border:none; cursor:pointer; padding:2px; flex:none;
+    color: var(--text-faint); display:flex; align-items:center; opacity:0; transition: opacity .12s ease;
+  }
+  .note-pin-btn svg{ width:13px; height:13px; }
+  .note-card:hover .note-pin-btn, .note-pin-btn.is-on{ opacity:1; }
+  .note-pin-btn.is-on{ color: var(--accent); }
+  .note-pin-btn:hover{ color: var(--accent); }
+  .note-card .note-meta{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .note-progress{ font-family: var(--font-mono); font-size:9.5px; color: var(--warn); flex:none; }
+  .note-progress.is-done{ color: var(--ok); }
+  .note-card-tags{ display:flex; flex-wrap:wrap; gap:4px; }
+
+  /* ---- リスト表示 ---- */
+  .notes-grid.is-list{ display:flex; flex-direction:column; gap:0; max-width:940px; }
+  .notes-grid.is-list .note-card{
+    flex-direction:row; align-items:center; gap:12px; min-height:0; padding:9px 12px;
+    border:none; border-bottom:1px solid var(--hairline); border-left:2px solid transparent; border-radius:0;
+  }
+  .notes-grid.is-list .note-card:last-child{ border-bottom:none; }
+  .notes-grid.is-list .note-card-head{ flex:0 0 240px; min-width:0; }
+  .notes-grid.is-list .note-snippet{ -webkit-line-clamp:1; flex:1 1 auto; min-width:0; }
+  .notes-grid.is-list .note-card-tags{ flex:none; }
+  .notes-grid.is-list .note-meta{ flex:0 0 auto; margin-top:0; gap:10px; }
+
+  /* ---- モーダル: ピントグル / モード切替 / 記法ヘルプ ---- */
+  .note-pin-toggle{
+    display:inline-flex; align-items:center; gap:6px; width:fit-content;
+    background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:2px;
+    color: var(--text-faint); cursor:pointer; padding:5px 11px;
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
+  }
+  .note-pin-toggle svg{ width:12px; height:12px; stroke: currentColor; }
+  .note-pin-toggle.is-on{ background: rgba(255,143,63,0.12); color: var(--accent); border-color: rgba(255,143,63,0.4); }
+
+  .note-body-toolbar{ display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+  .note-mode-switch{ display:flex; border:1px solid var(--panel-border); border-radius:2px; }
+  .note-mode-btn{
+    background:transparent; border:none; cursor:pointer; padding:4px 11px;
+    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; color: var(--text-faint);
+    border-right:1px solid var(--hairline);
+  }
+  .note-mode-btn:last-child{ border-right:none; }
+  .note-mode-btn.is-active{ background: rgba(255,143,63,0.12); color: var(--accent); }
+  .note-md-help{
+    margin-top:6px; padding:8px 10px; border:1px solid var(--panel-border); border-radius:2px;
+    background: rgba(255,255,255,0.02); font-size:11px; color: var(--text-faint); line-height:1.9;
+  }
+  .note-md-help[hidden]{ display:none; }
+  .note-md-help b{ color: var(--text-dim); font-weight:400; font-family: var(--font-mono); font-size:10.5px; }
+
+  /* ---- Markdown プレビュー ---- */
+  .note-md{
+    background: rgba(255,255,255,0.02); border:1px solid var(--panel-border); border-radius:2px;
+    padding:12px 14px; color: var(--text); font-size:13.5px; line-height:1.7;
+    min-height:180px; max-height:360px; overflow-y:auto; word-break:break-word;
+  }
+  .note-md[hidden]{ display:none; }
+  .note-md h3, .note-md h4, .note-md h5, .note-md h6{
+    font-family: var(--font-display); color: var(--text); margin:14px 0 6px; letter-spacing:.3px;
+  }
+  .note-md h3{ font-size:15px; } .note-md h4{ font-size:13.5px; }
+  .note-md h5, .note-md h6{ font-size:12.5px; color: var(--text-dim); }
+  .note-md > *:first-child{ margin-top:0; }
+  .note-md p{ margin:0 0 8px; }
+  .note-md ul, .note-md ol{ margin:0 0 8px; padding-left:20px; }
+  .note-md li{ margin:2px 0; }
+  .note-md li.md-task{ list-style:none; display:flex; align-items:flex-start; gap:8px; margin-left:-20px; }
+  .note-md li.md-task.is-done > span{ color: var(--text-faint); text-decoration:line-through; }
+  .note-md .md-check{
+    width:16px; height:16px; flex:none; margin-top:2px; cursor:pointer; padding:0;
+    border:1px solid var(--panel-border); border-radius:2px; background:transparent;
+    color: var(--ok); font-size:11px; line-height:1; display:flex; align-items:center; justify-content:center;
+  }
+  .note-md .md-check[aria-pressed="true"]{ background: rgba(94,201,138,0.15); border-color: var(--ok); }
+  .note-md blockquote{
+    margin:0 0 8px; padding:2px 0 2px 10px; border-left:2px solid var(--panel-border); color: var(--text-dim);
+  }
+  .note-md code{
+    font-family: var(--font-mono); font-size:11.5px; background: rgba(255,255,255,0.05);
+    border-radius:2px; padding:1px 5px; color: var(--accent);
+  }
+  .note-md hr{ border:none; border-top:1px solid var(--hairline); margin:12px 0; }
+  .note-md a{ color: var(--accent); }
+  .note-md strong{ color: var(--text); font-weight:700; }
+
+  @media (max-width: 720px){
+    .notes-grid.is-list .note-card{ flex-wrap:wrap; }
+    .notes-grid.is-list .note-card-head{ flex:1 1 100%; }
+  }
+  /* 見出し行は タイトル(伸びる) → ピン → タグバッジ の順。タイトルだけが縮む。 */
+  .note-card .note-title{ flex:1 1 auto; }

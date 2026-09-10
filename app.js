@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 127;
+  var BUILD_V = 128;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -6884,6 +6884,11 @@
   var noteFilterTag = "all";
   var noteSearchQuery = "";
   var noteFormTag = "haruka";
+  var noteTagFilter = "";         // 自由タグでの絞り込み("" = なし)
+  var noteSortMode = "updated";   // "updated" | "created" | "title"（ピン留めは常に先頭）
+  var noteDensity = "card";       // "card" | "list"
+  var noteFormPinned = false;
+  var noteEditMode = "edit";      // モーダルの 編集/プレビュー
 
   var noteModal = document.getElementById("note-modal");
   var noteModalTitle = document.getElementById("note-modal-title");
@@ -6944,9 +6949,95 @@
   }
   // Plain-text preview for the card grid — bold markers are an editing aid,
   // not something the list view needs to render.
+  // 見出しの # と チェックの [ ] も、プレビューでは記号のままだと読みにくいので整える。
   function noteSnippetText(text){
-    return (text || "").replace(/\*\*(.+?)\*\*/g, "$1");
+    return (text || "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^(\s*[-*]\s+)\[ \]\s+/gm, "$1☐ ")
+      .replace(/^(\s*[-*]\s+)\[[xX]\]\s+/gm, "$1☑ ")
+      .replace(/^\s*[-*]\s+/gm, "・")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^>\s?/gm, "");
   }
+
+  /* ---- 軽量 Markdown レンダラ（メモのプレビュー用） ----
+     ライブラリは足さない。対応するのは 見出し / 箇条書き / 番号 / チェックボックス /
+     太字 / インラインコード / 引用 / 区切り線 / 素の URL だけ。
+     入力は必ず escapeHtml を通してから記法を当てるので、生の HTML は描画されない。
+     チェックボックスには data-line（本文の行番号）を持たせて、押したら本文へ書き戻す。 */
+  function noteInline(s){
+    return s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  }
+  function noteMarkdownToHtml(text){
+    var lines = String(text == null ? "" : text).split("\n");
+    var out = [];
+    var listType = null; // "ul" | "ol" | null
+    function closeList(){ if (listType){ out.push("</" + listType + ">"); listType = null; } }
+    function openList(t){ if (listType !== t){ closeList(); out.push("<" + t + ">"); listType = t; } }
+
+    lines.forEach(function(raw, idx){
+      var line = escapeHtml(raw);
+      var m;
+
+      if (/^\s*$/.test(raw)){ closeList(); return; }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(raw)){ closeList(); out.push("<hr>"); return; }
+
+      m = line.match(/^(#{1,6})\s+(.*)$/);
+      if (m){ closeList(); var lv = Math.min(m[1].length, 4) + 2; out.push("<h" + lv + ">" + noteInline(m[2]) + "</h" + lv + ">"); return; }
+
+      m = line.match(/^\s*&gt;\s?(.*)$/);
+      if (m){ closeList(); out.push("<blockquote>" + noteInline(m[1]) + "</blockquote>"); return; }
+
+      // チェックボックス（箇条書きの有無どちらも許す）
+      m = line.match(/^(\s*)(?:[-*]\s+)?\[([ xX])\]\s+(.*)$/);
+      if (m){
+        openList("ul");
+        var checked = m[2] !== " ";
+        out.push('<li class="md-task' + (checked ? " is-done" : "") + '">' +
+          '<button type="button" class="md-check" data-line="' + idx + '" aria-pressed="' + checked + '">' +
+          (checked ? "&#10003;" : "") + "</button>" +
+          "<span>" + noteInline(m[3]) + "</span></li>");
+        return;
+      }
+
+      m = line.match(/^\s*[-*]\s+(.*)$/);
+      if (m){ openList("ul"); out.push("<li>" + noteInline(m[1]) + "</li>"); return; }
+
+      m = line.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (m){ openList("ol"); out.push("<li>" + noteInline(m[1]) + "</li>"); return; }
+
+      closeList();
+      out.push("<p>" + noteInline(line) + "</p>");
+    });
+    closeList();
+    return out.join("");
+  }
+
+  /* ---- 検索（AND ＋ ヒット強調） ----
+     Slackダイジェストの全件ページと同じ考え方。空白区切りの語をすべて含むものだけ残し、
+     カードのタイトル・本文プレビューでヒット箇所を <mark> で囲む。 */
+  function searchTerms(q){
+    return String(q == null ? "" : q).trim().toLowerCase().split(/\s+/).filter(Boolean);
+  }
+  function matchesAllTerms(haystack, terms){
+    var h = String(haystack || "").toLowerCase();
+    return terms.every(function(t){ return h.indexOf(t) !== -1; });
+  }
+  // escapeHtml 済みの文字列を返す。terms は小文字。
+  function highlightHtml(text, terms){
+    var esc = escapeHtml(text || "");
+    if (!terms.length) return esc;
+    // 長い語から当てて、短い語が先に食い合わないようにする
+    var pattern = terms.slice().sort(function(a, b){ return b.length - a.length; })
+      .map(function(t){ return escapeRegExp(escapeHtml(t)); }).join("|");
+    if (!pattern) return esc;
+    return esc.replace(new RegExp("(" + pattern + ")", "gi"), "<mark>$1</mark>");
+  }
+  function escapeRegExp(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
   // ダッシュボードの「最近のメモ」ミニリスト(最新5件)。
   // ビジネス=SYSLEA タグ / プライベート=はるか タグ の2箇所から tag 違いで呼ぶ。
@@ -6957,7 +7048,8 @@
     var items = notesState
       .filter(function(n){ return (n.tag || "haruka") === tag; })
       .slice()
-      .sort(function(a, b){ return (b.updatedAt || 0) - (a.updatedAt || 0); })
+      // ピン留めはカード側でも先頭に出す（メモページと同じ優先順位）
+      .sort(function(a, b){ return ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || ((b.updatedAt || 0) - (a.updatedAt || 0)); })
       .slice(0, 5);
     if (!items.length){
       list.innerHTML = '<li class="sched-empty">' + (TASK_TAG_LABEL[tag] || tag) + ' のメモはまだありません。</li>';
@@ -7013,48 +7105,159 @@
 
   function renderNotes(){
     renderNoteCards();
+    renderNoteTagbar();
+    notesGrid.className = "notes-grid" + (noteDensity === "list" ? " is-list" : "");
     notesGrid.innerHTML = "";
-    var q = noteSearchQuery.trim().toLowerCase();
+
+    var terms = searchTerms(noteSearchQuery);
     var items = notesState.filter(function(n){
-      if (noteFilterTag !== "all" && n.tag !== noteFilterTag) return false;
-      if (!q) return true;
-      return (n.title || "").toLowerCase().indexOf(q) !== -1 || (n.body || "").toLowerCase().indexOf(q) !== -1;
+      if (noteFilterTag !== "all" && (n.tag || "haruka") !== noteFilterTag) return false;
+      if (noteTagFilter && (n.tags || []).indexOf(noteTagFilter) === -1) return false;
+      if (!terms.length) return true;
+      return matchesAllTerms((n.title || "") + "\n" + (n.body || "") + "\n" + (n.tags || []).join(" "), terms);
     });
     if (items.length === 0){
-      notesGrid.innerHTML = notesState.length === 0
-        ? '<div class="notes-empty">メモはありません。「+ 新規メモ」から作成してください。</div>'
-        : '<div class="notes-empty">条件に一致するメモが見つかりませんでした。</div>';
+      notesGrid.appendChild(noteEmptyState());
       return;
     }
-    items
-      .slice()
-      .sort(function(a, b){ return (b.updatedAt || 0) - (a.updatedAt || 0); })
-      .forEach(function(note){
-        var card = document.createElement("div");
-        card.className = "note-card";
 
-        var head = document.createElement("div");
-        head.className = "note-card-head";
-        var title = document.createElement("div");
-        title.className = "note-title";
-        title.textContent = note.title || "(無題)";
-        var tagBadge = document.createElement("span");
-        tagBadge.className = "tag-badge tag-" + (note.tag || "haruka");
-        tagBadge.textContent = TASK_TAG_LABEL[note.tag] || "はるか";
-        head.appendChild(title); head.appendChild(tagBadge);
+    items.slice().sort(noteComparator(noteSortMode)).forEach(function(note){
+      notesGrid.appendChild(buildNoteCard(note, terms));
+    });
+  }
 
-        var snippet = document.createElement("div");
-        snippet.className = "note-snippet";
-        snippet.textContent = noteSnippetText(note.body || "");
+  // ピン留めは常に先頭。その中で選んだ並べ替えを効かせる。
+  function noteComparator(mode){
+    var byTitle = function(a, b){ return (a.title || "").localeCompare(b.title || "", "ja"); };
+    var inner;
+    if (mode === "created") inner = function(a, b){ return ((b.createdAt || b.updatedAt || 0) - (a.createdAt || a.updatedAt || 0)) || byTitle(a, b); };
+    else if (mode === "title") inner = byTitle;
+    else inner = function(a, b){ return ((b.updatedAt || 0) - (a.updatedAt || 0)) || byTitle(a, b); };
+    return function(a, b){
+      var pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0;
+      return (pb - pa) || inner(a, b);
+    };
+  }
 
-        var meta = document.createElement("div");
-        meta.className = "note-meta";
-        meta.textContent = note.updatedAt ? fmtSavedAt(note.updatedAt) + " 更新" : "";
+  function buildNoteCard(note, terms){
+    var card = document.createElement("div");
+    card.className = "note-card" + (note.pinned ? " is-pinned" : "") + " tagcol-" + (note.tag || "haruka");
 
-        card.appendChild(head); card.appendChild(snippet); card.appendChild(meta);
-        card.addEventListener("click", function(){ openEditNote(note); });
-        notesGrid.appendChild(card);
+    var head = document.createElement("div");
+    head.className = "note-card-head";
+    var title = document.createElement("div");
+    title.className = "note-title";
+    title.innerHTML = highlightHtml(note.title || "(無題)", terms);
+
+    // ピンのトグル。カード上で完結させたいので、ここだけクリックの伝播を止める。
+    var pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "note-pin-btn" + (note.pinned ? " is-on" : "");
+    pin.setAttribute("aria-label", note.pinned ? "ピン留めを外す" : "ピン留めする");
+    pin.setAttribute("aria-pressed", String(!!note.pinned));
+    pin.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/></svg>';
+    pin.addEventListener("click", function(e){
+      e.stopPropagation();
+      note.pinned = !note.pinned;
+      note.updatedAt = note.updatedAt || Date.now(); // ピンだけでは「更新」扱いにしない
+      renderNotes();
+      scheduleNotesSave();
+    });
+
+    var tagBadge = document.createElement("span");
+    tagBadge.className = "tag-badge tag-" + (note.tag || "haruka");
+    tagBadge.textContent = TASK_TAG_LABEL[note.tag] || "はるか";
+    head.appendChild(title); head.appendChild(pin); head.appendChild(tagBadge);
+
+    var snippet = document.createElement("div");
+    snippet.className = "note-snippet";
+    snippet.innerHTML = highlightHtml(noteSnippetText(note.body || ""), terms);
+
+    var foot = document.createElement("div");
+    foot.className = "note-meta";
+    var when = document.createElement("span");
+    when.textContent = note.updatedAt ? fmtSavedAt(note.updatedAt) + " 更新" : "";
+    foot.appendChild(when);
+    // 未完了のチェックが残っていれば「☐ 2/5」を出す（買い物メモ等の進み具合）
+    var prog = noteCheckProgress(note.body || "");
+    if (prog){
+      var pg = document.createElement("span");
+      pg.className = "note-progress" + (prog.done === prog.total ? " is-done" : "");
+      pg.textContent = "☑ " + prog.done + "/" + prog.total;
+      foot.appendChild(pg);
+    }
+
+    card.appendChild(head); card.appendChild(snippet);
+    if ((note.tags || []).length){
+      var tw = document.createElement("div");
+      tw.className = "note-card-tags";
+      note.tags.slice(0, 4).forEach(function(t){
+        var c = document.createElement("span"); c.className = "task-freetag"; c.textContent = t;
+        tw.appendChild(c);
       });
+      if (note.tags.length > 4){
+        var more = document.createElement("span"); more.className = "task-freetag"; more.textContent = "+" + (note.tags.length - 4);
+        tw.appendChild(more);
+      }
+      card.appendChild(tw);
+    }
+    card.appendChild(foot);
+    card.addEventListener("click", function(){ openEditNote(note); });
+    return card;
+  }
+
+  // 本文中の [ ] / [x] の数。1つも無ければ null。
+  function noteCheckProgress(body){
+    var all = String(body || "").match(/^(\s*(?:[-*]\s+)?)\[([ xX])\]\s+/gm);
+    if (!all || !all.length) return null;
+    var done = all.filter(function(s){ return !/\[ \]/.test(s); }).length;
+    return { done: done, total: all.length };
+  }
+
+  // 自由タグのチップ列。1つもタグが無ければ行ごと隠す。
+  function renderNoteTagbar(){
+    var bar = document.getElementById("note-tagbar");
+    if (!bar) return;
+    var counts = {};
+    notesState.forEach(function(n){
+      if (noteFilterTag !== "all" && (n.tag || "haruka") !== noteFilterTag) return;
+      (n.tags || []).forEach(function(t){ if (t) counts[t] = (counts[t] || 0) + 1; });
+    });
+    var keys = Object.keys(counts).sort(function(a, b){ return a.localeCompare(b, "ja"); });
+    if (noteTagFilter && keys.indexOf(noteTagFilter) === -1) noteTagFilter = "";
+    bar.hidden = !keys.length;
+    bar.innerHTML = "";
+    if (!keys.length) return;
+    var lbl = document.createElement("span");
+    lbl.className = "note-tagbar-label"; lbl.textContent = "タグ";
+    bar.appendChild(lbl);
+    keys.forEach(function(k){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "note-tagchip" + (noteTagFilter === k ? " is-on" : "");
+      b.textContent = k + " " + counts[k];
+      b.addEventListener("click", function(){
+        noteTagFilter = (noteTagFilter === k) ? "" : k;
+        renderNotes();
+      });
+      bar.appendChild(b);
+    });
+  }
+
+  function noteEmptyState(){
+    var wrap = document.createElement("div");
+    wrap.className = "notes-empty empty-state";
+    var filtering = noteSearchQuery.trim() || noteTagFilter || noteFilterTag !== "all";
+    wrap.innerHTML =
+      '<svg class="empty-art" viewBox="0 0 96 72" fill="none" stroke-width="1.5" aria-hidden="true">' +
+        '<path class="ink" d="M22 8h34l18 18v38a2 2 0 0 1-2 2H22a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"/>' +
+        '<path class="ink" d="M56 8v18h18"/>' +
+        '<path class="ink" d="M30 38h30M30 48h22"/>' +
+        '<path class="accent" d="M30 28h16"/>' +
+      '</svg>' +
+      '<div class="empty-title">' + (filtering ? "条件に一致するメモがありません" : "メモはまだありません") + '</div>' +
+      '<div class="empty-sub">' + (filtering ? "検索語やタグの絞り込みを外すと全件に戻ります。" : "右上の「+ 新規メモ」から作成できます。") + '</div>';
+    return wrap;
   }
 
   function scheduleNotesSave(){
@@ -7086,6 +7289,32 @@
     noteSearchQuery = noteSearchInput.value;
     renderNotes();
   });
+
+  var noteSortSelect = document.getElementById("note-sort");
+  if (noteSortSelect) noteSortSelect.addEventListener("change", function(){
+    noteSortMode = noteSortSelect.value || "updated";
+    renderNotes();
+  });
+  document.querySelectorAll(".note-density-btn").forEach(function(b){
+    b.addEventListener("click", function(){
+      noteDensity = b.getAttribute("data-density") === "list" ? "list" : "card";
+      document.querySelectorAll(".note-density-btn").forEach(function(x){
+        x.classList.toggle("is-active", x.getAttribute("data-density") === noteDensity);
+      });
+      try { localStorage.setItem("cp_note_density", noteDensity); } catch(e){}
+      renderNotes();
+    });
+  });
+  // 表示密度だけは端末ごとの好みなので localStorage に残す（他は毎回既定に戻す）
+  try {
+    var savedDensity = localStorage.getItem("cp_note_density");
+    if (savedDensity === "list" || savedDensity === "card"){
+      noteDensity = savedDensity;
+      document.querySelectorAll(".note-density-btn").forEach(function(x){
+        x.classList.toggle("is-active", x.getAttribute("data-density") === noteDensity);
+      });
+    }
+  } catch(e){}
 
   // Wraps the current selection in a real <b> element directly via the
   // Selection/Range APIs. (document.execCommand("bold") was tried first, but
@@ -7132,10 +7361,14 @@
     noteModalTitle.textContent = "新規メモ";
     noteTitleInput.value = "";
     noteBodyInput.innerHTML = "";
+    setNoteFormTags([]);
+    setNoteFormPinned(false);
+    setNoteEditMode("edit");
     noteFormTag = defaultTag === "syslea" ? "syslea" : "haruka";
     setActiveTab("note-tag-tabs", noteFormTag);
     noteFormError.hidden = true;
     noteDeleteBtn.hidden = true;
+    if (noteToTaskBtn) noteToTaskBtn.hidden = true;   // 未保存のメモからは変換させない
     noteModal.hidden = false;
     document.body.style.overflow = "hidden";
     noteTitleInput.focus();
@@ -7145,14 +7378,114 @@
     noteModalTitle.textContent = "メモを編集";
     noteTitleInput.value = note.title || "";
     noteBodyInput.innerHTML = noteMarkdownToEditableHtml(note.body || "");
+    setNoteFormTags(note.tags || []);
+    setNoteFormPinned(!!note.pinned);
+    setNoteEditMode("edit");
     noteFormTag = note.tag || "haruka";
     setActiveTab("note-tag-tabs", noteFormTag);
     noteFormError.hidden = true;
     noteDeleteBtn.hidden = false;
+    if (noteToTaskBtn) noteToTaskBtn.hidden = false;
     noteModal.hidden = false;
     document.body.style.overflow = "hidden";
     noteTitleInput.focus();
   }
+
+  /* ---- モーダルの追加パーツ（自由タグ / ピン / プレビュー） ---- */
+  var noteTagsInputEl = document.getElementById("note-tags-input");
+  var noteTagsChipsEl = document.getElementById("note-tags-chips");
+  var notePinToggle = document.getElementById("note-pin-toggle");
+  var notePinLabel = document.getElementById("note-pin-label");
+  var noteBodyPreview = document.getElementById("note-body-preview");
+  var noteToTaskBtn = document.getElementById("note-to-task");
+
+  function setNoteFormTags(tags){
+    if (noteTagsInputEl) noteTagsInputEl.value = (tags || []).join(", ");
+    renderNoteTagChips();
+  }
+  function renderNoteTagChips(){
+    if (!noteTagsInputEl || !noteTagsChipsEl) return;
+    var tags = parseFreeTags(noteTagsInputEl.value);
+    noteTagsChipsEl.innerHTML = "";
+    noteTagsChipsEl.hidden = !tags.length;
+    tags.forEach(function(t){
+      noteTagsChipsEl.appendChild(taskFreeTagChip(t, function(){
+        noteTagsInputEl.value = tags.filter(function(x){ return x !== t; }).join(", ");
+        renderNoteTagChips();
+      }));
+    });
+  }
+  if (noteTagsInputEl){
+    noteTagsInputEl.addEventListener("input", renderNoteTagChips);
+    noteTagsInputEl.addEventListener("blur", function(){
+      noteTagsInputEl.value = parseFreeTags(noteTagsInputEl.value).join(", ");
+      renderNoteTagChips();
+    });
+  }
+
+  function setNoteFormPinned(on){
+    noteFormPinned = !!on;
+    if (notePinToggle){
+      notePinToggle.classList.toggle("is-on", noteFormPinned);
+      notePinToggle.setAttribute("aria-pressed", String(noteFormPinned));
+    }
+    if (notePinLabel) notePinLabel.textContent = noteFormPinned ? "ピン留め中" : "留めていない";
+  }
+  if (notePinToggle) notePinToggle.addEventListener("click", function(){ setNoteFormPinned(!noteFormPinned); });
+
+  function setNoteEditMode(mode){
+    noteEditMode = mode === "preview" ? "preview" : "edit";
+    var preview = noteEditMode === "preview";
+    if (preview && noteBodyPreview){
+      noteBodyPreview.innerHTML = noteMarkdownToHtml(noteEditableToMarkdown(noteBodyInput));
+    }
+    noteBodyInput.hidden = preview;
+    if (noteBodyPreview) noteBodyPreview.hidden = !preview;
+    document.querySelectorAll(".note-mode-btn").forEach(function(b){
+      b.classList.toggle("is-active", b.getAttribute("data-mode") === noteEditMode);
+    });
+  }
+  document.querySelectorAll(".note-mode-btn").forEach(function(b){
+    b.addEventListener("click", function(){ setNoteEditMode(b.getAttribute("data-mode")); });
+  });
+  var noteMdHelpBtn = document.getElementById("note-md-help-btn");
+  if (noteMdHelpBtn) noteMdHelpBtn.addEventListener("click", function(){
+    var h = document.getElementById("note-md-help");
+    if (h) h.hidden = !h.hidden;
+  });
+
+  // プレビュー上のチェックボックス。押した行の [ ] / [x] を反転して編集側へ書き戻す。
+  // （保存はいつもどおりモーダルの「保存」。ここでは本文を書き換えるだけ）
+  if (noteBodyPreview) noteBodyPreview.addEventListener("click", function(e){
+    var btn = e.target.closest(".md-check");
+    if (!btn) return;
+    var lineNo = Number(btn.getAttribute("data-line"));
+    var text = noteEditableToMarkdown(noteBodyInput).split("\n");
+    if (!(lineNo >= 0 && lineNo < text.length)) return;
+    text[lineNo] = text[lineNo].replace(/\[([ xX])\]/, function(_, c){ return c === " " ? "[x]" : "[ ]"; });
+    var joined = text.join("\n");
+    noteBodyInput.innerHTML = noteMarkdownToEditableHtml(joined);
+    noteBodyPreview.innerHTML = noteMarkdownToHtml(joined);
+  });
+
+  /* ---- メモ → タスク化 ----
+     タイトルをタスク名、本文を備考、自由タグとアカウントタグをそのまま引き継いで
+     タスクモーダルを開く。メモは消さない（元の記録は残す）。 */
+  if (noteToTaskBtn) noteToTaskBtn.addEventListener("click", function(){
+    var title = noteTitleInput.value.trim() || "(無題)";
+    var body = noteEditableToMarkdown(noteBodyInput);
+    var tags = noteTagsInputEl ? parseFreeTags(noteTagsInputEl.value) : [];
+    var tag = noteFormTag;
+    closeNoteModal();
+    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
+    openNewTask(tag === "syslea" ? "syslea" : "haruka");
+    taskTitleInput.value = title.slice(0, 200);
+    taskRemarksInput.value = noteSnippetText(body).slice(0, 2000);
+    var tgEl = document.getElementById("task-tags-input");
+    if (tgEl){ tgEl.value = tags.join(", "); renderTaskTagChips(); }
+    taskTitleInput.focus();
+    taskTitleInput.select();
+  });
   function closeNoteModal(){
     noteModal.hidden = true;
     document.body.style.overflow = "";
@@ -7171,12 +7504,22 @@
       noteFormError.textContent = "タイトルを入力してください。";
       return;
     }
+    // プレビュー表示中でも編集側の DOM は残っているので、そこから本文を取る
     var body = noteEditableToMarkdown(noteBodyInput);
+    var freeTags = noteTagsInputEl ? parseFreeTags(noteTagsInputEl.value) : [];
     if (editingNoteId){
       var existing = notesState.find(function(n){ return n.id === editingNoteId; });
-      if (existing){ existing.title = title; existing.body = body; existing.tag = noteFormTag; existing.updatedAt = Date.now(); }
+      if (existing){
+        existing.title = title; existing.body = body; existing.tag = noteFormTag;
+        existing.tags = freeTags; existing.pinned = noteFormPinned || false;
+        existing.updatedAt = Date.now();
+      }
     } else {
-      notesState.push({ id: uid(), title: title, body: body, tag: noteFormTag, updatedAt: Date.now() });
+      notesState.push({
+        id: uid(), title: title, body: body, tag: noteFormTag,
+        tags: freeTags, pinned: noteFormPinned || false,
+        createdAt: Date.now(), updatedAt: Date.now()
+      });
     }
     closeNoteModal();
     renderNotes();

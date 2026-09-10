@@ -247,7 +247,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.46</span>
+      <span>v2.33.47</span>
     </div>
   </footer>
 </div>
@@ -1206,12 +1206,27 @@
         <button class="acct-tab" type="button" data-account="haruka">はるか</button>
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
       </div>
-      <input type="search" id="note-search" class="task-input" placeholder="メモを検索…" autocomplete="off">
+      <input type="search" id="note-search" class="task-input" placeholder="メモを検索…（スペース区切りでAND）" autocomplete="off">
       <div class="cal-status-chip" id="notes-status-bar">接続確認中…</div>
     </div>
     <div class="cal-toolbar-right">
+      <select class="task-sort-select" id="note-sort" aria-label="並べ替え">
+        <option value="updated">更新順</option>
+        <option value="created">作成順（新しい順）</option>
+        <option value="title">タイトル順</option>
+      </select>
+      <div class="note-density-switch" role="tablist" aria-label="表示密度">
+        <button type="button" class="note-density-btn is-active" data-density="card" title="カード表示">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+        </button>
+        <button type="button" class="note-density-btn" data-density="list" title="リスト表示">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
       <button type="button" class="note-add-btn" id="note-new">+ 新規メモ</button>
     </div>
+    <!-- 自由タグのチップ列（メモに1つでもタグが付いていれば出る） -->
+    <div class="note-tagbar" id="note-tagbar" hidden></div>
   </section>
 
   <section class="panel cal-body-panel">
@@ -1339,22 +1354,48 @@
       <label>タイトル
         <input type="text" id="note-title-input" maxlength="120" required>
       </label>
-      <label>タグ
-        <div class="acct-tabs sm" role="tablist" id="note-tag-tabs">
-          <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
-          <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
-        </div>
+      <div class="event-datetime-row">
+        <label>タグ（アカウント）
+          <div class="acct-tabs sm" role="tablist" id="note-tag-tabs">
+            <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
+            <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
+          </div>
+        </label>
+        <label>ピン留め
+          <button type="button" class="note-pin-toggle" id="note-pin-toggle" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/></svg>
+            <span id="note-pin-label">留めていない</span>
+          </button>
+        </label>
+      </div>
+      <label>タグ（自由）
+        <input type="text" id="note-tags-input" placeholder="買い物, 引っ越し, レシピ  （カンマ・スペース区切り）" autocomplete="off" maxlength="200">
       </label>
+      <div class="task-tags-chips" id="note-tags-chips" hidden></div>
       <div class="field-block">
         <span>内容</span>
         <div class="note-body-toolbar">
           <button type="button" id="note-bold-btn" class="note-format-btn" title="選択範囲を太字にする"><span class="note-format-b">B</span> 太字</button>
+          <button type="button" id="note-md-help-btn" class="note-format-btn" title="使える記法">記法</button>
+          <div class="note-mode-switch" role="tablist">
+            <button type="button" class="note-mode-btn is-active" id="note-mode-edit" data-mode="edit">編集</button>
+            <button type="button" class="note-mode-btn" id="note-mode-preview" data-mode="preview">プレビュー</button>
+          </div>
         </div>
         <div id="note-body-input" class="note-body-editable" contenteditable="true" role="textbox" aria-multiline="true" aria-label="内容" data-placeholder="メモを入力…"></div>
+        <!-- プレビュー。チェックボックスはここから直接押せて、本文の [ ] / [x] に書き戻る。 -->
+        <div id="note-body-preview" class="note-md" hidden></div>
+        <div id="note-md-help" class="note-md-help" hidden>
+          <b># 見出し</b> ／ <b>## 小見出し</b> ／ <b>- 箇条書き</b> ／ <b>1. 番号</b> ／
+          <b>[ ] チェック</b>（プレビューで押せます）／ <b>**太字**</b> ／ <b>`コード`</b> ／
+          <b>&gt; 引用</b> ／ <b>---</b> 区切り線
+        </div>
       </div>
       <div class="event-form-error" id="note-form-error" hidden></div>
       <div class="event-form-actions">
         <button type="button" id="note-delete" class="ev-btn ev-btn-danger" hidden>削除</button>
+        <!-- このメモをタスク化。タイトルをタスク名、本文を備考、自由タグをそのまま引き継ぐ。 -->
+        <button type="button" id="note-to-task" class="ev-btn">タスクにする</button>
         <div class="event-form-actions-right">
           <button type="button" id="note-cancel" class="ev-btn">キャンセル</button>
           <button type="submit" id="note-save" class="ev-btn ev-btn-primary">保存</button>
