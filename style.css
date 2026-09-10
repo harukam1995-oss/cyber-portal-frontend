@@ -2661,6 +2661,10 @@
   }
   .fin-tx-amount.is-income{ color: var(--accent); }
   .fin-tx-amount.is-expense{ color:#a8836a; }
+  /* 行クリックで編集（サブスクの行と同じ当たり方にする） */
+  .fin-tx-row.is-editable{ cursor:pointer; }
+  .fin-tx-row.is-editable:hover{ background: rgba(255,255,255,0.03); }
+  .fin-tx-row.is-editable:focus-visible{ outline:1px solid var(--accent); outline-offset:-1px; }
 
   /* ---- サブスク ---- */
   .subs-cols{ display:grid; grid-template-columns: 1.5fr 1fr; gap:12px; margin-bottom:12px; align-items:start; }

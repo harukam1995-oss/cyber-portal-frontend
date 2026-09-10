@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 122;
+  var BUILD_V = 123;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -1617,6 +1617,9 @@
   var financeMonth = null;  // 表示中の月 "YYYY-MM"
   var financeData = null;   // 直近のレスポンス
   var financeCatType = "支出"; // 「カテゴリー別」で選択中の種別
+  // 明細を編集中のときだけ入る { row, prev:{date,type,amount} }。
+  // row はシートの実行番号、prev は書き込み前の照合用（行がずれていたら 409）。
+  var financeEditRow = null;
 
   function finYen(n){
     return "¥" + (Math.round(Number(n) || 0)).toLocaleString("ja-JP");
@@ -1797,7 +1800,10 @@
     if (!listEl) return;
     var rows = (financeData && financeData.rows) || [];
     if (card) card.hidden = false;
-    if (countEl) countEl.textContent = rows.length ? rows.length + "件" : "";
+    var editable = rows.length && rows[0].row;
+    if (countEl) countEl.textContent = rows.length
+      ? rows.length + "件" + (editable ? " ・ 行をクリックで編集" : "")
+      : "";
     listEl.innerHTML = "";
     if (!rows.length){
       listEl.innerHTML = '<div class="pv-habit-empty">この月の取引はまだありません。</div>';
@@ -1806,6 +1812,19 @@
     rows.forEach(function(r){
       var row = document.createElement("div");
       row.className = "fin-tx-row";
+      // 行番号(r.row)がある＝編集できる行。古いバックエンドのレスポンスには無いので
+      // その場合は従来どおり読み取り専用のまま出す。
+      if (r.row){
+        row.classList.add("is-editable");
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.title = "クリックで編集";
+        var openEdit = function(){ openFinanceModal(r); };
+        row.addEventListener("click", openEdit);
+        row.addEventListener("keydown", function(e){
+          if (e.key === "Enter" || e.key === " "){ e.preventDefault(); openEdit(); }
+        });
+      }
       var date = document.createElement("span");
       date.className = "fin-tx-date"; date.textContent = finDayLabel(r.date);
       var type = document.createElement("span");
@@ -1942,10 +1961,14 @@
     loadFinance();
   }
 
-  function finPopulateCategories(type){
+  // selected を渡すと、マスタに無いカテゴリーでも選択肢として残す
+  // （既存の取引を編集するとき、マスタから消えたカテゴリーを勝手に空にしないため）。
+  function finPopulateCategories(type, selected){
     var sel = document.getElementById("fin-category");
     if (!sel) return;
-    var list = (financeCategories && financeCategories[type]) || FIN_FALLBACK_CATEGORIES[type] || [];
+    var list = ((financeCategories && financeCategories[type]) || FIN_FALLBACK_CATEGORIES[type] || []).slice();
+    var want = String(selected || "").trim();
+    if (want && list.indexOf(want) < 0) list.push(want);
     sel.innerHTML = "";
     var blank = document.createElement("option");
     blank.value = ""; blank.textContent = "（未選択）";
@@ -1955,30 +1978,73 @@
       o.value = c; o.textContent = c;
       sel.appendChild(o);
     });
+    sel.value = want && list.indexOf(want) >= 0 ? want : "";
   }
 
-  function openFinanceModal(){
+  // item を渡すと編集モード（明細の行クリック）。省略すると新規追加。
+  function openFinanceModal(item){
     var modal = document.getElementById("finance-modal");
     if (!modal) return;
     var errEl = document.getElementById("finance-form-error");
     if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
+    var editing = !!(item && item.row);
+    financeEditRow = editing
+      ? { row: item.row, prev: { date: item.date, type: item.type, amount: item.amount } }
+      : null;
+
+    var titleEl = document.getElementById("finance-modal-title");
+    if (titleEl) titleEl.textContent = editing ? "取引を編集" : "取引を追加";
+    var delBtn = document.getElementById("fin-delete");
+    if (delBtn){ delBtn.hidden = !editing; delBtn.disabled = false; }
+
     var dateEl = document.getElementById("fin-date");
-    // 過去月を見ているときは、その月の1日を既定にする(見ている月に足すのが自然)
+    // 新規で過去月を見ているときは、その月の1日を既定にする(見ている月に足すのが自然)
     var today = jstDateKey(new Date());
-    if (dateEl) dateEl.value = (financeMonth && financeMonth !== today.slice(0, 7)) ? (financeMonth + "-01") : today;
+    if (dateEl){
+      dateEl.value = editing ? item.date
+        : ((financeMonth && financeMonth !== today.slice(0, 7)) ? (financeMonth + "-01") : today);
+    }
     var typeEl = document.getElementById("fin-type");
-    if (typeEl) typeEl.value = "支出";
+    if (typeEl) typeEl.value = editing ? item.type : "支出";
     var amtEl = document.getElementById("fin-amount");
-    if (amtEl) amtEl.value = "";
+    if (amtEl) amtEl.value = editing ? Math.round(Number(item.amount) || 0) : "";
     var noteEl = document.getElementById("fin-note");
-    if (noteEl) noteEl.value = "";
-    finPopulateCategories(typeEl ? typeEl.value : "支出");
+    if (noteEl) noteEl.value = editing ? (item.note || "") : "";
+    finPopulateCategories(typeEl ? typeEl.value : "支出", editing ? item.category : "");
     modal.hidden = false;
     if (amtEl) amtEl.focus();
   }
   function closeFinanceModal(){
     var modal = document.getElementById("finance-modal");
     if (modal) modal.hidden = true;
+    financeEditRow = null;
+  }
+
+  // シート側で行がずれていた（409 row_changed）ときは、黙って直さず読み直させる。
+  function finIsStale(err){ return err && err.code === "row_changed"; }
+
+  async function deleteFinanceRow(){
+    if (!financeEditRow) return;
+    var errEl = document.getElementById("finance-form-error");
+    var delBtn = document.getElementById("fin-delete");
+    var saveBtn = document.getElementById("fin-save");
+    if (!window.confirm("この取引を家計簿から削除します。よろしいですか？")) return;
+    if (delBtn){ delBtn.disabled = true; delBtn.textContent = "削除中…"; }
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      await apiFetch("/api/sheets/finance/" + financeEditRow.row, {
+        method: "DELETE",
+        body: JSON.stringify({ prev: financeEditRow.prev })
+      });
+      closeFinanceModal();
+      loadFinance();
+    } catch (err){
+      if (errEl){ errEl.textContent = apiErrorMessage(err, "家計簿"); errEl.hidden = false; }
+      if (finIsStale(err)){ closeFinanceModal(); loadFinance(); }
+    } finally {
+      if (delBtn){ delBtn.disabled = false; delBtn.textContent = "削除"; }
+      if (saveBtn) saveBtn.disabled = false;
+    }
   }
 
   function wireFinanceModal(){
@@ -1991,11 +2057,13 @@
     var form = document.getElementById("finance-form");
     var typeEl = document.getElementById("fin-type");
     var reconnectBtn = document.getElementById("pv-fin-reconnect");
-    if (addBtn) addBtn.addEventListener("click", openFinanceModal);
+    if (addBtn) addBtn.addEventListener("click", function(){ openFinanceModal(); });
     if (closeBtn) closeBtn.addEventListener("click", closeFinanceModal);
     if (cancelBtn) cancelBtn.addEventListener("click", closeFinanceModal);
     if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeFinanceModal(); });
     if (typeEl) typeEl.addEventListener("change", function(){ finPopulateCategories(typeEl.value); });
+    var delBtn = document.getElementById("fin-delete");
+    if (delBtn) delBtn.addEventListener("click", deleteFinanceRow);
     if (reconnectBtn) reconnectBtn.addEventListener("click", function(){ startGoogleConnect("haruka"); });
     // 月ナビ（未来には進めない。TODAY'S PLAN の日付ナビと同じ考え方）
     var mPrev = document.getElementById("fin-month-prev");
@@ -2020,14 +2088,22 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date)){ showErr("日付を入力してください。"); return; }
       if (!(payload.amount > 0)){ showErr("金額はプラスの数値で入力してください。"); return; }
       if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+      var editing = financeEditRow;
       try {
-        await apiFetch("/api/sheets/finance", { method: "POST", body: JSON.stringify(payload) });
+        if (editing){
+          payload.prev = editing.prev; // シート側で行がずれていないかの照合用
+          await apiFetch("/api/sheets/finance/" + editing.row, { method: "PUT", body: JSON.stringify(payload) });
+        } else {
+          await apiFetch("/api/sheets/finance", { method: "POST", body: JSON.stringify(payload) });
+        }
+        var goMonth = payload.date.slice(0, 7);
         closeFinanceModal();
-        // 追加した取引が見えるよう、その取引の月へ移動してから読み直す
-        financeMonth = payload.date.slice(0, 7);
+        // 保存した取引が見えるよう、その取引の月へ移動してから読み直す
+        financeMonth = goMonth;
         loadFinance();
       } catch (err){
         showErr(apiErrorMessage(err, "家計簿"));
+        if (finIsStale(err)){ closeFinanceModal(); loadFinance(); }
       } finally {
         if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
       }
