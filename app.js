@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 116;
+  var BUILD_V = 117;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -2467,7 +2467,8 @@
   }
 
   function setCalStatus(html, cls){
-    calStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
+    // ステータスは独立パネルではなくツールバー内のチップ（1行ぶん縦を節約する）。
+    calStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
     calStatusBar.innerHTML = html;
   }
 
@@ -2573,7 +2574,15 @@
     return items;
   }
 
+  // 曜日クラス（土=sat / 日=sun）。週末だけ地の色を1段変える用。
+  function dowClass(dayKey){
+    var w = keyWeekday(dayKey);
+    return w === 0 ? " sun" : w === 6 ? " sat" : "";
+  }
+
   function renderCalendarView(){
+    // 表示中のビューを親に出しておき、CSS 側で「日次だけ幅を絞る」等を切り替える。
+    calGridContainer.className = "cal-grid is-" + calState.view;
     if (calState.view === "day") renderDayOrWeek([calState.anchor]);
     else if (calState.view === "week"){
       var s = startOfWeekKey(calState.anchor);
@@ -2591,22 +2600,26 @@
       html += '<div class="cal-week-headers"><div style="width:46px;flex:none;"></div><div style="flex:1;display:grid;grid-template-columns:repeat(' + dayKeys.length + ',1fr);">';
       dayKeys.forEach(function(k){
         var today = k === todayKey;
-        html += '<div class="cal-col-header' + (today ? ' today' : '') + '">' + escapeHtml(formatColHeader(k)) + '</div>';
+        html += '<div class="cal-col-header' + dowClass(k) + (today ? ' today' : '') + '">' + escapeHtml(formatColHeader(k)) + '</div>';
       });
       html += '</div></div>';
     }
 
-    html += '<div class="cal-allday-row"><div class="cal-allday-gutter">終日</div><div class="cal-allday-cols" style="grid-template-columns:repeat(' + dayKeys.length + ',1fr);">';
-    dayKeys.forEach(function(k){
-      var cls = classifyEvents(k);
-      html += '<div>';
-      cls.allDay.forEach(function(ev){
-        var col = colorForEvent(ev);
-        html += '<div class="cal-allday-chip" tabindex="0" data-event-id="' + escapeHtml(ev.id) + '" style="background:' + colorBg(col) + ';border-color:' + col + ';">' + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
+    // 終日イベントが1件も無い週/日では帯ごと出さない（空の帯が縦を無駄に食っていた）。
+    var hasAllDay = dayKeys.some(function(k){ return classifyEvents(k).allDay.length > 0; });
+    if (hasAllDay){
+      html += '<div class="cal-allday-row"><div class="cal-allday-gutter">終日</div><div class="cal-allday-cols" style="grid-template-columns:repeat(' + dayKeys.length + ',1fr);">';
+      dayKeys.forEach(function(k){
+        var cls = classifyEvents(k);
+        html += '<div>';
+        cls.allDay.forEach(function(ev){
+          var col = colorForEvent(ev);
+          html += '<div class="cal-allday-chip" tabindex="0" data-event-id="' + escapeHtml(ev.id) + '" style="background:' + colorBg(col) + ';border-color:' + col + ';">' + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
+        });
+        html += '</div>';
       });
-      html += '</div>';
-    });
-    html += '</div></div>';
+      html += '</div></div>';
+    }
 
     html += '<div class="cal-timeline-scroll" id="cal-timeline-scroll"><div class="cal-timeline" style="height:' + (24*HOUR_PX) + 'px;">';
     html += '<div class="cal-hour-gutter">';
@@ -2614,7 +2627,7 @@
     html += '</div>';
     html += '<div class="cal-day-cols" style="grid-template-columns:repeat(' + dayKeys.length + ',1fr); height:' + (24*HOUR_PX) + 'px;">';
     dayKeys.forEach(function(k){
-      html += '<div class="cal-day-col" data-day-key="' + k + '">';
+      html += '<div class="cal-day-col' + dowClass(k) + '" data-day-key="' + k + '">';
       for (var h2 = 0; h2 < 24; h2++){ html += '<div class="cal-hour-line" style="top:' + (h2*HOUR_PX) + 'px;"></div>'; }
       if (k === todayKey){
         var nowMin = minutesInDay(new Date().toISOString(), k);
@@ -2655,9 +2668,49 @@
       });
     });
 
+    // 表示範囲に今日が含まれるなら現在時刻が上から 1/3 に来る位置へ、
+    // 含まれないなら従来どおり 07:00 を先頭に。
     var scrollEl = document.getElementById("cal-timeline-scroll");
-    if (scrollEl) scrollEl.scrollTop = 7 * HOUR_PX;
+    if (scrollEl){
+      var target = 7 * HOUR_PX;
+      if (dayKeys.indexOf(todayKey) !== -1){
+        var nowPx = minutesInDay(new Date().toISOString(), todayKey) / 60 * HOUR_PX;
+        target = nowPx - scrollEl.clientHeight / 3;
+      }
+      scrollEl.scrollTop = Math.max(0, Math.min(24 * HOUR_PX - scrollEl.clientHeight, target));
+    }
   }
+
+  // 月グリッドのセルは高さがビューポート追従（1fr）なので、入る件数は固定できない。
+  // 描画後に実測して、はみ出すチップだけ隠し「+N件」に畳む。
+  function fitMonthChips(){
+    var MORE_H = 16; // 「+N件」行の見込み高さ
+    calGridContainer.querySelectorAll(".cal-month-cell").forEach(function(cell){
+      var chips = Array.prototype.slice.call(cell.querySelectorAll(".cal-month-chip"));
+      var more = cell.querySelector(".cal-month-more");
+      chips.forEach(function(c){ c.hidden = false; });
+      if (more) more.hidden = true;
+      if (!chips.length) return;
+      var bottom = cell.getBoundingClientRect().bottom - 6; // セル下 padding ぶん
+      var shown = chips.length;
+      for (var i = 0; i < chips.length; i++){
+        var reserve = (i < chips.length - 1) ? MORE_H : 0; // 続きがあるなら +N 行を確保
+        if (chips[i].getBoundingClientRect().bottom > bottom - reserve){ shown = i; break; }
+      }
+      if (shown >= chips.length) return;
+      for (var j = shown; j < chips.length; j++) chips[j].hidden = true;
+      if (more){ more.hidden = false; more.textContent = "+" + (chips.length - shown) + "件"; }
+    });
+  }
+
+  var calFitTimer = null;
+  window.addEventListener("resize", function(){
+    if (calState.view !== "month") return;
+    var frame = document.getElementById("view-calendar");
+    if (!frame || frame.hidden) return;
+    clearTimeout(calFitTimer);
+    calFitTimer = setTimeout(fitMonthChips, 150);
+  });
 
   function renderMonth(){
     var p = keyParts(calState.anchor);
@@ -2673,7 +2726,9 @@
 
     var todayKey = jstDateKey(new Date());
     var html = '<div class="cal-month-grid">';
-    DOW_JA.forEach(function(l){ html += '<div class="cal-month-dow">' + l + '</div>'; });
+    DOW_JA.forEach(function(l, i){
+      html += '<div class="cal-month-dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '') + '">' + l + '</div>';
+    });
 
     keys.forEach(function(dayKey){
       var pk = keyParts(dayKey);
@@ -2684,19 +2739,22 @@
         var ta = a.start.dateTime || "", tb = b.start.dateTime || "";
         return ta < tb ? -1 : ta > tb ? 1 : 0;
       }));
-      html += '<div class="cal-month-cell' + (outside ? ' outside' : '') + (isToday ? ' today' : '') + '" data-day-key="' + dayKey + '">';
+      html += '<div class="cal-month-cell' + dowClass(dayKey) + (outside ? ' outside' : '') + (isToday ? ' today' : '') + '" data-day-key="' + dayKey + '">';
       html += '<div class="cal-month-date">' + pk.d + '</div>';
-      allItems.slice(0, 3).forEach(function(ev){
+      // セルの高さはビューポート追従なので、何件出せるかは描画後に実測して決める
+      // （下の fitMonthChips）。ここでは全件（上限12）出しておく。
+      allItems.slice(0, 12).forEach(function(ev){
         var col = colorForEvent(ev);
         var timePrefix = ev.start.date ? "" : escapeHtml(fmtEventTime(ev.start)) + " ";
         var monthFullLabel = (ev.start.date ? "終日" : fmtEventTime(ev.start)) + " " + (ev.summary || "(タイトルなし)");
         html += '<div class="cal-month-chip" data-event-id="' + escapeHtml(ev.id) + '" title="' + escapeHtml(monthFullLabel) + '" style="background:' + colorBg(col) + ';border-color:' + col + ';">' + timePrefix + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
       });
-      if (allItems.length > 3){ html += '<div class="cal-month-more">+' + (allItems.length - 3) + '件</div>'; }
+      html += '<div class="cal-month-more" hidden></div>';
       html += '</div>';
     });
     html += '</div>';
     calGridContainer.innerHTML = html;
+    fitMonthChips();
 
     calGridContainer.querySelectorAll(".cal-month-cell").forEach(function(cell){
       cell.addEventListener("click", function(e){

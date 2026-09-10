@@ -234,7 +234,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.35</span>
+      <span>v2.33.36</span>
     </div>
   </footer>
 </div>
@@ -728,10 +728,13 @@
         <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
       </div>
-      <button class="cal-today-btn" id="cal-today" type="button">今日</button>
-      <button class="cal-nav-btn" id="cal-prev" type="button" aria-label="前へ">‹</button>
-      <button class="cal-nav-btn" id="cal-next" type="button" aria-label="次へ">›</button>
+      <div class="cal-nav-group">
+        <button class="cal-today-btn" id="cal-today" type="button">今日</button>
+        <button class="cal-nav-btn" id="cal-prev" type="button" aria-label="前へ">‹</button>
+        <button class="cal-nav-btn" id="cal-next" type="button" aria-label="次へ">›</button>
+      </div>
       <div class="cal-range-label" id="cal-range-label">-</div>
+      <div class="cal-status-chip" id="cal-status-bar">接続確認中…</div>
     </div>
     <div class="cal-toolbar-right">
       <div class="cal-view-switch" role="tablist">
@@ -742,8 +745,6 @@
       <button class="cal-new-btn" id="cal-new" type="button">+ 新規予定</button>
     </div>
   </section>
-
-  <section class="panel cal-status-bar" id="cal-status-bar">接続確認中…</section>
 
   <section class="panel cal-body-panel">
     <div id="cal-grid-container"><div class="sched-empty">読み込み中…</div></div>

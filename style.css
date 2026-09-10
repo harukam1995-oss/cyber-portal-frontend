@@ -2464,3 +2464,82 @@
     html.fixed-aspect #view-business:not([hidden]) .biz-task-list{ max-height: 88px; }
     html.fixed-aspect #view-business:not([hidden]) .pv-today-clock{ font-size: clamp(26px, 2.6vw, 32px); }
   }
+
+  /* =====================================================================
+     CALENDAR layout v2 — カレンダー画面のレイアウト整理（2026/09/10）
+     ---------------------------------------------------------------------
+     ・独立していたステータス行をツールバー内のチップへ畳む（1行ぶん縦を節約）
+     ・グリッドをビューポート追従に（timeline の固定 max-height:560px を廃止）
+     ・月グリッドの行を 1fr で伸ばし、入る件数は app.js の fitMonthChips が実測
+     ・日次はカラム1本なので幅を絞って中央寄せ（全幅だと空白ばかりになる）
+     ・土日は地の色を1段だけ変える（発光・色追加はしない）
+     ・角丸/アクティブ表現を B/アンバーの規定（2〜3px・ベタ）へ揃える
+     このブロックごと消せば従来のレイアウトに戻る（app.js 側の変更は無害に残る）。
+     ===================================================================== */
+  #view-calendar{ min-height: calc(100vh - 2 * clamp(12px, 2.4vw, 28px)); }
+  #view-calendar .cal-body-panel{
+    flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
+    padding: 12px 12px 14px;
+  }
+  #view-calendar .cal-grid{ flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+  /* ---- ツールバー ---- */
+  #view-calendar .cal-toolbar{ padding: 10px 16px; gap: 10px 14px; }
+  #view-calendar .cal-toolbar-left{ gap: 12px; }
+  .cal-nav-group{ display: flex; align-items: center; gap: 4px; }
+  #view-calendar .cal-range-label{
+    font-size: 15px; margin-left: 2px;
+    padding-left: 14px; border-left: 1px solid var(--hairline);
+  }
+  /* ステータス（●連携中 / エラー / 再連携の案内）。旧 .cal-status-bar の代替。 */
+  .cal-status-chip{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
+    color: var(--text-faint); white-space: nowrap;
+  }
+  .cal-status-chip.err{ color: var(--err); }
+  .cal-status-chip .live{ color: var(--ok); }
+  .cal-status-chip .reconnect-hint{ color: var(--accent); }
+  #view-calendar .cal-back-btn{ border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; }
+  #view-calendar .cal-view-switch{ border-radius: 2px; }
+  #view-calendar .cal-view-btn{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; padding: 7px 15px;
+  }
+  #view-calendar .cal-view-btn.active{ background: rgba(255,143,63,.15); color: var(--accent); }
+
+  /* ---- 日次/週次 ---- */
+  #view-calendar .cal-timeline-scroll{
+    flex: 1 1 auto; max-height: none; min-height: 220px; padding-top: 8px;
+  }
+  #view-calendar .cal-allday-row{ margin: 0 auto 8px; }
+  #view-calendar .cal-allday-chip{ border-radius: 2px; }
+  /* 日次はカラムが1本しかないので、幅いっぱいに引き伸ばさず中央に置く。 */
+  #view-calendar .cal-grid.is-day .cal-allday-row,
+  #view-calendar .cal-grid.is-day .cal-timeline-scroll{ width: 100%; max-width: 880px; margin-inline: auto; }
+  #view-calendar .cal-col-header{ font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .5px; }
+  #view-calendar .cal-col-header.today{ color: var(--accent); }
+  #view-calendar .cal-col-header.sun{ color: #c98b7a; }
+  #view-calendar .cal-col-header.sat{ color: #8fa0b0; }
+  #view-calendar .cal-day-col.sat, #view-calendar .cal-day-col.sun{ background: rgba(255,255,255,.014); }
+
+  /* ---- 月次 ---- */
+  #view-calendar .cal-month-grid{
+    flex: 1 1 auto; min-height: 0;
+    grid-template-rows: auto; grid-auto-rows: minmax(72px, 1fr);
+  }
+  #view-calendar .cal-month-cell{ min-height: 0; }
+  #view-calendar .cal-month-dow.sun{ color: #c98b7a; }
+  #view-calendar .cal-month-dow.sat{ color: #8fa0b0; }
+  #view-calendar .cal-month-cell.sat:not(.today),
+  #view-calendar .cal-month-cell.sun:not(.today){ background: rgba(255,255,255,.014); }
+  #view-calendar .cal-month-cell.sun .cal-month-date{ color: #c98b7a; }
+  #view-calendar .cal-month-cell.sat .cal-month-date{ color: #8fa0b0; }
+  #view-calendar .cal-month-chip{ border-radius: 2px; padding: 1px 5px; }
+  #view-calendar .cal-month-more{ font-family: var(--font-mono); letter-spacing: .3px; }
+
+  /* スマホは縦積み前提なので画面いっぱいの拘束を外す。 */
+  @media (max-width: 720px){
+    #view-calendar{ min-height: 0; }
+    #view-calendar .cal-timeline-scroll{ max-height: 60vh; }
+    #view-calendar .cal-month-grid{ grid-auto-rows: minmax(64px, auto); }
+    #view-calendar .cal-range-label{ padding-left: 0; border-left: none; }
+  }
