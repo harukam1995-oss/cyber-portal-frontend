@@ -234,7 +234,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.39</span>
+      <span>v2.33.40</span>
     </div>
   </footer>
 </div>
@@ -841,6 +841,7 @@
       <div class="acct-tabs" role="tablist" id="cal-acct-tabs">
         <button class="acct-tab active" type="button" data-account="haruka">はるか</button>
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
+        <button class="acct-tab" type="button" data-account="both">両方</button>
       </div>
       <div class="cal-nav-group">
         <button class="cal-today-btn" id="cal-today" type="button">今日</button>
@@ -858,6 +859,8 @@
       </div>
       <button class="cal-new-btn" id="cal-new" type="button">+ 新規予定</button>
     </div>
+    <!-- ポータル内の「日付のあるもの」を重ねるレイヤー切り替え（中身は app.js が描画） -->
+    <div class="cal-layers" id="cal-layers"></div>
   </section>
 
   <section class="panel cal-body-panel">
@@ -1396,6 +1399,13 @@
     <form class="event-form" id="event-form">
       <label>タイトル
         <input type="text" id="ev-title" maxlength="200" required>
+      </label>
+      <!-- 「両方」表示のときだけ出す。編集時は付け替えできないので disabled にする -->
+      <label id="ev-acct-row" hidden>カレンダー
+        <select id="ev-acct">
+          <option value="haruka">はるか</option>
+          <option value="syslea">SYSLEA</option>
+        </select>
       </label>
       <label class="event-allday-row">
         <input type="checkbox" id="ev-allday"> 終日

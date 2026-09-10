@@ -2773,3 +2773,97 @@
     .subs-year-chart{ gap:3px; }
     .subs-year-col{ height:78px; }
   }
+
+  /* =====================================================================
+     CALENDAR v3 — 予定の色帯化 ／ 2アカウント重ね表示 ／ レイヤー（2026/09/10）
+     ---------------------------------------------------------------------
+     ・予定チップは「地を暗く＋左3pxの色帯」。色帯の色＝どのアカウントの予定か
+       （はるか=アクセント / SYSLEA=寒色ニュートラル）。--ev-color を app.js が入れる
+     ・レイヤー（タスク/契約/支払/TR/サブスク）は色を増やさず、
+       金(--warn)＝期限もの／赤(--err)＝期限超過 の2値＋先頭の小さいバッジで見分ける
+     ・ツールバー下段にレイヤーのトグル列
+     このブロックごと消せば v2 のレイアウトのまま色だけ元に戻る。
+     ===================================================================== */
+
+  /* ---- 予定（Google Calendar）：地は暗く、左に色帯 ---- */
+  #view-calendar .cal-event-block,
+  #view-calendar .cal-allday-chip,
+  #view-calendar .cal-month-chip{
+    background: rgba(255,255,255,.045);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--ev-color, var(--accent));
+    color: var(--text);
+  }
+  #view-calendar .cal-event-block:hover,
+  #view-calendar .cal-allday-chip:hover,
+  #view-calendar .cal-month-chip:hover{
+    background: rgba(255,255,255,.085);
+    filter: none;
+  }
+  #view-calendar .cal-event-block .t{ color: var(--text-faint); opacity: 1; }
+
+  /* ---- レイヤー（ポータル内の期限もの） ---- */
+  #view-calendar .cal-ov-chip{
+    display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+    box-sizing: border-box; padding: 2px 6px; border-radius: 2px;
+    background: rgba(216,194,74,.06);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--warn);
+    color: var(--text-dim); font-size: 11px; line-height: 1.35;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
+  }
+  #view-calendar .cal-ov-chip:hover{ background: rgba(216,194,74,.12); color: var(--text); }
+  #view-calendar .cal-ov-chip.is-overdue{
+    border-left-color: var(--err); background: rgba(255,92,92,.07); color: var(--text);
+  }
+  #view-calendar .cal-ov-chip.is-overdue:hover{ background: rgba(255,92,92,.13); }
+  .cal-ov-badge{
+    flex: none; font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .5px;
+    color: var(--warn); border: 1px solid rgba(216,194,74,.35); border-radius: 2px; padding: 0 3px;
+  }
+  #view-calendar .cal-ov-chip.is-overdue .cal-ov-badge{ color: var(--err); border-color: rgba(255,92,92,.4); }
+  .cal-ov-text{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #view-calendar .cal-ov-chip .t{ font-family: var(--font-mono); font-size: 9.5px; color: var(--text-faint); }
+  /* 月セルの中では他のチップと同じ字送りに寄せる */
+  #view-calendar .cal-ov-chip.cal-month-chip{ font-size: 10.5px; padding: 1px 5px; }
+  /* 時刻つき（＝期限時刻を入れたタスク）は時間軸の右端に細く重ねる */
+  #view-calendar .cal-day-col .cal-ov-chip.is-timed{
+    position: absolute; right: 2px; left: auto; max-width: 76%;
+    transform: translateY(-50%); z-index: 4;
+  }
+
+  /* ---- レイヤーのトグル列（ツールバー下段） ---- */
+  .cal-layers{
+    flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--hairline);
+  }
+  .cal-layers-label{
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px;
+    color: var(--text-faint); margin-right: 4px;
+  }
+  .cal-layer-chip{
+    padding: 3px 10px; border-radius: 2px; border: 1px solid var(--panel-border);
+    background: transparent; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
+    color: var(--text-faint); cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .cal-layer-chip:hover{ color: var(--text); }
+  .cal-layer-chip.is-on{
+    background: rgba(216,194,74,.12); border-color: rgba(216,194,74,.35); color: var(--warn);
+  }
+  /* 「両方」のときだけ出すアカウント色の凡例 */
+  .cal-acct-legend{
+    display: flex; align-items: center; gap: 5px; margin-left: 6px;
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--text-faint);
+  }
+  .cal-acct-legend i{ width: 8px; height: 8px; border-radius: 2px; background: var(--lg-color); }
+  .cal-status-chip .warn{ color: var(--warn); }
+
+  /* 予定モーダルの「カレンダー」行。.event-form label が display:flex なので
+     [hidden] を明示的に打ち消す必要がある。 */
+  #ev-acct-row[hidden]{ display: none; }
+
+  @media (max-width: 720px){
+    .cal-layers{ padding-top: 7px; }
+    .cal-layers-label{ display: none; }
+  }

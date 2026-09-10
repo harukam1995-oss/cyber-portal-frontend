@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 120;
+  var BUILD_V = 121;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -496,8 +496,10 @@
   var schedList = document.getElementById("sched-list");
   var schedSourceLabel = document.getElementById("sched-source-label");
   var schedUpdated = document.getElementById("sched-updated");
-  // カレンダーのイベント色。虹色をやめて暖色(アンバー)系の弱いバリエーションだけにする。
-  var dotColors = ["#ff8f3f", "#e8954f", "#d98a4a", "#f0a45f", "#c98a5b"];
+  // カレンダーのイベント色は「どのアカウントの予定か」だけを表す（2026/09/10）。
+  // 以前は event.id のハッシュで暖色5色を割り当てていたが、色に意味が無く
+  // どれも同じ茶色に見えるだけだった。はるか=アクセント / SYSLEA=寒色ニュートラル。
+  var ACCOUNT_COLOR = { haruka: "#ff8f3f", syslea: "#8fa0b0" };
   var schedAccount = "haruka";
   var schedRefreshBtn = document.getElementById("sched-refresh");
   var schedEventsToday = []; // 通知センターが「本日の残り予定」を出すのに参照
@@ -3072,7 +3074,8 @@
 
   /* ================= calendar page: state ================= */
   var HOUR_PX = 48;
-  var calState = { view: "day", account: "haruka", anchor: jstDateKey(new Date()), events: [] };
+  // account は "haruka" | "syslea" | "both"（both = 2アカウントを重ねて表示）。
+  var calState = { view: "day", account: "haruka", anchor: jstDateKey(new Date()), events: [], overlays: [] };
   var calLoadToken = 0;
 
   var calRangeLabel = document.getElementById("cal-range-label");
@@ -3128,6 +3131,7 @@
   });
   wireAcctTabs("cal-acct-tabs", function(){ return calState.account; }, function(acct){
     calState.account = acct;
+    renderLayerToggles();   // 「両方」のときだけ出すアカウント色の凡例を出し入れする
     loadAndRenderCalendar();
   });
   document.getElementById("cal-new").addEventListener("click", function(){ openCreateForm(calState.anchor, 9 * 60); });
@@ -3153,7 +3157,168 @@
     calStatusBar.innerHTML = html;
   }
 
-  function calAccountLabel(){ return calState.account === "syslea" ? "SYSLEA" : "はるか"; }
+  function calAccountLabel(){
+    return calState.account === "syslea" ? "SYSLEA" : calState.account === "both" ? "両方" : "はるか";
+  }
+
+  /* ================= カレンダーのレイヤー（ポータル内の期限ものを重ねる） =================
+     Google の予定だけでなく、ポータルが既に持っている「日付のあるもの」を同じ画面に出す。
+     どれも既存 API をそのまま叩くだけで、バックの改修もデータ構造の変更も無い。
+     色は増やさない：期限もの＝金(--warn)、期限超過＝赤(--err) の2値だけで、
+     種別は先頭の小さいバッジ（タスク/契約/支払/TR/サブスク）で見分ける。 */
+  var CAL_LAYERS = [
+    { key: "tasks",     label: "タスク",   badge: "タスク",   view: "tasks" },
+    { key: "contracts", label: "契約書",   badge: "契約",     view: "contracts" },
+    { key: "payables",  label: "支払",     badge: "支払",     view: "payables" },
+    { key: "trackers",  label: "トラッカー", badge: "TR",     view: "business" },
+    { key: "subs",      label: "サブスク", badge: "サブスク", view: "subs" }
+  ];
+  var CAL_LAYERS_LS = "cp_cal_layers";
+  // 既定：サブスクだけ OFF（毎月必ず出るので、まず他を見たいことが多い）。
+  var calLayers = { tasks: true, contracts: true, payables: true, trackers: true, subs: false };
+  try{
+    var savedLayers = JSON.parse(localStorage.getItem(CAL_LAYERS_LS) || "null");
+    if (savedLayers && typeof savedLayers === "object"){
+      CAL_LAYERS.forEach(function(l){ if (typeof savedLayers[l.key] === "boolean") calLayers[l.key] = savedLayers[l.key]; });
+    }
+  } catch(_){ /* localStorage が使えなくても既定値で動く */ }
+
+  // レイヤーごとの生データ。初回 ON のときだけ取得してセッション中は使い回す。
+  var calLayerCache = {};   // key -> 正規化済み [{dayKey,time,label,badge,layer,overdue}]
+  var calLayerLoading = {}; // key -> Promise（同時多重リクエストの抑止）
+
+  function calItem(layer, dayKey, time, label, todayKey, closed){
+    return {
+      layer: layer.key, badge: layer.badge, view: layer.view,
+      dayKey: dayKey, time: time || "", label: label || "(無題)",
+      overdue: !closed && dayKey < todayKey
+    };
+  }
+
+  var CAL_LAYER_FETCH = {
+    tasks: async function(layer){
+      var today = jstDateKey(new Date());
+      var res = await apiFetch("/api/tasks");
+      return (res.tasks || [])
+        .filter(function(t){ return t && t.due && !t.done; })
+        .map(function(t){ return calItem(layer, t.due, t.dueTime || "", t.text || "(無題)", today, false); });
+    },
+    contracts: async function(layer){
+      var today = jstDateKey(new Date());
+      var res = await apiFetch("/api/contracts");
+      return (res.contracts || [])
+        .filter(function(c){ return c && c.dueDate && c.status !== "締結済み" && c.status !== "報告済み"; })
+        .map(function(c){ return calItem(layer, c.dueDate, "", (c.client || c.title || "(名称未設定)") + " 締結期限", today, false); });
+    },
+    payables: async function(layer){
+      var today = jstDateKey(new Date());
+      var res = await apiFetch("/api/payables");
+      return (res.payables || [])
+        .filter(function(p){ return p && !p.paid && (p.scheduledDate || p.dueDate); })
+        .map(function(p){
+          var amt = p.amountIncl ? " " + subYen(p.amountIncl) : "";
+          return calItem(layer, p.scheduledDate || p.dueDate, "", (p.vendorName || "(取引先不明)") + amt, today, false);
+        });
+    },
+    trackers: async function(layer){
+      var today = jstDateKey(new Date());
+      var res = await apiFetch("/api/event-trackers");
+      var out = [];
+      (res.eventTrackers || []).forEach(function(t){
+        if (!t || t.archived) return;
+        (t.items || []).forEach(function(it){
+          if (!it || !it.dueDate || it.done) return;
+          out.push(calItem(layer, it.dueDate, "", t.name + ": " + (it.text || "(無題)"), today, false));
+        });
+      });
+      return out;
+    },
+    subs: async function(layer){
+      var today = jstDateKey(new Date());
+      var res = await apiFetch("/api/sheets/subscriptions");
+      if (!res || res.configured === false) return [];
+      var out = [];
+      // 前後13ヶ月ぶんの課金日を先に展開しておく（表示範囲の絞り込みは描画時）。
+      var p = keyParts(addDaysKey(today, -400));
+      var fromYm = p.y + "-" + String(p.m).padStart(2, "0");
+      (res.subscriptions || []).forEach(function(s){
+        if (!s || !s.name) return;
+        subChargesInRange(s, fromYm, 26).forEach(function(c){
+          var dk = c.y + "-" + String(c.m).padStart(2,"0") + "-" + String(c.d).padStart(2,"0");
+          out.push(calItem(layer, dk, "", s.name + (s.amount ? " " + subYen(s.amount) : ""), today, true));
+        });
+      });
+      return out;
+    }
+  };
+
+  // ON になっているレイヤーを（未取得なら取得して）まとめる。1本コケても他は出す。
+  // タスクや請求書は別画面で更新されるので、3分で取り直す（毎描画だと重い）。
+  var CAL_LAYER_TTL_MS = 3 * 60 * 1000;
+  async function loadCalOverlays(){
+    var now = Date.now();
+    var wanted = CAL_LAYERS.filter(function(l){ return calLayers[l.key]; });
+    wanted.forEach(function(l){
+      var c = calLayerCache[l.key];
+      if (c && now - c.at > CAL_LAYER_TTL_MS) calLayerCache[l.key] = null;
+    });
+    await Promise.all(wanted.map(function(l){
+      if (calLayerCache[l.key]) return null;
+      if (!calLayerLoading[l.key]){
+        calLayerLoading[l.key] = CAL_LAYER_FETCH[l.key](l)
+          .then(function(items){ calLayerCache[l.key] = { at: Date.now(), items: items }; })
+          .catch(function(){ calLayerCache[l.key] = { at: Date.now(), items: [] }; }) // 取れなければ黙って空（本体を止めない）
+          .finally(function(){ calLayerLoading[l.key] = null; });
+      }
+      return calLayerLoading[l.key];
+    }));
+    var all = [];
+    wanted.forEach(function(l){ all = all.concat((calLayerCache[l.key] || {}).items || []); });
+    calState.overlays = all;
+  }
+
+  function overlaysFor(dayKey){
+    return calState.overlays.filter(function(o){ return o.dayKey === dayKey; });
+  }
+  // 終日帯に出すもの（時刻なし）と、時間軸に置けるもの（タスクの dueTime）を分ける。
+  function overlaysAllDay(dayKey){ return overlaysFor(dayKey).filter(function(o){ return !o.time; }); }
+  function overlaysTimed(dayKey){ return overlaysFor(dayKey).filter(function(o){ return !!o.time; }); }
+
+  function overlayChipHtml(o, extraClass, extraStyle){
+    return '<div class="cal-ov-chip' + (o.overdue ? " is-overdue" : "") + (extraClass ? " " + extraClass : "") + '"'
+      + ' tabindex="0" role="button" data-ov-view="' + escapeHtml(o.view) + '"'
+      + ' title="' + escapeHtml(o.badge + " · " + o.label + (o.overdue ? "（期限超過）" : "")) + '"'
+      + (extraStyle ? ' style="' + extraStyle + '"' : '')
+      + '><span class="cal-ov-badge">' + escapeHtml(o.badge) + '</span>'
+      + (o.time ? '<span class="t">' + escapeHtml(o.time) + '</span>' : '')
+      + '<span class="cal-ov-text">' + escapeHtml(o.label) + '</span></div>';
+  }
+
+  // レイヤーのトグル列（ツールバー下段）。押すたびに保存して再描画する。
+  var calLayersBar = document.getElementById("cal-layers");
+  function renderLayerToggles(){
+    if (!calLayersBar) return;
+    // 「両方」表示のときだけ、どちらの色がどちらのアカウントかを凡例で出す。
+    var legend = calState.account !== "both" ? "" : ["haruka", "syslea"].map(function(a){
+      return '<span class="cal-acct-legend" style="--lg-color:' + ACCOUNT_COLOR[a] + ';"><i></i>'
+        + escapeHtml(ACCOUNTS[a].label) + '</span>';
+    }).join("");
+    calLayersBar.innerHTML = '<span class="cal-layers-label">重ねて表示</span>' + CAL_LAYERS.map(function(l){
+      return '<button type="button" class="cal-layer-chip' + (calLayers[l.key] ? " is-on" : "") + '"'
+        + ' data-layer="' + l.key + '" aria-pressed="' + (calLayers[l.key] ? "true" : "false") + '">'
+        + escapeHtml(l.label) + '</button>';
+    }).join("") + legend;
+    calLayersBar.querySelectorAll(".cal-layer-chip").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var k = btn.getAttribute("data-layer");
+        calLayers[k] = !calLayers[k];
+        try{ localStorage.setItem(CAL_LAYERS_LS, JSON.stringify(calLayers)); } catch(_){ }
+        renderLayerToggles();
+        loadAndRenderCalendar();
+      });
+    });
+  }
+  renderLayerToggles();
 
   async function loadAndRenderCalendar(){
     updateViewButtons();
@@ -3163,14 +3328,37 @@
     setCalStatus("読み込み中…", "");
     if (!calState.loadOk) calGridContainer.innerHTML = calSkeletonHtml();
     var acct = calState.account;
+    var qs = "/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end);
+    // 「両方」は2アカウントを並列に取り、_acct を付けて1本にまとめる。
+    // 片方だけコケても、取れた方は出す（両方ダメなら従来のエラー処理へ）。
+    var accts = acct === "both" ? ["haruka", "syslea"] : [acct];
+    // レイヤーの取得は予定の取得と並行に走らせる（直列だと Render のコールドスタートぶん待たされる）
+    var overlaysP = loadCalOverlays();
     try{
-      var res = await apiFetch(acctPath("/api/google/calendar/events?start=" + encodeURIComponent(bounds.start) + "&end=" + encodeURIComponent(bounds.end), acct));
+      var settled = await Promise.all(accts.map(function(a){
+        return apiFetch(acctPath(qs, a))
+          .then(function(res){ return { acct: a, events: res.events || [] }; })
+          .catch(function(err){ return { acct: a, err: err }; });
+      }));
       if (token !== calLoadToken) return;
-      calState.events = res.events || [];
+      var failed = settled.filter(function(s){ return s.err; });
+      if (failed.length === accts.length) throw failed[0].err;
+
+      var events = [];
+      settled.forEach(function(s){
+        if (s.err) return;
+        s.events.forEach(function(ev){ ev._acct = s.acct; events.push(ev); });
+      });
+      calState.events = events;
       calState.loadedCalendarId = "primary";
       calState.loadOk = true;
+      await overlaysP;
+      if (token !== calLoadToken) return;
       renderCalendarView();
-      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (' + escapeHtml(calAccountLabel()) + ')', "");
+      var partial = failed.length
+        ? ' <span class="warn">' + escapeHtml(ACCOUNTS[failed[0].acct].label) + ' は取得できず</span>'
+        : "";
+      setCalStatus('<span class="live">●</span> Google Calendar 連携中 (' + escapeHtml(calAccountLabel()) + ')' + partial, "");
     } catch(err){
       if (token !== calLoadToken) return;
       calState.loadOk = false;
@@ -3186,7 +3374,7 @@
           var btn = document.createElement("button");
           btn.type = "button"; btn.className = "inbox-reconnect"; btn.style.display = "inline-block";
           btn.textContent = calAccountLabel() + " を Google 連携";
-          btn.addEventListener("click", function(){ startGoogleConnect(acct); });
+          btn.addEventListener("click", function(){ startGoogleConnect(acct === "both" ? "haruka" : acct); });
           wrap.appendChild(p); wrap.appendChild(btn);
           return wrap;
         })());
@@ -3198,16 +3386,12 @@
     }
   }
 
-  function colorForEvent(ev){
-    var id = String((ev && (ev.id || ev.summary)) || "x");
-    var hash = 0;
-    for (var i = 0; i < id.length; i++){ hash = (hash * 31 + id.charCodeAt(i)) % 997; }
-    return dotColors[Math.abs(hash) % dotColors.length];
+  // 予定がどのアカウントのものか。「両方」表示のときは取得時に _acct を付けてある。
+  function eventAccount(ev){
+    if (ev && ev._acct) return ev._acct;
+    return calState.account === "syslea" ? "syslea" : "haruka";
   }
-  function colorBg(hex){
-    var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-    return "rgba(" + r + "," + g + "," + b + ",0.22)";
-  }
+  function colorForEvent(ev){ return ACCOUNT_COLOR[eventAccount(ev)] || ACCOUNT_COLOR.haruka; }
 
   function classifyEvents(dayKey){
     var allDay = [], timed = [];
@@ -3272,6 +3456,23 @@
     } else renderMonth();
   }
 
+  // 予定チップ＝詳細ポップオーバー、レイヤーチップ＝そのデータの画面へ移動。
+  // 日次/週次/月次で共通なので1本にまとめてある。
+  function wireCalChipClicks(){
+    calGridContainer.querySelectorAll("[data-event-id]").forEach(function(el){
+      el.addEventListener("click", function(e){
+        e.stopPropagation();
+        openEventPopover(el.getAttribute("data-event-id"), el);
+      });
+    });
+    calGridContainer.querySelectorAll("[data-ov-view]").forEach(function(el){
+      el.addEventListener("click", function(e){
+        e.stopPropagation();
+        showView(el.getAttribute("data-ov-view"));
+      });
+    });
+  }
+
   function renderDayOrWeek(dayKeys){
     var isWeek = dayKeys.length > 1;
     var todayKey = jstDateKey(new Date());
@@ -3286,17 +3487,20 @@
       html += '</div></div>';
     }
 
-    // 終日イベントが1件も無い週/日では帯ごと出さない（空の帯が縦を無駄に食っていた）。
-    var hasAllDay = dayKeys.some(function(k){ return classifyEvents(k).allDay.length > 0; });
+    // 終日イベントもレイヤーも無い週/日では帯ごと出さない（空の帯が縦を無駄に食っていた）。
+    var hasAllDay = dayKeys.some(function(k){
+      return classifyEvents(k).allDay.length > 0 || overlaysAllDay(k).length > 0;
+    });
     if (hasAllDay){
       html += '<div class="cal-allday-row"><div class="cal-allday-gutter">終日</div><div class="cal-allday-cols" style="grid-template-columns:repeat(' + dayKeys.length + ',1fr);">';
       dayKeys.forEach(function(k){
         var cls = classifyEvents(k);
         html += '<div>';
         cls.allDay.forEach(function(ev){
-          var col = colorForEvent(ev);
-          html += '<div class="cal-allday-chip" tabindex="0" data-event-id="' + escapeHtml(ev.id) + '" style="background:' + colorBg(col) + ';border-color:' + col + ';">' + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
+          html += '<div class="cal-allday-chip" tabindex="0" data-event-id="' + escapeHtml(ev.id) + '" style="--ev-color:' + colorForEvent(ev) + ';">'
+            + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
         });
+        overlaysAllDay(k).forEach(function(o){ html += overlayChipHtml(o); });
         html += '</div>';
       });
       html += '</div></div>';
@@ -3317,14 +3521,20 @@
       var cls2 = classifyEvents(k);
       var laid = layoutTimed(cls2.timed, k);
       laid.forEach(function(item){
-        var col = colorForEvent(item.ev);
         var top = item.startMin/60*HOUR_PX;
         var height = Math.max(18, (item.endMin-item.startMin)/60*HOUR_PX);
         var widthPct = 100/item.colCount;
         var leftPct = item.col*widthPct;
-        var fullLabel = fmtEventTime(item.ev.start) + " " + (item.ev.summary || "(タイトルなし)");
-        html += '<div class="cal-event-block" tabindex="0" data-event-id="' + escapeHtml(item.ev.id) + '" title="' + escapeHtml(fullLabel) + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + leftPct + '% + 2px);width:calc(' + widthPct + '% - 4px);background:' + colorBg(col) + ';border-color:' + col + ';">'
+        var acctName = calState.account === "both" ? " ・" + ACCOUNTS[eventAccount(item.ev)].label : "";
+        var fullLabel = fmtEventTime(item.ev.start) + " " + (item.ev.summary || "(タイトルなし)") + acctName;
+        html += '<div class="cal-event-block" tabindex="0" data-event-id="' + escapeHtml(item.ev.id) + '" title="' + escapeHtml(fullLabel) + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + leftPct + '% + 2px);width:calc(' + widthPct + '% - 4px);--ev-color:' + colorForEvent(item.ev) + ';">'
           + '<span class="t">' + escapeHtml(fmtEventTime(item.ev.start)) + '</span>' + escapeHtml(item.ev.summary || "(タイトルなし)") + '</div>';
+      });
+      // 時刻つきのレイヤー（＝期限時刻を入れたタスク）は時間軸の右端に細く重ねる。
+      overlaysTimed(k).forEach(function(o){
+        var parts = o.time.split(":");
+        var top = (Number(parts[0]) * 60 + Number(parts[1])) / 60 * HOUR_PX;
+        html += overlayChipHtml(o, "is-timed", "top:" + top + "px;");
       });
       html += '</div>';
     });
@@ -3334,7 +3544,7 @@
 
     calGridContainer.querySelectorAll(".cal-day-col").forEach(function(col){
       col.addEventListener("click", function(e){
-        if (e.target.closest("[data-event-id]")) return;
+        if (e.target.closest("[data-event-id],[data-ov-view]")) return;
         var rect = col.getBoundingClientRect();
         var offsetY = e.clientY - rect.top;
         var minutes = Math.round(offsetY / HOUR_PX * 60 / 15) * 15;
@@ -3342,12 +3552,7 @@
         openCreateForm(col.getAttribute("data-day-key"), minutes);
       });
     });
-    calGridContainer.querySelectorAll("[data-event-id]").forEach(function(el){
-      el.addEventListener("click", function(e){
-        e.stopPropagation();
-        openEventPopover(el.getAttribute("data-event-id"), el);
-      });
-    });
+    wireCalChipClicks();
 
     // 表示範囲に今日が含まれるなら現在時刻が上から 1/3 に来る位置へ、
     // 含まれないなら従来どおり 07:00 を先頭に。
@@ -3425,11 +3630,17 @@
       // セルの高さはビューポート追従なので、何件出せるかは描画後に実測して決める
       // （下の fitMonthChips）。ここでは全件（上限12）出しておく。
       allItems.slice(0, 12).forEach(function(ev){
-        var col = colorForEvent(ev);
         var timePrefix = ev.start.date ? "" : escapeHtml(fmtEventTime(ev.start)) + " ";
-        var monthFullLabel = (ev.start.date ? "終日" : fmtEventTime(ev.start)) + " " + (ev.summary || "(タイトルなし)");
-        html += '<div class="cal-month-chip" data-event-id="' + escapeHtml(ev.id) + '" title="' + escapeHtml(monthFullLabel) + '" style="background:' + colorBg(col) + ';border-color:' + col + ';">' + timePrefix + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
+        var acctName = calState.account === "both" ? " ・" + ACCOUNTS[eventAccount(ev)].label : "";
+        var monthFullLabel = (ev.start.date ? "終日" : fmtEventTime(ev.start)) + " " + (ev.summary || "(タイトルなし)") + acctName;
+        html += '<div class="cal-month-chip" data-event-id="' + escapeHtml(ev.id) + '" title="' + escapeHtml(monthFullLabel) + '" style="--ev-color:' + colorForEvent(ev) + ';">'
+          + timePrefix + escapeHtml(ev.summary || "(タイトルなし)") + '</div>';
       });
+      // レイヤーは予定の下に。期限超過が先（一番見落としたくない）。
+      overlaysFor(dayKey)
+        .sort(function(a, b){ return (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0); })
+        .slice(0, 12)
+        .forEach(function(o){ html += overlayChipHtml(o, "cal-month-chip"); });
       html += '<div class="cal-month-more" hidden></div>';
       html += '</div>';
     });
@@ -3439,18 +3650,13 @@
 
     calGridContainer.querySelectorAll(".cal-month-cell").forEach(function(cell){
       cell.addEventListener("click", function(e){
-        if (e.target.closest("[data-event-id]")) return;
+        if (e.target.closest("[data-event-id],[data-ov-view]")) return;
         calState.anchor = cell.getAttribute("data-day-key");
         calState.view = "day";
         loadAndRenderCalendar();
       });
     });
-    calGridContainer.querySelectorAll("[data-event-id]").forEach(function(el){
-      el.addEventListener("click", function(e){
-        e.stopPropagation();
-        openEventPopover(el.getAttribute("data-event-id"), el);
-      });
-    });
+    wireCalChipClicks();
   }
 
   /* ================= 予定の詳細ポップオーバー =================
@@ -3512,7 +3718,9 @@
     var col = colorForEvent(ev);
     evPopSwatch.style.background = col;
     evPopTitle.textContent = ev.summary || "(タイトルなし)";
-    evPopTime.textContent = fmtEventRange(ev);
+    // 「両方」表示だと、どちらのカレンダーの予定か分からないと編集/削除が怖い。
+    evPopTime.textContent = fmtEventRange(ev)
+      + (calState.account === "both" ? "  ・" + (ACCOUNTS[eventAccount(ev)] || ACCOUNTS.haruka).label : "");
     if (ev.location){ evPopLoc.hidden = false; evPopLoc.textContent = "📍 " + ev.location; }
     else evPopLoc.hidden = true;
     var descPlain = ev.description ? htmlDescriptionToPlainText(ev.description) : "";
@@ -3553,7 +3761,7 @@
       evPopDelete.disabled = true;
       if (evPopErr) evPopErr.hidden = true;
       try{
-        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(ev.id), calState.account), { method: "DELETE" });
+        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(ev.id), eventAccount(ev)), { method: "DELETE" });
         closeEventPopover();
         loadAndRenderCalendar();
         initCalendarWatch();
@@ -3581,10 +3789,21 @@
   var evCancel = document.getElementById("ev-cancel");
   var evSave = document.getElementById("ev-save");
 
+  var evAcctRow = document.getElementById("ev-acct-row");
+  var evAcct = document.getElementById("ev-acct");
+
   var editingEvent = null;
   var editingEventCalendarId = null;
+  var editingEventAccount = null;   // 編集中の予定がどちらのアカウントのものか（「両方」表示用）
   var editingOriginalDescription = null;
   var editingOriginalDescriptionPlain = null;
+
+  // 書き込み先アカウント。編集中はその予定のアカウント、新規は「両方」なら選択値。
+  function calWriteAccount(){
+    if (editingEvent) return editingEventAccount || "haruka";
+    if (calState.account === "both") return (evAcct && evAcct.value) || "haruka";
+    return calState.account;
+  }
 
   // Google Calendar descriptions "can contain HTML" (e.g. pasted event listings with
   // <a href="...">links</a>). A plain <textarea> can't render that markup, so show the
@@ -3615,9 +3834,21 @@
   }
   evAllday.addEventListener("change", toggleAllDayInputs);
 
+  // 「両方」表示のときだけ、どちらのカレンダーに書くかを選ばせる。
+  // 編集時は移動できない（PATCH に付け替えの口が無い）ので選択不可にして表示だけする。
+  function syncEventAcctRow(){
+    if (!evAcctRow || !evAcct) return;
+    var both = calState.account === "both";
+    evAcctRow.hidden = !both;
+    if (!both) return;
+    evAcct.value = editingEvent ? (editingEventAccount || "haruka") : (evAcct.value || "haruka");
+    evAcct.disabled = !!editingEvent;
+  }
+
   function openCreateForm(dayKey, minutesFromMidnight){
     editingEvent = null;
     editingEventCalendarId = null;
+    editingEventAccount = null;
     editingOriginalDescription = null;
     editingOriginalDescriptionPlain = null;
     eventModalTitle.textContent = "新規予定";
@@ -3634,12 +3865,14 @@
     evEndDate.value = dayKey;
     evStartTime.value = minutesToHHMM(startMin);
     evEndTime.value = minutesToHHMM(endMin);
+    syncEventAcctRow();
     showEventModal();
   }
 
   function openEditForm(ev){
     editingEvent = ev;
-    editingEventCalendarId = calState.loadedCalendarId || ACCOUNTS[calState.account].calendarId;
+    editingEventAccount = eventAccount(ev);
+    editingEventCalendarId = calState.loadedCalendarId || (ACCOUNTS[editingEventAccount] || ACCOUNTS.haruka).calendarId;
     eventModalTitle.textContent = "予定を編集";
     evDelete.hidden = false;
     evError.hidden = true;
@@ -3663,6 +3896,7 @@
       evStartTime.value = jstTimeHHMM(ev.start.dateTime);
       evEndTime.value = ev.end && ev.end.dateTime ? jstTimeHHMM(ev.end.dateTime) : jstTimeHHMM(ev.start.dateTime);
     }
+    syncEventAcctRow();
     showEventModal();
   }
 
@@ -3717,11 +3951,11 @@
 
     try{
       if (editingEvent){
-        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calState.account), {
+        await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calWriteAccount()), {
           method: "PATCH", body: JSON.stringify(input)
         });
       } else {
-        await apiFetch(acctPath("/api/google/calendar/events", calState.account), {
+        await apiFetch(acctPath("/api/google/calendar/events", calWriteAccount()), {
           method: "POST", body: JSON.stringify(input)
         });
       }
@@ -3740,7 +3974,7 @@
     if (!(await askConfirm('「' + (editingEvent.summary || "この予定") + '」を削除しますか?'))) return;
     evDelete.disabled = true;
     try{
-      await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calState.account), { method: "DELETE" });
+      await apiFetch(acctPath("/api/google/calendar/events/" + encodeURIComponent(editingEvent.id), calWriteAccount()), { method: "DELETE" });
       editingEvent = null;
       editingEventCalendarId = null;
       closeEventModal();
