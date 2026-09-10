@@ -2476,7 +2476,9 @@
      ・角丸/アクティブ表現を B/アンバーの規定（2〜3px・ベタ）へ揃える
      このブロックごと消せば従来のレイアウトに戻る（app.js 側の変更は無害に残る）。
      ===================================================================== */
-  #view-calendar{ min-height: calc(100vh - 2 * clamp(12px, 2.4vw, 28px)); }
+  /* min-height ではなく height。min-height だと flex:1 の中身が実寸なりに伸びてしまい、
+     timeline が内部スクロールせずページ側がスクロールする（＝下が見切れる）。 */
+  #view-calendar{ height: calc(100vh - 2 * clamp(12px, 2.4vw, 28px)); }
   #view-calendar .cal-body-panel{
     flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
     padding: 12px 12px 14px;
@@ -2508,7 +2510,7 @@
 
   /* ---- 日次/週次 ---- */
   #view-calendar .cal-timeline-scroll{
-    flex: 1 1 auto; max-height: none; min-height: 220px; padding-top: 8px;
+    flex: 1 1 auto; max-height: none; min-height: 0; padding-top: 8px;
   }
   #view-calendar .cal-allday-row{ margin: 0 auto 8px; }
   #view-calendar .cal-allday-chip{ border-radius: 2px; }
@@ -2533,12 +2535,16 @@
   #view-calendar .cal-month-cell.sun:not(.today){ background: rgba(255,255,255,.014); }
   #view-calendar .cal-month-cell.sun .cal-month-date{ color: #c98b7a; }
   #view-calendar .cal-month-cell.sat .cal-month-date{ color: #8fa0b0; }
+  /* flex:none ＝ 実測前にチップが潰れないこと（fitMonthChips が実寸で件数を決めるため）。 */
+  #view-calendar .cal-month-date,
+  #view-calendar .cal-month-chip,
+  #view-calendar .cal-month-more{ flex: none; }
   #view-calendar .cal-month-chip{ border-radius: 2px; padding: 1px 5px; }
   #view-calendar .cal-month-more{ font-family: var(--font-mono); letter-spacing: .3px; }
 
   /* スマホは縦積み前提なので画面いっぱいの拘束を外す。 */
   @media (max-width: 720px){
-    #view-calendar{ min-height: 0; }
+    #view-calendar{ height: auto; }
     #view-calendar .cal-timeline-scroll{ max-height: 60vh; }
     #view-calendar .cal-month-grid{ grid-auto-rows: minmax(64px, auto); }
     #view-calendar .cal-range-label{ padding-left: 0; border-left: none; }
