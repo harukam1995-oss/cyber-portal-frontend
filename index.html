@@ -241,7 +241,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.43</span>
+      <span>v2.33.44</span>
     </div>
   </footer>
 </div>
@@ -271,6 +271,26 @@
       </section>
       <!-- 今月の収支 / サブスク は別ページ（#view-finance / #view-subs）へ移動。
            クイックアクセスのアイコンから開く。 -->
+      <!-- 最近のメモ（はるかタグ）。ビジネスタブの同名カードと同じ描画を tag 違いで使う。 -->
+      <section class="panel pv-card">
+        <div class="card-head">
+          <h2>最近のメモ</h2>
+          <button type="button" class="pv-card-head-add" id="pv-note-new">＋ 新規メモ</button>
+        </div>
+        <div class="card-body">
+          <ul class="biz-note-list" id="pv-note-list"><li class="sched-empty">読み込み中…</li></ul>
+        </div>
+      </section>
+      <!-- 最近のタスク（はるかタグ・未完了） -->
+      <section class="panel pv-card">
+        <div class="card-head">
+          <h2>最近のタスク</h2>
+          <button type="button" class="pv-card-head-add" id="pv-task-new">＋ 新規タスク</button>
+        </div>
+        <div class="card-body">
+          <ul class="biz-task-list" id="pv-task-list"><li class="sched-empty">読み込み中…</li></ul>
+        </div>
+      </section>
     </div>
 
     <section class="panel pv-hero">
@@ -370,7 +390,7 @@
       <section class="panel pv-card">
         <div class="card-head">
           <h2>最近のメモ</h2>
-          <button type="button" class="pv-fin-add" id="biz-note-new">＋ 新規メモ</button>
+          <button type="button" class="pv-card-head-add" id="biz-note-new">＋ 新規メモ</button>
         </div>
         <div class="card-body">
           <ul class="biz-note-list" id="biz-note-list"><li class="sched-empty">読み込み中…</li></ul>
@@ -380,7 +400,7 @@
       <section class="panel pv-card">
         <div class="card-head">
           <h2>最近のタスク</h2>
-          <button type="button" class="pv-fin-add" id="biz-task-new">＋ 新規タスク</button>
+          <button type="button" class="pv-card-head-add" id="biz-task-new">＋ 新規タスク</button>
         </div>
         <div class="card-body">
           <ul class="biz-task-list" id="biz-task-list"><li class="sched-empty">読み込み中…</li></ul>
@@ -1097,13 +1117,15 @@
         <button class="acct-tab" type="button" data-account="haruka">はるか</button>
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
       </div>
+      <input type="search" id="task-search" class="task-input" placeholder="タスクを検索…" autocomplete="off">
+      <!-- 保存状態はカレンダー(v2.33.36)と同じくツールバー内のチップへ。
+           独立した1行パネルだと縦を1段まるごと食っていた。 -->
+      <div class="cal-status-chip" id="tasks-status-bar">接続確認中…</div>
     </div>
     <div class="cal-toolbar-right">
       <button type="button" class="task-add-btn" id="task-new">+ 新規タスク</button>
     </div>
   </section>
-
-  <section class="panel cal-status-bar" id="tasks-status-bar">接続確認中…</section>
 
   <section class="panel task-layout">
     <aside class="task-sidebar" id="task-sidebar">
@@ -1144,13 +1166,12 @@
         <button class="acct-tab" type="button" data-account="syslea">SYSLEA</button>
       </div>
       <input type="search" id="note-search" class="task-input" placeholder="メモを検索…" autocomplete="off">
+      <div class="cal-status-chip" id="notes-status-bar">接続確認中…</div>
     </div>
     <div class="cal-toolbar-right">
       <button type="button" class="note-add-btn" id="note-new">+ 新規メモ</button>
     </div>
   </section>
-
-  <section class="panel cal-status-bar" id="notes-status-bar">接続確認中…</section>
 
   <section class="panel cal-body-panel">
     <div class="notes-grid" id="notes-grid"><div class="notes-empty">読み込み中…</div></div>

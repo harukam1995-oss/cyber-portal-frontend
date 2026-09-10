@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 124;
+  var BUILD_V = 125;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -709,15 +709,26 @@
     if (img && !img.getAttribute("src") && HERO_ILLUSTRATIONS.length){
       img.src = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
     }
-    var noteNewBtn = document.getElementById("biz-note-new");
-    if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote("syslea"); });
-    if (!notesInitialized){ notesInitialized = true; initNotes(); }
-    else renderBizNotes();
-    var taskNewBtn = document.getElementById("biz-task-new");
-    if (taskNewBtn) taskNewBtn.addEventListener("click", function(){ openNewTask("syslea"); });
-    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
-    else renderBizTasks();
+    wireDashNoteTaskCards("biz-note-new", "biz-task-new", "syslea");
     loadBusinessModule().then(function(){ window.__CP.initBusinessCards(); }).catch(bizModuleFail);
+  }
+
+  // ダッシュボードの「最近のメモ / 最近のタスク」カード共通の初期化。
+  // ビジネス(SYSLEA)・プライベート(はるか)の両方から呼ぶ。
+  // notes/tasks は遅延初期化なので、未初期化なら init を、済んでいれば再描画だけ走らせる。
+  var dashCardsWired = {};
+  function wireDashNoteTaskCards(noteBtnId, taskBtnId, tag){
+    if (!dashCardsWired[noteBtnId]){
+      dashCardsWired[noteBtnId] = true;
+      var noteNewBtn = document.getElementById(noteBtnId);
+      if (noteNewBtn) noteNewBtn.addEventListener("click", function(){ openNewNote(tag); });
+      var taskNewBtn = document.getElementById(taskBtnId);
+      if (taskNewBtn) taskNewBtn.addEventListener("click", function(){ openNewTask(tag); });
+    }
+    if (!notesInitialized){ notesInitialized = true; initNotes(); }
+    else renderNoteCards();
+    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
+    else renderTaskCards();
   }
 
   function showView(name){
@@ -877,6 +888,7 @@
     }
     loadWeather();          // 即時反映(通常は30分間隔)
     loadPrivateUpcoming();
+    wireDashNoteTaskCards("pv-note-new", "pv-task-new", "haruka");
     wireHabitTracker();
     loadHabits();
     wirePlan();
@@ -5823,6 +5835,7 @@
   var taskStatusTab = "pending";  // "pending" | "done" — メイン上部タブ
   var taskView = "all";           // "all" | "today" | "week" | "overdue" — サイドバー
   var taskProjectFilter = "";     // "" | "__none" | <projectId> — サイドバー
+  var taskSearchQuery = "";       // ツールバーの検索窓（本文・備考・タグ・プロジェクト名を横断）
   var projectsForLink = [];       // [{ id, name, archived }] — タスク⇔プロジェクト用に独立ロード
   var projectsLoaded = false;
   var editingTaskId = null; // null = creating a new task
@@ -5857,6 +5870,20 @@
     if (view === "overdue") return task.due < todayKey && !task.done;
     if (view === "week") return task.due >= todayKey && task.due < addDaysKey(todayKey, 7);
     return true;
+  }
+
+  // ツールバー検索。空なら素通し。本文・備考・自由タグ・プロジェクト名を横断して
+  // 空白区切りの AND で見る（メモ側の全文検索と同じ感覚で使えるように）。
+  function taskSearchMatch(task){
+    var q = taskSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    var hay = [
+      task.text || "",
+      task.remarks || "",
+      (task.tags || []).join(" "),
+      projectName(task.projectId)
+    ].join(" ").toLowerCase();
+    return q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
   }
 
   // 自由タグ入力("月次決算, 経理  経理" 等) → 一意な配列。各24字・最大12個。
@@ -6004,7 +6031,7 @@
 
   function setTasksStatus(text, cls){
     tasksStatusBar.textContent = text;
-    tasksStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
+    tasksStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
   async function initTasks(){
@@ -6179,8 +6206,14 @@
     return li;
   }
 
+  // ビジネス(SYSLEA)＋プライベート(はるか)の両ダッシュボードのタスクカードを更新
+  function renderTaskCards(){
+    renderMiniTasks("biz-task-list", "syslea");
+    renderMiniTasks("pv-task-list", "haruka");
+  }
+
   function renderTasks(){
-    renderBizTasks(); // ビジネス画面の「最近のタスク」ミニリストも同時に更新
+    renderTaskCards(); // ダッシュボードの「最近のタスク」ミニリストも同時に更新
     renderTaskSidebar();
     var todayKey = jstDateKey(new Date());
 
@@ -6201,6 +6234,7 @@
       if (taskProjectFilter === "__none" && t.projectId) return false;
       if (taskProjectFilter && taskProjectFilter !== "__none" && t.projectId !== taskProjectFilter) return false;
       if (taskTagFilter && (t.tags || []).indexOf(taskTagFilter) === -1) return false;
+      if (!taskSearchMatch(t)) return false;
       return true;
     });
 
@@ -6251,6 +6285,12 @@
     renderTasks();
   });
   wireAcctTabs("task-tag-tabs", function(){ return taskFormTag; }, function(v){ taskFormTag = v; });
+
+  var taskSearchInput = document.getElementById("task-search");
+  if (taskSearchInput) taskSearchInput.addEventListener("input", function(){
+    taskSearchQuery = taskSearchInput.value;
+    renderTasks();
+  });
 
   var taskStatusTabsEl = document.getElementById("task-status-tabs");
   if (taskStatusTabsEl) taskStatusTabsEl.addEventListener("click", function(e){
@@ -6439,7 +6479,7 @@
 
   function setNotesStatus(text, cls){
     notesStatusBar.textContent = text;
-    notesStatusBar.className = "panel cal-status-bar" + (cls ? " " + cls : "");
+    notesStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
   async function initNotes(){
@@ -6490,18 +6530,19 @@
     return (text || "").replace(/\*\*(.+?)\*\*/g, "$1");
   }
 
-  // ビジネス画面の「最近のメモ」ミニリスト(SYSLEA タグ、最新5件)。
+  // ダッシュボードの「最近のメモ」ミニリスト(最新5件)。
+  // ビジネス=SYSLEA タグ / プライベート=はるか タグ の2箇所から tag 違いで呼ぶ。
   // notesState を直接見るので、メモページ側の検索/フィルタとは独立に常に同期する。
-  function renderBizNotes(){
-    var list = document.getElementById("biz-note-list");
+  function renderMiniNotes(listId, tag){
+    var list = document.getElementById(listId);
     if (!list) return;
     var items = notesState
-      .filter(function(n){ return n.tag === "syslea"; })
+      .filter(function(n){ return (n.tag || "haruka") === tag; })
       .slice()
       .sort(function(a, b){ return (b.updatedAt || 0) - (a.updatedAt || 0); })
       .slice(0, 5);
     if (!items.length){
-      list.innerHTML = '<li class="sched-empty">SYSLEA のメモはまだありません。</li>';
+      list.innerHTML = '<li class="sched-empty">' + (TASK_TAG_LABEL[tag] || tag) + ' のメモはまだありません。</li>';
       return;
     }
     list.innerHTML = "";
@@ -6517,18 +6558,19 @@
     });
   }
 
-  // ビジネス画面の「最近のタスク」ミニリスト(SYSLEA タグ・未完了、期限が近い順に最新5件)。
+  // ダッシュボードの「最近のタスク」ミニリスト(未完了、期限が近い順に最新5件)。
+  // ビジネス=SYSLEA タグ / プライベート=はるか タグ の2箇所から tag 違いで呼ぶ。
   // tasksState を直接見るので、タスクページ側のフィルタとは独立に常に同期する。
-  function renderBizTasks(){
-    var list = document.getElementById("biz-task-list");
+  function renderMiniTasks(listId, tag){
+    var list = document.getElementById(listId);
     if (!list) return;
     var items = tasksState
-      .filter(function(t){ return t.tag === "syslea" && !t.done && !t.parentId; })
+      .filter(function(t){ return (t.tag || "haruka") === tag && !t.done && !t.parentId; })
       .slice()
       .sort(function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); })
       .slice(0, 5);
     if (!items.length){
-      list.innerHTML = '<li class="sched-empty">SYSLEA の未完了タスクはありません。</li>';
+      list.innerHTML = '<li class="sched-empty">' + (TASK_TAG_LABEL[tag] || tag) + ' の未完了タスクはありません。</li>';
       return;
     }
     list.innerHTML = "";
@@ -6545,8 +6587,14 @@
     });
   }
 
+  // ビジネス(SYSLEA)＋プライベート(はるか)の両ダッシュボードのメモカードを更新
+  function renderNoteCards(){
+    renderMiniNotes("biz-note-list", "syslea");
+    renderMiniNotes("pv-note-list", "haruka");
+  }
+
   function renderNotes(){
-    renderBizNotes();
+    renderNoteCards();
     notesGrid.innerHTML = "";
     var q = noteSearchQuery.trim().toLowerCase();
     var items = notesState.filter(function(n){
