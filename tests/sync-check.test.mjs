@@ -104,3 +104,32 @@ test("style.css has no rules for the removed decorative classes", () => {
   }
   assert.ok(!/\.corner\b/.test(cssSrc), "dead .corner rule still in style.css");
 });
+
+/* ---- manifest と hash ルーティング（v2.33.49） ----
+   manifest の色は index.html の <meta theme-color> と別系統で、B/アンバー刷新のときに
+   取り残されていた（インストール済み PWA のタイトルバー/スプラッシュはこちらを見る）。
+   ショートカットの url は showView() のルート名に依存するので、両者のズレも見る。 */
+const manifestSrc = readFileSync(dir + "../manifest.webmanifest", "utf8");
+const manifest = JSON.parse(manifestSrc);
+
+test("manifest colors are the B/AMBER palette, not the old purple", () => {
+  assert.equal(manifest.background_color, "#05070a");
+  assert.equal(manifest.theme_color, "#07090c");
+});
+
+test("manifest shortcuts point at routes showView() knows", () => {
+  const routes = JSON.parse(
+    "[" + appSrc.match(/var VIEW_ROUTES = \[([\s\S]*?)\]/)[1].replace(/\s+/g, " ").replace(/,\s*$/, "") + "]"
+  );
+  assert.ok(routes.includes("home"), "VIEW_ROUTES should contain home");
+  for (const s of manifest.shortcuts || []){
+    const name = s.url.split("#")[1];
+    assert.ok(routes.includes(name), `manifest shortcut "${s.url}" is not a showView route`);
+  }
+});
+
+test("showView writes the URL hash (routing not silently dropped)", () => {
+  assert.match(appSrc, /if \(!opts\.fromHistory\) syncHash\(name, opts\.replace\);/);
+  assert.match(appSrc, /addEventListener\("popstate", applyRoute\)/);
+  assert.match(appSrc, /addEventListener\("hashchange", applyRoute\)/);
+});

@@ -414,7 +414,7 @@
   .mail-avatar{
     width:36px; height:36px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
     font-family: var(--font-display); font-size:12px; font-weight:700; color: var(--text);
-    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    background: var(--accent-dim);
   }
   .mail-main{ flex:1; min-width:0; }
   .mail-top-row{ display:flex; align-items:baseline; gap:10px; }
@@ -432,7 +432,6 @@
   .cal-nav-btn:disabled{ opacity:.35; cursor:default; }
 
   /* ---------- tasks & notes (self-persisted via the artifact capability) ---------- */
-  .task-toolbar-add{ display:flex; gap:8px; align-items:center; }
   .task-input{
     background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:8px;
     color: var(--text); font-family: var(--font-body); font-size:13px; padding:7px 12px; width:240px;
@@ -923,7 +922,6 @@
   .cal-status-bar{ padding:8px 20px; font-size:11px; color: var(--text-faint); letter-spacing:.5px; }
   .cal-status-bar.err{ color: var(--err); }
   .cal-status-bar .live{ color: var(--ok); }
-  .cal-status-bar .reconnect-hint{ color: var(--cyan); }
 
   .cal-body-panel{ padding:16px 12px 20px; overflow:hidden; }
 
@@ -1057,7 +1055,7 @@
     color: var(--text-dim); font-family: var(--font-body); font-size:12px; cursor:pointer; flex:none;
   }
   .weekday-btn:hover{ border-color: var(--cyan); }
-  .weekday-btn.active{ background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color:transparent; color:#fff; font-weight:600; }
+  .weekday-btn.active{ background: var(--accent); border-color:transparent; color: var(--bg-deep); font-weight:600; }
   .event-allday-row{ flex-direction:row !important; align-items:center; gap:8px !important; }
   .event-allday-row input{ width:16px; height:16px; }
   .event-datetime-row{ display:flex; gap:12px; flex-wrap:wrap; }
@@ -1235,8 +1233,6 @@
   #view-private .pv-grid > .pv-col > .pv-card:last-child .card-body,
   #view-business .pv-grid > .pv-col > .pv-card:last-child .card-body{ flex: 0 0 auto; }
   .pv-card .card-body{ padding-top: 4px; }
-  .pv-soon .card-head h2{ color: var(--text-dim); }
-  .pv-soon-msg{ font-size:12px; color: var(--text-faint); margin:0; line-height:1.6; }
 
   /* ---------- 今月の収支 (v1b) ---------- */
   .pv-fin .card-head{ display:flex; align-items:center; justify-content:space-between; }
@@ -1446,7 +1442,7 @@
   }
   .pv-plan-check:hover{ border-color: var(--cyan); }
   .pv-plan-check svg{ width:12px; height:12px; }
-  .pv-plan-item.is-done .pv-plan-check{ background: linear-gradient(135deg, var(--violet), var(--cyan)); border-color:transparent; color:#fff; }
+  .pv-plan-item.is-done .pv-plan-check{ background: var(--accent); border-color:transparent; color: var(--bg-deep); }
   .pv-plan-time{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:34px; }
   .pv-plan-text{ flex:1 1 auto; min-width:0; font-size:12.5px; color: var(--text); cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pv-plan-item.is-done .pv-plan-text{ color: var(--text-faint); text-decoration: line-through; }
@@ -1919,7 +1915,6 @@
   }
   .pv-sub-row:hover{ background: rgba(255,255,255,0.03); }
   .pv-sub-name{ flex:1; min-width:0; font-size:12.5px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .pv-sub-when{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; }
   .pv-sub-amount{ font-family: var(--font-mono); font-size:12px; color: var(--text); flex:none; }
   .pv-subs-status{ font-size:11.5px; color: var(--text-faint); margin:8px 0 0; line-height:1.6; }
   .pv-subs-status.is-err{ color: var(--err); }
@@ -1999,7 +1994,6 @@
   .ideas-item:focus-visible{ border-color: var(--cyan); }
   .ideas-icon{ flex:none; font-size:15px; line-height:1; }
   .ideas-name{ font-size:13.5px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .ideas-item.ideas-folder .ideas-name{ color: var(--text-dim); }
 
   .ideas-note{ padding:6px 4px 24px; }
   .ideas-note-back{
@@ -2154,7 +2148,7 @@
     .event-popover{ width: calc(100vw - 24px); }
 
     .modal-overlay{ padding: 10px; }
-    .mail-detail, .cal-body-panel, .note-editor{ font-size: 13px; }
+    .mail-detail, .cal-body-panel{ font-size: 13px; }
   }
 
   /* バックエンド(Render Free)のコールドスタート中に出す一時トースト */
@@ -2513,7 +2507,6 @@
   }
   .cal-status-chip.err{ color: var(--err); }
   .cal-status-chip .live{ color: var(--ok); }
-  .cal-status-chip .reconnect-hint{ color: var(--accent); }
   #view-calendar .cal-back-btn{ border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; }
   #view-calendar .cal-view-switch{ border-radius: 2px; }
   #view-calendar .cal-view-btn{

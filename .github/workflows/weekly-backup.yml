@@ -1,0 +1,64 @@
+# 全データを Google Drive("Cyber Portal バックアップ")へ週1で保存する。
+# バックエンドの POST /api/backup/run は認証が2経路(backup.js)で、Firebase セッションを
+# 持たないここからは共有シークレット X-Ingest-Token を使う。uid は Render 側の
+# PORTAL_UID が使われるので、ここではユーザーを指定しない。
+#
+# 実行時刻: 土 23:00 UTC = 日 08:00 JST。
+#   keepalive.yml のアクティブ帯(22-23,0-15 UTC = JST 07:00-00:59)の内側に置いてある。
+#   JST 深夜に走らせると Render Free がスリープしていてコールドスタート ~50秒を
+#   食うため、わざと朝にしている。
+#
+# 必要な設定(リポジトリ Settings > Secrets and variables > Actions):
+#   PORTAL_INGEST_TOKEN … Render の環境変数 SLACK_INGEST_TOKEN と同じ値
+# 公開リポジトリだが、schedule / workflow_dispatch は fork から起動できず
+# シークレットも渡らないため、この用途では安全。
+name: weekly-backup
+
+on:
+  schedule:
+    - cron: "0 23 * * 6"
+  workflow_dispatch: {}
+
+concurrency:
+  group: weekly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Drive backup
+        env:
+          TOKEN: ${{ secrets.PORTAL_INGEST_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::PORTAL_INGEST_TOKEN が未設定です。リポジトリの Actions secrets に Render の SLACK_INGEST_TOKEN と同じ値を登録してください。"
+            exit 1
+          fi
+          URL="https://cyber-portal-backend.onrender.com/api/backup/run"
+          # 先に /healthz を1回叩いて起こす(スリープしていた場合の 50 秒を本番リクエストの
+          # タイムアウトに食わせない)。
+          curl -s -o /dev/null --max-time 90 "https://cyber-portal-backend.onrender.com/healthz" || true
+          for attempt in 1 2 3; do
+            # 応答本文はバックアップの状態(lastAt / lastFile / fileCount)でシークレットを含まない。
+            body=$(curl -s -w '\n%{http_code}' --max-time 300 \
+              -X POST "$URL" \
+              -H "X-Ingest-Token: $TOKEN" \
+              -H "Content-Type: application/json; charset=utf-8" \
+              --data-binary '{}' || printf '\n000')
+            code=$(printf '%s' "$body" | tail -n 1)
+            payload=$(printf '%s' "$body" | sed '$d')
+            echo "attempt $attempt -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "$payload"
+              exit 0
+            fi
+            if [ "$code" = "401" ]; then
+              echo "::error::401 unauthorized。PORTAL_INGEST_TOKEN が Render の SLACK_INGEST_TOKEN と一致しているか確認してください。"
+              exit 1
+            fi
+            echo "$payload"
+            sleep 20
+          done
+          echo "::error::バックアップが 3 回とも失敗しました。"
+          exit 1

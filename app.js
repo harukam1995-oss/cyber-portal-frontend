@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 129;
+  var BUILD_V = 130;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -656,6 +656,7 @@
   var navPrivate = document.getElementById("nav-private");
   var navBusiness = document.getElementById("nav-business");
   var currentDashboard = "home"; // サブ画面の「← 戻る」で戻る先
+  var currentView = "home";      // いま表示している画面(= URL の hash)
   var calInitialized = false;
   var mailInitialized = false;
   var tasksInitialized = false;
@@ -731,7 +732,9 @@
     else renderTaskCards();
   }
 
-  function showView(name){
+  function showView(name, opts){
+    opts = opts || {};
+    currentView = name;
     var isDash = name === "home" || name === "private" || name === "business";
     viewHome.hidden = name !== "home";
     if (viewPrivate) viewPrivate.hidden = name !== "private";
@@ -840,7 +843,57 @@
       if (!subsPageInitialized){ subsPageInitialized = true; wireSubs(); }
       loadSubs();
     }
+    if (!opts.fromHistory) syncHash(name, opts.replace);
     window.scrollTo(0, 0);
+  }
+
+  /* ================= URL ルーティング(hash) =================
+     showView() は DOM の hidden を切り替えるだけで URL を触っていなかったため、
+     (1) リロードすると必ず HOME に戻る (2) ブラウザの戻る = PWA だとアプリごと終了
+     (3) タブやサブ画面をブックマーク/共有できない、という3点があった。
+     ここで「表示 → hash」「hash → 表示」の双方向を閉じる。
+     ・showView() が pushState で hash を書く(pushState は hashchange を発火しないので
+       下のハンドラと往復しない)。
+     ・戻る/進む(popstate)と手打ちの hash 変更(hashchange)は applyRoute() で表示に反映し、
+       このときは opts.fromHistory を立てて書き戻さない。
+     ・currentView との一致で二重発火を弾く(popstate と hashchange は同時に飛ぶ)。 */
+  var VIEW_ROUTES = [
+    "home", "private", "business",
+    "calendar", "mail", "tasks", "notes", "ideas",
+    "payables", "contracts", "projects", "slack", "finance", "subs"
+  ];
+  function routeFromHash(){
+    var h = String(location.hash || "").slice(1);
+    if (h.charAt(0) === "/") h = h.slice(1);
+    return VIEW_ROUTES.indexOf(h) !== -1 ? h : "home";
+  }
+  function syncHash(name, replace){
+    var want = "#" + name;
+    if (location.hash === want) return;
+    try {
+      if (replace) history.replaceState(null, "", want);
+      else history.pushState(null, "", want);
+    } catch (e) {
+      // file:// 等 History API が使えない環境へのフォールバック。
+      location.hash = name;
+    }
+  }
+  function applyRoute(){
+    var name = routeFromHash();
+    if (name === currentView) return;
+    showView(name, { fromHistory: true });
+  }
+  window.addEventListener("popstate", applyRoute);
+  window.addEventListener("hashchange", applyRoute);
+  // ログイン完了後に1回だけ、URL の hash が指す画面を開く。サブ画面は表示時に
+  // API を叩くものがある(finance/subs 等)ので、認証が通るまで待つ。
+  var routeApplied = false;
+  function applyInitialRoute(){
+    if (routeApplied) return;
+    routeApplied = true;
+    // 初回は replace。pushState だと戻るで hash 無しの同じ画面に戻るだけの
+    // 空エントリが1つ増える。
+    showView(routeFromHash(), { replace: true });
   }
 
   document.getElementById("quick-calendar").addEventListener("click", function(){ showView("calendar"); });
@@ -8734,6 +8787,7 @@
   }
 
   async function warmOnAuthReady(){
+    applyInitialRoute();
     refreshNotifCenter();
     try {
       applyHomeBootstrap(await apiFetch("/api/bootstrap/home"));
