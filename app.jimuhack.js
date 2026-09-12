@@ -68,7 +68,9 @@
       // CSV が無い月だけ使う手入力 PV（旧版の PV 推移タブの値）
       manualPV: { "2026-02": 2200 },
       // 「レポートのスナップショット」から抜いた通算の流入元（取り込むまで null）
-      sourceSnapshot: null
+      sourceSnapshot: null,
+      // Bing Webmaster Tools の期間まとめ（キーワード / ページ / デバイス / 国。月を指定しないで取り込んだもの）
+      bingSnapshot: null
     };
   }
 
@@ -80,7 +82,10 @@
     queries: {},
     landing: {},   // GA4「Google オーガニック検索レポート: ランディング ページ」CSV（ページ別の検索クリック・表示・順位）
     sources: {},   // GA4「トラフィック獲得: セッションのソース / メディア」の月次
-    ranges: { pages: {}, queries: {}, landing: {}, sources: {} },
+    bingq: {},     // Bing Webmaster Tools「キーワード」CSV（月ごと）
+    bingp: {},     // Bing Webmaster Tools「ページ」CSV（月ごと。URL はパスに直して保存）
+    bingd: {},     // Bing Webmaster Tools「検索パフォーマンス」の日別（月ごとに分けて保存）
+    ranges: { pages: {}, queries: {}, landing: {}, sources: {}, bingq: {}, bingp: {}, bingd: {} },
     dataVer: 0,
     posts: null,
     postsAt: 0,
@@ -89,8 +94,9 @@
     importLog: null,
     tab: "overview",
     goalEdit: false,
-    q: { month: "all", filter: "all", search: "", sort: "i", dir: -1, open: null, limit: 200 },
-    p: { month: "", articlesOnly: true, sort: "pv", dir: -1, limit: 200, open: null },
+    // engine＝検索エンジンの切り替え（"google" / "bing"）。engineSet が立つまでは、Google が空で Bing があれば Bing を出す
+    q: { engine: "google", engineSet: false, month: "all", filter: "all", search: "", sort: "i", dir: -1, open: null, limit: 200 },
+    p: { engine: "google", engineSet: false, month: "", articlesOnly: true, sort: "pv", dir: -1, limit: 200, open: null },
     a: { filter: "all", search: "", sort: "date", dir: -1, open: null },
     planShowDone: false
   };
@@ -156,6 +162,49 @@
   function searchStats(m){ return landingStats(m) || qStats(m); }
   function latestSearchMonth(){ return [latest(S.landing), latest(S.queries)].filter(Boolean).sort().pop() || null; }
   function searchPartialEnd(m){ return S.landing[m] ? partialEnd("landing", m) : partialEnd("queries", m); }
+  function rowsStats(rows){
+    if (!rows) return null;
+    var c = 0, i = 0, pw = 0;
+    rows.forEach(function(r){ c += r.c; i += r.i; pw += r.p * r.i; });
+    return { c: c, i: i, ctr: i ? c / i * 100 : 0, pos: i ? pw / i : 0, n: rows.length };
+  }
+
+  // Bing（Webmaster Tools の CSV）。クリックの月合計は日別 CSV から、キーワード / ページはその月に書き出したもの。
+  function bingDayStats(m){
+    var rows = S.bingd[m];
+    if (!rows || !rows.length) return null;
+    var c = sum(rows, function(r){ return r.c; }), i = sum(rows, function(r){ return r.i; });
+    return { c: c, i: i, ctr: i ? c / i * 100 : 0, days: rows.length, lastDay: rows.map(function(r){ return r.d; }).sort().pop() };
+  }
+  // Bing の日別は歯抜けになる（Bing 側の保存期間の都合。例: 2026/05 は3日分だけ）。足りない月は入っている日数を返す
+  function bingPartialEnd(m){
+    var s = bingDayStats(m);
+    if (!s) return null;
+    var last = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate();
+    return s.days < last ? s.days : null;
+  }
+  function hasBing(){ return Object.keys(S.bingq).length + Object.keys(S.bingp).length + Object.keys(S.bingd).length > 0 || !!S.state.bingSnapshot; }
+  // 期間まとめ（月を指定せずに取り込んだ Bing の CSV）。part = keywords / pages / devices / countries
+  function bingSnapRows(part){
+    var s = S.state.bingSnapshot;
+    return s && s[part] && s[part].rows && s[part].rows.length ? s[part].rows : null;
+  }
+  function bingSnapLabel(part){
+    var s = S.state.bingSnapshot;
+    return s && s[part] ? "期間まとめ（" + mdShort(s[part].exported) + " 書き出し）" : "期間まとめ";
+  }
+  // 月ごとの Bing データと期間まとめのうち新しい方（期間まとめの書き出し日が最新月より後ならそちら）
+  function bingLatestRows(part, monthly){
+    var lm = latest(monthly), rows = bingSnapRows(part), s = S.state.bingSnapshot;
+    if (rows && (!lm || String(s[part].exported) > lm + "-31")) return { rows: rows, label: bingSnapLabel(part), month: "snap" };
+    return lm ? { rows: monthly[lm], label: monthLabel(lm), month: lm } : null;
+  }
+  function engineLabel(e){ return e === "bing" ? "Bing" : "Google"; }
+  function qData(){ return S.q.engine === "bing" ? S.bingq : S.queries; }
+  function lpData(){ return S.p.engine === "bing" ? S.bingp : S.landing; }
+  function engineChips(act, cur){
+    return '<div class="jh-chips">' + chip("Google", act, "google", cur !== "bing") + chip("Bing", act, "bing", cur === "bing") + '</div>';
+  }
 
   // 流入元（参照元 / メディア）を読める単位にまとめる。Edge の既定検索＝Bing が主流だった（2026/09 判明）ので Bing を先頭に。
   // AI は google 系ドメイン（gemini / notebooklm）を含むので Google より先に判定する。
@@ -203,7 +252,7 @@
 
   function allMonths(){
     var set = {};
-    [S.pages, S.queries, S.landing, S.state.manualPV || {}].forEach(function(o){ Object.keys(o).forEach(function(m){ set[m] = 1; }); });
+    [S.pages, S.queries, S.landing, S.bingd, S.state.manualPV || {}].forEach(function(o){ Object.keys(o).forEach(function(m){ set[m] = 1; }); });
     return Object.keys(set).sort();
   }
   // CSV の終了日が月末より前（例: 4/29 にエクスポート）なら途中までのデータ
@@ -243,7 +292,10 @@
       S.queries = res.queries || {};
       S.landing = res.landing || {};
       S.sources = res.sources || {};
-      S.ranges = Object.assign({ pages: {}, queries: {}, landing: {}, sources: {} }, res.ranges || {});
+      S.bingq = res.bingq || {};
+      S.bingp = res.bingp || {};
+      S.bingd = res.bingd || {};
+      S.ranges = Object.assign({ pages: {}, queries: {}, landing: {}, sources: {}, bingq: {}, bingp: {}, bingd: {} }, res.ranges || {});
       S.state = mergeState(res.state);
       S.loaded = true;
       S.loadErr = null;
@@ -420,6 +472,11 @@
   // 年月はコメントの開始日 → 無ければファイル名の YYYYMM / YYYY-MM から取る。
   function parseGa4Csv(text, filename){
     if (/^#\s*レポートのスナップショット/m.test(text)) return parseSnapshot(text);
+    // GA4 の CSV は必ず # のコメント行で始まる。無ければ Bing Webmaster Tools の CSV として見る
+    if (!/^\s*#/m.test(text)){
+      var bing = parseBingCsv(text, filename);
+      if (bing) return bing;
+    }
     var lines = text.replace(/\r/g, "").split("\n");
     var comments = lines.filter(function(l){ return l.trim().charAt(0) === "#"; }).join("\n");
     var data = lines.filter(function(l){ return l.trim() && l.trim().charAt(0) !== "#"; });
@@ -507,6 +564,104 @@
     return { error: "対応していない CSV です（ページとスクリーン / オーガニック検索クエリ / ランディングページ / トラフィック獲得 / レポートのスナップショットのみ）" };
   }
 
+  // Bing Webmaster Tools の CSV（見出し1行・コメント行なし・期間の情報なし）。
+  //   検索パフォーマンス（日別）… "Date","Clicks","Impressions","Avg. CTR"（日付は "7/1/2025 12:00:00 AM"）→ bingd
+  //   キーワード … "Keyword","Impressions","Clicks","CTR","Avg. Position" → bingq
+  //   ページ … "Page","Impressions","Clicks","CTR","Avg. Position"（URL）→ bingp
+  // 画面を日本語にしたときの見出し（キーワード / 表示回数 / 感想 など）も受ける。
+  var BING_COLS = {
+    c: /^(clicks|クリック数?)$/i,
+    i: /^(impressions|表示回数|インプレッション数?|感想)$/i,
+    p: /^(avg\.?\s*position|平均\s*(掲載)?順位|平均位置)$/i
+  };
+  function bingNum(v){
+    var n = parseFloat(String(v == null ? "" : v).replace(/[,%\s]/g, ""));
+    return isFinite(n) ? n : 0;
+  }
+  function bingDate(s){
+    var t = String(s || "").trim(), m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return m[3] + "-" + m[1].padStart(2, "0") + "-" + m[2].padStart(2, "0");
+    m = t.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+    return m ? m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0") : null;
+  }
+  // 自サイトの URL だけパスにする（http / https・? 以降・# は同じページに寄せる）
+  function bingPath(u){
+    var t = String(u || "").trim();
+    if (t.charAt(0) === "/") return t.split("?")[0].split("#")[0];
+    try {
+      var url = new URL(t);
+      return /(^|\.)jim-hack\.raindrop\.jp$/i.test(url.hostname) ? url.pathname : null;
+    } catch (e){ return null; }
+  }
+  function parseBingCsv(text, filename){
+    var lines = text.replace(/^﻿/, "").replace(/\r/g, "").split("\n").filter(function(l){ return l.trim(); });
+    if (!lines.length) return null;
+    var hdr = splitCsvLine(lines[0]), idx = {};
+    Object.keys(BING_COLS).forEach(function(k){
+      idx[k] = -1;
+      for (var n = 1; n < hdr.length; n++) if (BING_COLS[k].test(hdr[n])){ idx[k] = n; break; }
+    });
+    if (idx.c < 0 || idx.i < 0) return null;
+    var h0 = hdr[0].trim(), rows = lines.slice(1).map(splitCsvLine);
+    if (/^(date|日付)$/i.test(h0)){
+      var days = [];
+      rows.forEach(function(r){
+        var d = bingDate(r[0]);
+        if (d) days.push({ d: d, c: Math.round(bingNum(r[idx.c])), i: Math.round(bingNum(r[idx.i])) });
+      });
+      return days.length ? { kind: "bingd", days: days } : { empty: true };
+    }
+    var kind = /^(keywords?|キーワード|クエリ|query)$/i.test(h0) ? "bingq" : /^(pages?|url|ページ)$/i.test(h0) ? "bingp"
+      : /^(devices?|デバイス)$/i.test(h0) ? "bingdev" : /^(country|countries|国|国\/地域)$/i.test(h0) ? "bingcountry" : null;
+    if (!kind) return null;
+    var agg = {};
+    rows.forEach(function(r){
+      var key = kind === "bingp" ? bingPath(r[0]) : String(r[0] || "").trim();
+      var c = Math.round(bingNum(r[idx.c])), im = Math.round(bingNum(r[idx.i])), p = idx.p > 0 ? bingNum(r[idx.p]) : 0;
+      if (!key || (!c && !im)) return;
+      var a = agg[key] || (agg[key] = { key: key, c: 0, i: 0, pw: 0 });
+      a.c += c;
+      a.i += im;
+      a.pw += p * (im || 1);
+    });
+    var out = Object.keys(agg).map(function(k){
+      var a = agg[k], row = { c: a.c, i: a.i, t: a.i ? Math.round(a.c / a.i * 10000) / 100 : 0, p: Math.round(a.pw / (a.i || 1) * 100) / 100 };
+      row[kind === "bingp" ? "page" : kind === "bingq" ? "q" : "k"] = a.key;
+      return row;
+    }).sort(function(x, y){ return y.i - x.i; });
+    if (!out.length) return { empty: true };
+    var fm = String(filename || "").match(/(20\d{2})[-_]?(0[1-9]|1[0-2])(?!\d)/);
+    var ex = String(filename || "").match(/_(\d{1,2})_(\d{1,2})_(20\d{2})\.csv$/i);
+    return {
+      kind: kind, rows: out, range: null,
+      month: fm ? fm[1] + "-" + fm[2] : null,
+      exported: ex ? ex[3] + "-" + ex[1].padStart(2, "0") + "-" + ex[2].padStart(2, "0") : null
+    };
+  }
+  // キーワード / ページの CSV には期間が書かれていないので、ファイル名に年月が無ければ聞く。
+  // 戻り値：YYYY-MM＝その月として保存 / "snap"＝期間まとめ（最新の書き出しとして上書き） / null＝やめる
+  function askBingMonth(name, parsed){
+    var label = parsed.kind === "bingq" ? "キーワード" : "ページ";
+    var guess = addMonths((parsed.exported || todayKey()).slice(0, 7), -1);
+    for (;;){
+      var ans = window.prompt("Bing の" + label + " CSV「" + name + "」を取り込みます。\n" +
+        "・期間を「カスタム」の1か月にして書き出したもの → その月を YYYY-MM で入力（例: " + guess + "）\n" +
+        "・3か月・全期間など、まとめて書き出したもの → 空欄のまま OK（「期間まとめ」として保存）", "");
+      if (ans == null) return null;
+      var t = String(ans).trim().replace(/\//g, "-");
+      if (!t) return "snap";
+      var m = t.match(/^(20\d{2})-(0?[1-9]|1[0-2])$/);
+      if (m) return m[1] + "-" + String(+m[2]).padStart(2, "0");
+    }
+  }
+  var BING_SNAP_MAX = { keywords: 3000, pages: 1000, devices: 20, countries: 30 };
+  function putBingSnapshot(part, parsed){
+    var snap = Object.assign({}, S.state.bingSnapshot || {});
+    snap[part] = { exported: parsed.exported || todayKey(), rows: parsed.rows.slice(0, BING_SNAP_MAX[part]) };
+    S.state.bingSnapshot = snap;
+    saveState();
+  }
+
   // v2.33.52 までは「ランディング ページ + クエリ文字列」CSV を見出しの「クエリ」で検索クエリと誤判定して保存していた。
   // 行がすべて "/" で始まる検索クエリの月はそれとみなし、ランディングページの月へ移す（同じ月が既にあれば消すだけ）。
   // 1回のロードで1度だけ。移した後は本物の検索クエリ CSV を取り込み直してもらう。
@@ -572,6 +727,37 @@
           ok.push("レポートのスナップショット（流入元・" + parsed.data.start.replace(/-/g, "/") + "〜" + parsed.data.end.replace(/-/g, "/") + " の通算）");
           continue;
         }
+        if (parsed.kind === "bingd"){
+          // 日別は1ファイルに何か月分も入る。月ごとに、保存済みの日と合わせて（同じ日は新しい方で）置き換える
+          var byM = {};
+          parsed.days.forEach(function(r){ (byM[r.d.slice(0, 7)] = byM[r.d.slice(0, 7)] || []).push(r); });
+          var bms = Object.keys(byM).sort();
+          for (var bj = 0; bj < bms.length; bj++){
+            var bm = bms[bj], merged = {};
+            (S.bingd[bm] || []).forEach(function(r){ merged[r.d] = r; });
+            byM[bm].forEach(function(r){ merged[r.d] = r; });
+            var mrows = Object.keys(merged).sort().map(function(k){ return merged[k]; });
+            await apiFetch("/api/jimuhack/months/bingd/" + bm, { method: "PUT", body: JSON.stringify({ rows: mrows, range: null }) });
+            S.bingd[bm] = mrows;
+          }
+          ok.push("Bing 日別 " + monthLabel(bms[0]) + (bms.length > 1 ? "〜" + monthLabel(bms[bms.length - 1]) : "") + "（" + parsed.days.length + "日）");
+          continue;
+        }
+        if (parsed.kind === "bingdev" || parsed.kind === "bingcountry"){
+          putBingSnapshot(parsed.kind === "bingdev" ? "devices" : "countries", parsed);
+          ok.push("Bing " + (parsed.kind === "bingdev" ? "デバイス" : "国") + "（期間まとめ・" + parsed.rows.length + "行）");
+          continue;
+        }
+        if ((parsed.kind === "bingq" || parsed.kind === "bingp") && !parsed.month){
+          var ans = askBingMonth(f.name, parsed);
+          if (ans === null){ skip.push(f.name + "（取り込みをやめました）"); continue; }
+          if (ans === "snap"){
+            putBingSnapshot(parsed.kind === "bingq" ? "keywords" : "pages", parsed);
+            ok.push("Bing " + (parsed.kind === "bingq" ? "キーワード" : "ページ") + "（期間まとめ・" + parsed.rows.length + "行）");
+            continue;
+          }
+          parsed.month = ans;
+        }
         if (!parsed.rows.length){ skip.push(f.name + "（" + monthLabel(parsed.month) + "）"); continue; }
         await apiFetch("/api/jimuhack/months/" + parsed.kind + "/" + parsed.month, {
           method: "PUT",
@@ -579,7 +765,7 @@
         });
         S[parsed.kind][parsed.month] = parsed.rows;
         S.ranges[parsed.kind][parsed.month] = parsed.range;
-        ok.push(({ pages: "ページ ", queries: "検索クエリ ", landing: "ランディングページ ", sources: "流入元 " })[parsed.kind] + monthLabel(parsed.month) + "（" + parsed.rows.length + "行）");
+        ok.push(({ pages: "ページ ", queries: "検索クエリ ", landing: "ランディングページ ", sources: "流入元 ", bingq: "Bing キーワード ", bingp: "Bing ページ " })[parsed.kind] + monthLabel(parsed.month) + "（" + parsed.rows.length + "行）");
       } catch (err){
         ng.push(f.name + "：" + apiErrorMessage(err, "保存"));
       }
@@ -811,7 +997,13 @@
   ACTIONS["tab"] = function(arg){ goTab(arg); };
   ACTIONS["goto-articles"] = function(arg){ goTab("articles", function(){ S.a.filter = arg || "all"; S.a.search = ""; }); };
   ACTIONS["goto-queries"] = function(arg){
-    goTab("queries", function(){ S.q.filter = arg || "all"; S.q.month = latest(S.queries) || "all"; S.q.search = ""; });
+    goTab("queries", function(){ S.q.engine = "google"; S.q.engineSet = true; S.q.filter = arg || "all"; S.q.month = latest(S.queries) || "all"; S.q.monthSet = true; S.q.search = ""; });
+  };
+  ACTIONS["goto-bing-queries"] = function(arg){
+    goTab("queries", function(){ S.q.engine = "bing"; S.q.engineSet = true; S.q.filter = arg || "all"; S.q.month = (bingLatestRows("keywords", S.bingq) || { month: "all" }).month; S.q.monthSet = true; S.q.search = ""; });
+  };
+  ACTIONS["goto-bing-pages"] = function(m){
+    goTab("pages", function(){ S.p.engine = "bing"; S.p.engineSet = true; S.p.month = m || ""; S.p.sort = "si"; S.p.dir = -1; S.p.limit = 200; });
   };
   ACTIONS["goto-pages"] = function(m){
     goTab("pages", function(){ S.p.month = m || ""; S.p.sort = "si"; S.p.dir = -1; S.p.limit = 200; });
@@ -872,13 +1064,34 @@
         list.push({ lv: "accent", text: monthLabel(lq) + "（Google）：表示100回以上で CTR 1% 未満のクエリ " + low + " 件", act: "goto-queries", arg: "lowctr", btn: "見る" });
       }
     }
+    var bk = bingLatestRows("keywords", S.bingq);
+    if (bk){
+      var bchance = bk.rows.filter(isChance).length;
+      if (bchance){
+        list.push({ lv: "accent", text: bk.label + "（Bing）：10位以内なのにクリック0のキーワード " + bchance + " 件（タイトル・説明文の見直し候補）", act: "goto-bing-queries", arg: "chance", btn: "見る" });
+      }
+    }
+    // Bing は流入の大半なので、表示が多いのにクリックされないページは優先度が高い
+    var bpg = bingLatestRows("pages", S.bingp);
+    if (bpg){
+      var bweak = bpg.rows.filter(function(r){ return r.i >= 1000 && r.t < 1; }).sort(function(a, b){ return b.i - a.i; });
+      if (bweak.length){
+        var bw = bweak[0], bwp = postByPath(bw.page);
+        list.push({
+          lv: "warn",
+          text: bpg.label + "（Bing）：表示1,000回以上で CTR 1% 未満のページ " + bweak.length + " 本（最大：" +
+            (bwp ? bwp.title : bw.page) + " ・ 表示 " + fmtN(bw.i) + " ・ CTR " + fmtPct(bw.t, 2) + "）",
+          act: "goto-bing-pages", arg: bpg.month, btn: "ページで見る"
+        });
+      }
+    }
     var shares = sourceShares();
     if (shares){
       var bingP = shareOf(shares.g, "bing"), googleP = shareOf(shares.g, "google");
-      if (bingP >= 40){
+      if (bingP >= 40 && !hasBing()){
         list.push({
           lv: "warn",
-          text: "流入の " + bingP.toFixed(0) + "% が Bing（Google は " + googleP.toFixed(0) + "%）。下の検索クエリ・順位は Google の分だけなので、Bing Webmaster Tools に登録して Bing の検索キーワードと掲載順位も見る",
+          text: "流入の " + bingP.toFixed(0) + "% が Bing（Google は " + googleP.toFixed(0) + "%）。Bing Webmaster Tools の CSV（検索パフォーマンスの日別・キーワード・ページ）を取り込むと、Bing の検索キーワードと掲載順位もここで見られる",
           href: "https://www.bing.com/webmasters/", btn: "Bing Webmaster Tools ↗"
         });
       }
@@ -953,27 +1166,33 @@
     var pvMarks = show.map(function(m){ var x = monthPV(m); return !x ? "" : x.manual ? "is-manual" : partialEnd("pages", m) ? "is-partial" : ""; });
     var cls = show.map(function(m){ var s = searchStats(m); return s ? s.c : null; });
     var clMarks = show.map(function(m){ return searchPartialEnd(m) ? "is-partial" : ""; });
+    var withBing = Object.keys(S.bingd).length > 0;
+    var bcs = show.map(function(m){ var b = bingDayStats(m); return b ? b.c : null; });
+    var bMarks = show.map(function(m){ return bingPartialEnd(m) ? "is-partial" : ""; });
     var chart = '<div class="jh-bars-title">PV</div>' + bars(show, pvs, fmtK, pvMarks) +
       '<div class="jh-bars-title">Google 検索クリック</div>' + bars(show, cls, fmtK, clMarks, true) +
-      '<p class="jh-legend">薄い棒＝手入力の月 / 月の途中までの CSV。検索クリック・表示・CTR・順位は、ランディングページ CSV がある月はその合計（クエリの匿名化で消える分も含む）、無い月は検索クエリ CSV の合計。平均順位は表示回数で重み付けした平均。</p>';
+      (withBing ? '<div class="jh-bars-title">Bing 検索クリック</div>' + bars(show, bcs, fmtK, bMarks, true) : "") +
+      '<p class="jh-legend">薄い棒＝手入力の月 / 月の途中までの CSV。Google の検索クリック・表示・CTR・順位は、ランディングページ CSV がある月はその合計（クエリの匿名化で消える分も含む）、無い月は検索クエリ CSV の合計。平均順位は表示回数で重み付けした平均。' +
+      (withBing ? "Bing クリックは Bing Webmaster Tools の日別 CSV の月合計（Bing 側で日が抜ける月があり、薄い棒と「N日分」はその月が揃っていない印）。" : "") + '</p>';
     var rows = ms.slice().reverse().map(function(m){
-      var pv = monthPV(m), s = searchStats(m), pe = partialEnd("pages", m) || searchPartialEnd(m);
+      var pv = monthPV(m), s = searchStats(m), pe = partialEnd("pages", m) || searchPartialEnd(m), bs = bingDayStats(m), bpe = bingPartialEnd(m);
       return '<tr><td>' + monthLabel(m) + (pe ? ' <span class="jh-faint">〜' + pe + '日</span>' : '') + '</td>' +
         '<td class="num">' + (pv ? fmtN(pv.v) + (pv.manual ? ' <span class="jh-faint">手入力</span> ' + btn("✕", "mpv-del", m, "is-danger") : '') : '—') + '</td>' +
         '<td class="num">' + (s ? fmtN(s.c) : '—') + '</td>' +
         '<td class="num">' + (s ? fmtN(s.i) : '—') + '</td>' +
         '<td class="num">' + (s ? fmtPct(s.ctr, 2) : '—') + '</td>' +
         '<td class="num">' + (s ? s.pos.toFixed(1) : '—') + '</td>' +
+        (withBing ? '<td class="num">' + (bs ? fmtN(bs.c) + (bpe ? ' <span class="jh-faint">' + bpe + '日分</span>' : '') : '—') + '</td>' : '') +
         '<td class="num jh-faint">' + (S.pages[m] ? S.pages[m].length : '—') + ' / ' + (S.queries[m] ? S.queries[m].length : '—') + ' / ' + (S.landing[m] ? S.landing[m].length : '—') + '</td></tr>';
     }).join("");
     var table = '<div class="jh-table-wrap" style="max-height:320px;margin-top:12px"><table class="jh-table"><thead><tr>' +
-      '<th>月</th><th class="num">PV</th><th class="num">Google クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th><th class="num">行数 ページ/クエリ/LP</th>' +
+      '<th>月</th><th class="num">PV</th><th class="num">Google クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th>' + (withBing ? '<th class="num">Bing クリック</th>' : '') + '<th class="num">行数 ページ/クエリ/LP</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     var form = '<div class="jh-form" style="margin-top:10px"><span class="jh-faint">CSV が無い月の PV を手入力：</span>' +
       '<input type="month" class="jh-in is-num" data-keep="jh-mpv-m">' +
       '<input type="number" min="0" class="jh-in is-num" style="width:110px" placeholder="PV" data-keep="jh-mpv-v" data-enter="mpv-save">' +
       btn("保存", "mpv-save") + '</div>';
-    return card("月次推移", chart + table + form, { head: '<span class="jh-note">GA4 CSV（ページとスクリーン / オーガニック検索クエリ）</span>' });
+    return card("月次推移", chart + table + form, { head: '<span class="jh-note">GA4 CSV（ページとスクリーン / オーガニック検索クエリ）' + (withBing ? "＋ Bing Webmaster Tools CSV" : "") + '</span>' });
   }
   ACTIONS["mpv-save"] = function(){
     var m = document.querySelector('#jh-body [data-keep="jh-mpv-m"]'), v = document.querySelector('#jh-body [data-keep="jh-mpv-v"]');
@@ -1011,7 +1230,14 @@
     var sn = s.snapshot, notes = [];
     if (sn && sn.totals) notes.push("アクティブユーザー " + fmtN(sn.totals.users) + " ・ 平均エンゲージメント " + Math.round(sn.totals.avgEngSec) + " 秒");
     if (sn && (sn.cities || []).length) notes.push("多い地域：" + sn.cities.slice(0, 6).map(function(c){ return c.src; }).join("・"));
-    notes.push("検索クエリ・順位・ランディングページの数字は、このうち Google の分（" + fmtPct(shareOf(s.g, "google"), 0) + "）だけを映しています");
+    notes.push("GA4 の検索クエリ・順位・ランディングページの数字は、このうち Google の分（" + fmtPct(shareOf(s.g, "google"), 0) + "）だけを映しています");
+    if (hasBing()) notes.push("Bing の分は Bing Webmaster Tools の CSV から（検索クエリ・ページタブの「Bing」と月次推移）");
+    var bdev = bingSnapRows("devices");
+    if (bdev){
+      var dt = sum(bdev, function(r){ return r.i; });
+      var dd = sum(bdev.filter(function(r){ return /desktop|pc|パソコン/i.test(r.k); }), function(r){ return r.i; });
+      if (dt) notes.push("Bing での表示のうち PC " + fmtPct(dd / dt * 100, 0));
+    }
     return card("流入元", body + '<p class="jh-legend">' + esc(notes.join(" ／ ")) + '</p>', { head: '<span class="jh-note">' + esc(s.label) + '</span>' });
   }
 
@@ -1280,20 +1506,21 @@
   var qHistCache = { ver: -1, map: {}, months: [] };
   // クエリ → 月ごとの行（無い月は null）。取り込み・読み込みのたびに dataVer が上がって作り直す。
   function qHistory(){
-    if (qHistCache.ver === S.dataVer) return qHistCache;
-    var months = Object.keys(S.queries).sort(), map = {};
+    if (qHistCache.ver === S.dataVer && qHistCache.eng === S.q.engine) return qHistCache;
+    var QD = qData(), months = Object.keys(QD).sort(), map = {};
     months.forEach(function(m, mi){
-      S.queries[m].forEach(function(r){
+      QD[m].forEach(function(r){
         var h = map[r.q];
         if (!h){ h = map[r.q] = []; for (var i = 0; i < months.length; i++) h.push(null); }
         h[mi] = r;
       });
     });
-    qHistCache = { ver: S.dataVer, map: map, months: months };
+    qHistCache = { ver: S.dataVer, eng: S.q.engine, map: map, months: months };
     return qHistCache;
   }
   function queryRows(month){
-    if (month !== "all") return (S.queries[month] || []).map(function(r){ return Object.assign({ mc: 1 }, r); });
+    if (month === "snap") return (bingSnapRows("keywords") || []).map(function(r){ return Object.assign({ mc: 1 }, r); });
+    if (month !== "all") return (qData()[month] || []).map(function(r){ return Object.assign({ mc: 1 }, r); });
     var H = qHistory();
     return Object.keys(H.map).map(function(q){
       var hs = H.map[q].filter(Boolean);
@@ -1309,6 +1536,13 @@
       var r = hist[idx];
       return r ? '<tr><td>' + monthLabel(m) + '</td><td>' + r.p.toFixed(1) + '</td><td>' + fmtN(r.i) + '</td><td>' + fmtN(r.c) + '</td><td>' + fmtPct(r.t) + '</td></tr>' : "";
     }).reverse().join("");
+    if (S.q.engine === "bing"){
+      var sr = (bingSnapRows("keywords") || []).filter(function(x){ return x.q === q; })[0];
+      if (sr){
+        rowsHtml = '<tr><td>期間まとめ</td><td>' + sr.p.toFixed(1) + '</td><td>' + fmtN(sr.i) + '</td><td>' + fmtN(sr.c) + '</td><td>' + fmtPct(sr.t) + '</td></tr>' + rowsHtml;
+        if (!last) last = sr;
+      }
+    }
     var posts = relatedPosts(q);
     var postsHtml = posts.length
       ? posts.map(function(p){
@@ -1341,16 +1575,27 @@
         '<td class="num">' + fmtPct(g.ctr) + '</td><td class="num">' + g.pos.toFixed(1) + '</td></tr>';
     }).join("");
     return card("テーマ別", '<div class="jh-table-wrap" style="max-height:none"><table class="jh-table"><thead><tr><th>テーマ</th><th class="num">クエリ数</th><th class="num">表示</th><th class="num">クリック</th><th class="num">CTR</th><th class="num">平均順位</th></tr></thead><tbody>' + body + '</tbody></table></div>',
-      { head: '<span class="jh-note">' + (month === "all" ? "全期間" : monthLabel(month)) + ' ・ クエリに含まれる語で機械的に分類</span>' });
+      { head: '<span class="jh-note">' + (month === "all" ? "全期間" : month === "snap" ? "期間まとめ" : monthLabel(month)) + ' ・ クエリに含まれる語で機械的に分類</span>' });
   }
 
   function renderQueries(){
-    var months = Object.keys(S.queries).sort();
-    if (!months.length){
-      return card("検索クエリ", '<div class="sched-empty">検索クエリの CSV がまだありません。右上の「CSV取り込み」「フォルダ」から GA4 の「Google のオーガニック検索クエリ」CSV を取り込んでください。</div>');
-    }
     var st = S.q;
-    if (st.month !== "all" && !S.queries[st.month]) st.month = "all";
+    if (!st.engineSet && !Object.keys(S.queries).length && (Object.keys(S.bingq).length || bingSnapRows("keywords"))) st.engine = "bing";
+    var QD = qData(), months = Object.keys(QD).sort(), bingMode = st.engine === "bing";
+    var snapRows = bingMode ? bingSnapRows("keywords") : null;
+    // 月を自分で選ぶまでは、Bing は月ごとのデータと期間まとめのうち新しい方を開く
+    if (bingMode && !st.monthSet){
+      var bl = bingLatestRows("keywords", S.bingq);
+      if (bl) st.month = bl.month;
+    }
+    if (!months.length && !snapRows){
+      return card("検索クエリ", '<div class="jh-toolrow">' + engineChips("q-engine", st.engine) + '</div><div class="sched-empty">' +
+        (bingMode
+          ? "Bing のキーワード CSV がまだありません。Bing Webmaster Tools の「検索パフォーマンス」→「キーワード」で期間を1か月にしてダウンロードし、右上の「CSV取り込み」から取り込んでください。"
+          : "検索クエリの CSV がまだありません。右上の「CSV取り込み」「フォルダ」から GA4 の「Google のオーガニック検索クエリ」CSV を取り込んでください。") + '</div>');
+    }
+    if (st.month === "snap" ? !snapRows : (st.month !== "all" && !QD[st.month])) st.month = "all";
+    if (st.month === "all" && !months.length) st.month = "snap";
     var base = queryRows(st.month);
     var f = Q_FILTERS.filter(function(x){ return x.k === st.filter; })[0] || Q_FILTERS[0];
     var ws = words(st.search);
@@ -1362,12 +1607,13 @@
       c: function(r){ return r.c; }, t: function(r){ return r.t; }, mc: function(r){ return r.mc; }
     });
     var H = qHistory(), isAll = st.month === "all", cols = isAll ? 7 : 6;
-    var monthChips = chip("全期間", "q-month", "all", isAll, months.length + "か月") +
+    var monthChips = (snapRows ? chip(bingSnapLabel("keywords"), "q-month", "snap", st.month === "snap", snapRows.length) : "") +
+      (months.length ? chip("全期間", "q-month", "all", isAll, months.length + "か月") : "") +
       months.slice().reverse().map(function(m){
-        return chip(monthLabel(m) + (partialEnd("queries", m) ? "*" : ""), "q-month", m, st.month === m, S.queries[m].length);
+        return chip(monthLabel(m) + (!bingMode && partialEnd("queries", m) ? "*" : ""), "q-month", m, st.month === m, QD[m].length);
       }).join("");
     var filterChips = Q_FILTERS.map(function(x){ return chip(x.label, "q-filter", x.k, st.filter === x.k, base.filter(x.test).length); }).join("");
-    var tool = '<div class="jh-toolrow"><div class="jh-chips">' + monthChips + '</div></div>' +
+    var tool = '<div class="jh-toolrow">' + engineChips("q-engine", st.engine) + '<div class="jh-chips">' + monthChips + '</div></div>' +
       '<div class="jh-toolrow"><div class="jh-chips">' + filterChips + '</div>' + searchBox("q-search", "jh-q-q", st.search, "クエリを検索") + '</div>';
     var shown = rows.slice(0, st.limit);
     var body = shown.map(function(r){
@@ -1389,30 +1635,34 @@
       (body || '<tr><td colspan="' + cols + '" class="jh-faint">該当なし</td></tr>') + '</tbody></table></div>' +
       (rows.length > shown.length ? btn("さらに表示（残り " + (rows.length - shown.length) + " 件）", "more", "q", "jh-more") : "");
     var summary = rows.length + " 件" + (isAll ? "（全期間の合計。順位は表示回数で重み付けした平均）" : "") +
-      (months.some(function(m){ return partialEnd("queries", m); }) ? " ・ * は月の途中までの CSV" : "");
+      (st.month === "snap" ? "（Bing で書き出したときに選んでいた期間の合計）" : "") +
+      (!bingMode && months.some(function(m){ return partialEnd("queries", m); }) ? " ・ * は月の途中までの CSV" : "");
     return card("検索クエリ", tool + '<p class="jh-summary">' + esc(summary) + '</p>' + table,
-      { head: '<span class="jh-note">GA4「Google のオーガニック検索クエリ」。行を押すと月別と対応記事</span>' }) + themesCard(st.month);
+      { head: '<span class="jh-note">' + (bingMode ? "Bing Webmaster Tools「キーワード」" : "GA4「Google のオーガニック検索クエリ」") + '。行を押すと月別と対応記事</span>' }) + themesCard(st.month);
   }
-  ACTIONS["q-month"] = function(m){ S.q.month = m; S.q.open = null; S.q.limit = 200; render(); };
+  ACTIONS["q-engine"] = function(e){ S.q.engine = e; S.q.engineSet = true; S.q.month = "all"; S.q.monthSet = false; S.q.open = null; S.q.limit = 200; render(); };
+  ACTIONS["q-month"] = function(m){ S.q.month = m; S.q.monthSet = true; S.q.open = null; S.q.limit = 200; render(); };
   ACTIONS["q-filter"] = function(k){ S.q.filter = k; S.q.open = null; S.q.limit = 200; render(); };
   INPUTS["q-search"] = function(el){ S.q.search = el.value; S.q.limit = 200; render(); };
   ACTIONS["q-open"] = function(q){ S.q.open = S.q.open === q ? null : q; render(); };
   ACTIONS["q-task"] = function(arg){
     var parts = String(arg).split("||"), q = parts[0], slug = parts[1];
     var hist = (qHistory().map[q] || []).filter(Boolean), last = hist[hist.length - 1];
+    if (!last && S.q.engine === "bing") last = (bingSnapRows("keywords") || []).filter(function(x){ return x.q === q; })[0];
     var stat = last ? "（" + last.p.toFixed(1) + "位・表示" + last.i + "・クリック" + last.c + "）" : "";
+    var src = S.q.engine === "bing" ? "Bing キーワード「" : "検索クエリ「";
     if (slug){
       var a = articles().filter(function(x){ return x.slug === slug; })[0];
       newPlanTask({
         type: "リライト", text: "リライト：" + (a ? a.title : slug), url: a ? a.link : "",
-        remarks: "検索クエリ「" + q + "」" + stat + "。タイトル・説明文・見出しを検索意図に合わせる"
+        remarks: src + q + "」" + stat + "。タイトル・説明文・見出しを検索意図に合わせる"
       });
     } else {
       var hasPost = relatedPosts(q).length > 0;
       newPlanTask({
         type: hasPost ? "リライト" : "新規記事",
         text: (hasPost ? "クエリ対策：" : "新規記事：") + "「" + q + "」",
-        remarks: "検索クエリ「" + q + "」" + stat
+        remarks: src + q + "」" + stat
       });
     }
   };
@@ -1431,24 +1681,33 @@
   // ページ別。「ページとスクリーン」（PV・ユーザー・滞在）と「ランディングページ」（Google 検索のクリック・表示・CTR・順位）を
   // 同じ月・同じパスで横に並べる。どちらか片方しか無い月は、ある方の列だけ出す。
   function renderPages(){
-    var set = {};
-    Object.keys(S.pages).concat(Object.keys(S.landing)).forEach(function(x){ set[x] = 1; });
+    var st = S.p;
+    var snapPages = bingSnapRows("pages");
+    if (!st.engineSet && !Object.keys(S.landing).length && (Object.keys(S.bingp).length || snapPages)) st.engine = "bing";
+    var LPD = lpData(), eng = engineLabel(st.engine), set = {};
+    // 期間まとめ（Bing）は "snap" という月として並べる（並び順は月の後ろ）
+    if (st.engine === "bing" && snapPages) LPD = Object.assign({}, LPD, { snap: snapPages });
+    Object.keys(S.pages).concat(Object.keys(LPD)).forEach(function(x){ set[x] = 1; });
     var months = Object.keys(set).sort();
     if (!months.length){
-      return card("ページ", '<div class="sched-empty">ページ別の CSV がまだありません。GA4 の「ページとスクリーン」または「Google オーガニック検索レポート: ランディング ページ」の CSV を取り込んでください。</div>');
+      return card("ページ", '<div class="jh-toolrow">' + engineChips("p-engine", st.engine) + '</div><div class="sched-empty">ページ別の CSV がまだありません。GA4 の「ページとスクリーン」、' +
+        (st.engine === "bing" ? "または Bing Webmaster Tools の「検索パフォーマンス」→「ページ」" : "または「Google オーガニック検索レポート: ランディング ページ」") + ' の CSV を取り込んでください。</div>');
     }
-    var st = S.p;
-    if (!st.month || !set[st.month]) st.month = months[months.length - 1];
-    var m = st.month, hasPv = !!S.pages[m], hasLp = !!S.landing[m];
+    if (!st.month || !set[st.month]){
+      var blp = st.engine === "bing" ? bingLatestRows("pages", S.bingp) : null;
+      st.month = blp && set[blp.month] ? blp.month : (months.filter(function(x){ return x !== "snap"; }).pop() || months[months.length - 1]);
+    }
+    var m = st.month, hasPv = !!S.pages[m], hasLp = !!LPD[m];
     var pvMonths = months.filter(function(x){ return S.pages[x]; });
     var pmaps = pvMonths.map(function(x){ var o = {}; S.pages[x].forEach(function(y){ o[y.page] = y.pv; }); return o; });
-    var lpMonths = months.filter(function(x){ return S.landing[x]; });
-    var lmaps = lpMonths.map(function(x){ var o = {}; S.landing[x].forEach(function(y){ o[y.page] = y; }); return o; });
+    var lpMonths = months.filter(function(x){ return LPD[x] && x !== "snap"; });
+    var lmaps = lpMonths.map(function(x){ var o = {}; LPD[x].forEach(function(y){ o[y.page] = y; }); return o; });
     var prevPv = S.pages[addMonths(m, -1)] ? pmaps[pvMonths.indexOf(addMonths(m, -1))] : null;
-    var lpNow = hasLp ? lmaps[lpMonths.indexOf(m)] : {};
+    var lpNow = {};
+    (LPD[m] || []).forEach(function(y){ lpNow[y.page] = y; });
     var byPage = {};
     (S.pages[m] || []).forEach(function(r){ byPage[r.page] = { page: r.page, pv: r.pv, users: r.users, sec: r.sec }; });
-    (S.landing[m] || []).forEach(function(r){ if (!byPage[r.page]) byPage[r.page] = { page: r.page, pv: null, users: null, sec: null }; });
+    (LPD[m] || []).forEach(function(r){ if (!byPage[r.page]) byPage[r.page] = { page: r.page, pv: null, users: null, sec: null }; });
     var all = Object.keys(byPage).map(function(k){
       var r = byPage[k], post = postByPath(r.page), lp = lpNow[r.page];
       return Object.assign(r, {
@@ -1473,17 +1732,17 @@
       parts.push("PV " + fmtN(total) + "（記事 " + (total ? Math.round(artTotal / total * 100) : 0) + "%）");
     }
     if (hasLp){
-      var ls = landingStats(m);
-      parts.push("検索クリック " + fmtN(ls.c) + " ・ 表示 " + fmtN(ls.i) + " ・ CTR " + fmtPct(ls.ctr) + " ・ 平均 " + ls.pos.toFixed(1) + " 位");
+      var ls = rowsStats(LPD[m]);
+      parts.push(eng + " 検索クリック " + fmtN(ls.c) + " ・ 表示 " + fmtN(ls.i) + " ・ CTR " + fmtPct(ls.ctr) + " ・ 平均 " + ls.pos.toFixed(1) + " 位");
     }
     parts.push(rows.length + " ページ");
     var monthOpts = months.slice().reverse().map(function(x){
-      var pe = partialEnd("pages", x) || partialEnd("landing", x);
-      var src = S.pages[x] && S.landing[x] ? "" : S.pages[x] ? "（PVのみ）" : "（検索のみ）";
-      return '<option value="' + x + '"' + (x === m ? " selected" : "") + '>' + monthLabel(x) + (pe ? "（〜" + pe + "日）" : "") + src + '</option>';
+      var pe = partialEnd("pages", x) || (st.engine === "bing" ? null : partialEnd("landing", x));
+      var src = S.pages[x] && LPD[x] ? "" : S.pages[x] ? "（PVのみ）" : "（検索のみ）";
+      return '<option value="' + x + '"' + (x === m ? " selected" : "") + '>' + (x === "snap" ? bingSnapLabel("pages") : monthLabel(x)) + (pe ? "（〜" + pe + "日）" : "") + src + '</option>';
     }).join("");
     var tool = '<div class="jh-toolrow"><div class="jh-form"><select class="jh-in" data-change="p-month">' + monthOpts + '</select>' +
-      '<label class="jh-form jh-faint"><input type="checkbox" data-change="p-articles"' + (st.articlesOnly ? " checked" : "") + '> 記事だけ</label></div>' +
+      '<label class="jh-form jh-faint"><input type="checkbox" data-change="p-articles"' + (st.articlesOnly ? " checked" : "") + '> 記事だけ</label>' + engineChips("p-engine", st.engine) + '</div>' +
       '<span class="jh-summary">' + esc(parts.join(" ・ ")) + '</span></div>';
     var shown = rows.slice(0, st.limit);
     var body = shown.map(function(r){
@@ -1511,15 +1770,17 @@
     var cols = 3 + (hasPv ? 4 : 0) + (hasLp ? 4 : 0);
     var head = th("ページ", "p", "page") +
       (hasPv ? th("PV", "p", "pv", true) + th("ユーザー", "p", "users", true) + th("滞在秒", "p", "sec", true) + th("前月比", "p", "diff", true) : "") +
-      (hasLp ? th("Google クリック", "p", "sc", true) + th("表示", "p", "si", true) + th("CTR", "p", "sctr", true) + th("順位", "p", "spos", true) : "") +
-      '<th>' + (hasLp ? "検索クリックの推移" : "PVの推移") + '</th><th class="num">導線</th>';
+      (hasLp ? th(eng + " クリック", "p", "sc", true) + th("表示", "p", "si", true) + th("CTR", "p", "sctr", true) + th("順位", "p", "spos", true) : "") +
+      '<th>' + (hasLp ? eng + " クリックの推移" : "PVの推移") + '</th><th class="num">導線</th>';
     var table = '<div class="jh-table-wrap"><table class="jh-table"><thead><tr>' + head + '</tr></thead><tbody>' +
       (body || '<tr><td colspan="' + cols + '" class="jh-faint">該当なし</td></tr>') + '</tbody></table></div>' +
       (rows.length > shown.length ? btn("さらに表示（残り " + (rows.length - shown.length) + " 件）", "more", "p", "jh-more") : "");
     return card("ページ", tool + table, {
-      head: '<span class="jh-note">PV・ユーザー・滞在秒＝GA4「ページとスクリーン」／検索クリック・表示・CTR・順位＝「ランディングページ」。黄色の CTR＝表示500回以上で1.5%未満</span>'
+      head: '<span class="jh-note">PV・ユーザー・滞在秒＝GA4「ページとスクリーン」／検索クリック・表示・CTR・順位＝' +
+        (st.engine === "bing" ? "Bing Webmaster Tools「ページ」" : "GA4「ランディングページ」") + '。黄色の CTR＝表示500回以上で1.5%未満</span>'
     });
   }
+  ACTIONS["p-engine"] = function(e){ S.p.engine = e; S.p.engineSet = true; S.p.limit = 200; render(); };
   CHANGES["p-month"] = function(el){ S.p.month = el.value; S.p.limit = 200; render(); };
   CHANGES["p-articles"] = function(el){ S.p.articlesOnly = el.checked; render(); };
 
