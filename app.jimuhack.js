@@ -70,7 +70,9 @@
       // 「レポートのスナップショット」から抜いた通算の流入元（取り込むまで null）
       sourceSnapshot: null,
       // Bing Webmaster Tools の期間まとめ（キーワード / ページ / デバイス / 国。月を指定しないで取り込んだもの）
-      bingSnapshot: null
+      bingSnapshot: null,
+      // 概要の改善候補を「あとで」に回した期限（{id: "YYYY-MM-DD"}）
+      todoSnooze: {}
     };
   }
 
@@ -1019,133 +1021,347 @@
   ACTIONS["plan-new"] = function(arg){ newPlanTask({ type: arg }); };
 
   /* ---------------- 概要 ---------------- */
-  function todos(){
-    var list = [], t = todayKey();
-    if (S.posts){
-      var arts = articles();
-      var lastDate = arts.map(function(a){ return a.date; }).sort().pop();
-      var gap = daysBetween(lastDate, t);
-      if (gap != null && gap >= 30){
-        list.push({ lv: "warn", text: "最終投稿から " + gap + " 日。更新が止まっています（最終 " + lastDate.replace(/-/g, "/") + "）", act: "plan-new", arg: "新規記事", btn: "記事をタスク化" });
-      }
-      var noCta = arts.filter(function(a){ return !a.cta; }).length;
-      if (noCta){
-        list.push({ lv: "accent", text: "オンライン事務サービスへの導線がない記事 " + noCta + " / " + arts.length + " 本", act: "goto-articles", arg: "nocta", btn: "一覧" });
-      }
-      var stale = arts.filter(function(a){ return daysBetween(a.modified, t) >= 180; }).length;
-      if (stale){
-        list.push({ lv: "accent", text: "180日以上更新していない記事 " + stale + " 本", act: "goto-articles", arg: "stale", btn: "一覧" });
-      }
-    } else if (S.postsErr){
-      list.push({ lv: "err", text: S.postsErr, act: "posts-reload", btn: "再取得" });
+  // v2.33.58：概要を1画面に。上に「伸びてる？／どこから来てる？／次にやる1つ」、下に「今週の3つ」と推移（切り替え式）。
+  // 改善候補は「取りこぼしているクリック数（月あたりの目安）＝表示回数 ×（そのデータ全体の CTR − その行の CTR）」で並べ、
+  // 上位3つだけ見せる。途中の月は前月比に使わず「見込み」で出す。
+  var SNOOZE_DAYS = 7;
+  // 土日の読者は平日の約16%（2026/05〜09 の曜日別平均）なので、途中の月の見込みは曜日の重みで伸ばす
+  var WEEKEND_WEIGHT = 0.16;
+  var lastItems = [];
+
+  function addDaysKey(key, n){ return new Date(Date.parse(key + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10); }
+  function monthDays(m){ return new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(); }
+  function jpMonth(m){ return m.slice(0, 4) === curMonth().slice(0, 4) ? (+m.slice(5, 7)) + "月" : monthLabel(m); }
+  function dayLabel(key){ return key.slice(0, 4) === todayKey().slice(0, 4) ? mdShort(key) : key.replace(/-/g, "/"); }
+  function shortTitle(t, n){
+    var s = String(t || "").split(/[｜|]/)[0].trim();
+    n = n || 26;
+    return s.length > n ? s.slice(0, n) + "…" : s;
+  }
+  function roundImpact(n){ return n >= 100 ? Math.round(n / 10) * 10 : Math.max(1, Math.round(n)); }
+  function monthPace(m, v, upToDay){
+    var y = +m.slice(0, 4), mo = +m.slice(5, 7), done = 0, all = 0;
+    for (var d = 1; d <= monthDays(m); d++){
+      var wd = new Date(Date.UTC(y, mo - 1, d)).getUTCDay(), w = wd === 0 || wd === 6 ? WEEKEND_WEIGHT : 1;
+      all += w;
+      if (d <= upToDay) done += w;
     }
-    var expected = addMonths(curMonth(), -1);
-    // ページとクエリは別々に出すので、種類ごとに見る（片方だけ新しいと、もう片方の抜けが隠れていた）
-    var lastP = latest(S.pages), lastQ = latest(S.queries);
-    if (!lastP && !lastQ){
-      list.push({ lv: "warn", text: "GA4 の CSV がまだありません。CSVバックアップフォルダを取り込むと推移とクエリ分析が出ます", act: "import-dir", btn: "フォルダを選ぶ" });
-    } else {
-      [["ページとスクリーン", lastP], ["検索クエリ", lastQ]].forEach(function(k){
-        if (!k[1]){
-          list.push({ lv: "warn", text: k[0] + " の CSV がまだありません", act: "import-files", btn: "取り込む" });
-        } else if (k[1] < expected){
-          list.push({ lv: "warn", text: k[0] + " の CSV：" + monthLabel(addMonths(k[1], 1)) + "〜" + monthLabel(expected) + " が未取り込みです", act: "import-files", btn: "取り込む" });
-        }
-      });
-    }
-    var lq = latest(S.queries);
-    if (lq){
-      var chance = S.queries[lq].filter(isChance).length;
-      if (chance){
-        list.push({ lv: "accent", text: monthLabel(lq) + "（Google）：10位以内なのにクリック0のクエリ " + chance + " 件（タイトル・説明文の見直し候補）", act: "goto-queries", arg: "chance", btn: "見る" });
-      }
-      var low = S.queries[lq].filter(isLowCtr).length;
-      if (low){
-        list.push({ lv: "accent", text: monthLabel(lq) + "（Google）：表示100回以上で CTR 1% 未満のクエリ " + low + " 件", act: "goto-queries", arg: "lowctr", btn: "見る" });
-      }
-    }
-    var bk = bingLatestRows("keywords", S.bingq);
-    if (bk){
-      var bchance = bk.rows.filter(isChance).length;
-      if (bchance){
-        list.push({ lv: "accent", text: bk.label + "（Bing）：10位以内なのにクリック0のキーワード " + bchance + " 件（タイトル・説明文の見直し候補）", act: "goto-bing-queries", arg: "chance", btn: "見る" });
-      }
-    }
-    // Bing は流入の大半なので、表示が多いのにクリックされないページは優先度が高い
-    var bpg = bingLatestRows("pages", S.bingp);
-    if (bpg){
-      var bweak = bpg.rows.filter(function(r){ return r.i >= 1000 && r.t < 1; }).sort(function(a, b){ return b.i - a.i; });
-      if (bweak.length){
-        var bw = bweak[0], bwp = postByPath(bw.page);
-        list.push({
-          lv: "warn",
-          text: bpg.label + "（Bing）：表示1,000回以上で CTR 1% 未満のページ " + bweak.length + " 本（最大：" +
-            (bwp ? bwp.title : bw.page) + " ・ 表示 " + fmtN(bw.i) + " ・ CTR " + fmtPct(bw.t, 2) + "）",
-          act: "goto-bing-pages", arg: bpg.month, btn: "ページで見る"
-        });
-      }
-    }
-    var shares = sourceShares();
-    if (shares){
-      var bingP = shareOf(shares.g, "bing"), googleP = shareOf(shares.g, "google");
-      if (bingP >= 40 && !hasBing()){
-        list.push({
-          lv: "warn",
-          text: "流入の " + bingP.toFixed(0) + "% が Bing（Google は " + googleP.toFixed(0) + "%）。Bing Webmaster Tools の CSV（検索パフォーマンスの日別・キーワード・ページ）を取り込むと、Bing の検索キーワードと掲載順位もここで見られる",
-          href: "https://www.bing.com/webmasters/", btn: "Bing Webmaster Tools ↗"
-        });
-      }
-    } else {
-      list.push({ lv: "accent", text: "流入元（Bing / Google / Yahoo! など）の割合がまだありません。GA4 の「レポートのスナップショット」か「トラフィック獲得」の CSV を取り込むと出ます", act: "import-files", btn: "取り込む" });
-    }
-    var ll = latest(S.landing);
-    if (ll){
-      var weak = S.landing[ll].filter(function(r){ return r.i >= 500 && r.t < 1.5; });
-      if (weak.length){
-        var worst = weak.slice().sort(function(a, b){ return b.i - a.i; })[0], wp = postByPath(worst.page);
-        list.push({
-          lv: "accent",
-          text: monthLabel(ll) + "：Google 検索で500回以上表示されているのに CTR 1.5% 未満の記事 " + weak.length + " 本（最大：" +
-            (wp ? wp.title : worst.page) + " ・ 表示 " + fmtN(worst.i) + " ・ CTR " + fmtPct(worst.t) + "）",
-          act: "goto-pages", arg: ll, btn: "ページで見る"
-        });
-      }
-    }
-    var over = planTasks().filter(function(x){ return !x.done && x.due && x.due < t; }).length;
-    if (over) list.push({ lv: "err", text: "事務ハックのタスクが " + over + " 件 期限切れ", act: "tab", arg: "plan", btn: "計画" });
-    return list;
+    return done ? Math.round(v * all / done) : null;
+  }
+  function snoozed(id){
+    var until = (S.state.todoSnooze || {})[id];
+    return !!until && until >= todayKey();
   }
 
+  // PV：揃っている最新月（途中の月は比較に使わない）と、いちばん新しい月が途中ならその見込み
+  function pvStatus(){
+    var ms = allMonths().filter(monthPV);
+    if (!ms.length) return null;
+    var cm = curMonth(), out = { months: ms, full: null, partial: null };
+    for (var i = ms.length - 1; i >= 0; i--){
+      var m = ms[i], x = monthPV(m), pe = x.manual ? null : partialEnd("pages", m);
+      if (pe || m >= cm){
+        if (i === ms.length - 1){
+          var day = pe || (m === cm ? +todayKey().slice(8, 10) : monthDays(m));
+          out.partial = { m: m, v: x.v, day: day, pace: monthPace(m, x.v, day) };
+        }
+        continue;
+      }
+      out.full = m;
+      out.v = x.v;
+      out.manual = x.manual;
+      break;
+    }
+    if (out.full){
+      var pm = addMonths(out.full, -1), px = monthPV(pm);
+      if (px && px.v && !(px.manual ? null : partialEnd("pages", pm))){
+        out.prevM = pm;
+        out.prevV = px.v;
+        out.diff = (out.v - px.v) / px.v * 100;
+      }
+    }
+    return out;
+  }
+  // Google：揃っている最新月（無ければ最新月）。Bing：日別の最新月（日数つき）
+  function googleStatus(){
+    var ms = Object.keys(Object.assign({}, S.queries, S.landing)).sort(), cm = curMonth();
+    for (var i = ms.length - 1; i >= 0; i--){
+      if (ms[i] < cm && !searchPartialEnd(ms[i])) return { m: ms[i], s: searchStats(ms[i]) };
+    }
+    var lm = ms[ms.length - 1];
+    return lm ? { m: lm, s: searchStats(lm), partial: true } : null;
+  }
+  function bingStatus(){
+    var lm = latest(S.bingd);
+    if (!lm) return null;
+    var b = bingDayStats(lm);
+    return { m: lm, c: b.c, days: b.days, short: bingPartialEnd(lm) };
+  }
+  function bingSnapDays(){
+    var n = 0;
+    Object.keys(S.bingd).forEach(function(m){ n += S.bingd[m].length; });
+    return n || 90;
+  }
+
+  // 改善候補。impact＝月あたりの取りこぼしクリック数の目安（期限切れタスクは常に先頭）
+  function overviewItems(){
+    var items = [], t = todayKey();
+    var over = planTasks().filter(function(x){ return !x.done && x.due && x.due < t; }).length;
+    if (over){
+      items.push({ id: "overdue", lv: "err", impact: 1e9, title: "事務ハックのタスクが " + over + " 件 期限切れ", sub: "計画タブで期限を見直す", act: "tab", arg: "plan", btn: "計画" });
+    }
+    // 表示が多いのに、そのデータ全体の CTR の半分未満しかクリックされていないページ
+    function weakPages(rows, eng, minI, factor, where, act, arg){
+      var tc = sum(rows, function(r){ return r.c; }), ti = sum(rows, function(r){ return r.i; }), bench = ti ? tc / ti * 100 : 0;
+      rows.filter(function(r){ return r.i >= minI && r.t < bench / 2; }).forEach(function(r){
+        var post = postByPath(r.page), name = post ? shortTitle(post.title) : r.page, label = engineLabel(eng);
+        items.push({
+          id: eng + "-page:" + r.page, lv: "warn", impact: r.i * (bench - r.t) / 100 * factor,
+          title: "「" + name + "」の " + label + " のクリック率が低い（" + fmtPct(r.t, 2) + "）",
+          sub: label + " ・ " + where + " ・ 表示 " + fmtN(r.i) + " ・ クリック " + fmtN(r.c) + " ・ 平均 " + r.p.toFixed(1) + " 位",
+          act: act, arg: arg, btn: "ページで見る",
+          task: {
+            type: "リライト", text: "リライト：" + (post ? post.title : r.page), url: post ? post.link : "",
+            remarks: label + "（" + where + "）：表示 " + r.i + "・クリック " + r.c + "・CTR " + fmtPct(r.t, 2) + "（全体 " + fmtPct(bench, 2) + "）・平均 " +
+              r.p.toFixed(1) + " 位。タイトルと説明文を、検索している人の目的に合わせて直す"
+          }
+        });
+      });
+    }
+    // 10位以内なのにクリック0（まとめて1件）
+    function chanceItem(rows, eng, factor, where, act){
+      var tc = sum(rows, function(r){ return r.c; }), ti = sum(rows, function(r){ return r.i; }), bench = ti ? tc / ti * 100 : 0;
+      var ch = rows.filter(isChance);
+      if (!ch.length) return;
+      var top = ch.slice().sort(function(a, b){ return b.i - a.i; })[0], label = engineLabel(eng);
+      items.push({
+        id: eng + "-chance:" + where, lv: "accent", impact: sum(ch, function(r){ return r.i; }) * bench / 100 * factor,
+        title: label + " で10位以内なのにクリック0の" + (eng === "bing" ? "キーワード" : "クエリ") + " " + ch.length + " 件",
+        sub: label + " ・ " + where + " ・ 最多「" + top.q + "」表示 " + fmtN(top.i) + " ・ " + top.p.toFixed(1) + " 位",
+        act: act, arg: "chance", btn: "見る"
+      });
+    }
+    var snapWhere = function(part){ var s = S.state.bingSnapshot; return s && s[part] ? "〜" + dayLabel(s[part].exported) + " 書き出しの期間まとめ" : "期間まとめ"; };
+    var bpg = bingLatestRows("pages", S.bingp);
+    if (bpg){
+      weakPages(bpg.rows, "bing", 1000, bpg.month === "snap" ? 30 / bingSnapDays() : 1,
+        bpg.month === "snap" ? snapWhere("pages") : jpMonth(bpg.month), "goto-bing-pages", bpg.month);
+    }
+    var lms = Object.keys(S.landing).sort(), gl = null;
+    for (var i = lms.length - 1; i >= 0; i--){ if (lms[i] < curMonth() && !partialEnd("landing", lms[i])){ gl = lms[i]; break; } }
+    if (!gl) gl = lms[lms.length - 1] || null;
+    if (gl){
+      var gpe = partialEnd("landing", gl);
+      weakPages(S.landing[gl], "google", 500, gpe ? monthDays(gl) / gpe : 1, jpMonth(gl), "goto-pages", gl);
+    }
+    var gq = googleStatus();
+    if (gq && S.queries[gq.m]){
+      var qpe = partialEnd("queries", gq.m);
+      chanceItem(S.queries[gq.m], "google", qpe ? monthDays(gq.m) / qpe : 1, jpMonth(gq.m), "goto-queries");
+    }
+    var bk = bingLatestRows("keywords", S.bingq);
+    if (bk) chanceItem(bk.rows, "bing", bk.month === "snap" ? 30 / bingSnapDays() : 1, bk.month === "snap" ? snapWhere("keywords") : jpMonth(bk.month), "goto-bing-queries");
+    return items.sort(function(a, b){ return b.impact - a.impact; });
+  }
+
+  // 何か月も変わらない課題（毎回「やること」に並べず1行にまとめる）
+  function chronicIssues(){
+    var out = [], t = todayKey();
+    if (!S.posts) return out;
+    var arts = articles(), last = arts.map(function(a){ return a.date; }).sort().pop(), gap = daysBetween(last, t);
+    if (gap != null && gap >= 30) out.push({ text: "最終投稿から " + gap + " 日", lv: "warn", act: "plan-new", arg: "新規記事", btn: "記事をタスク化" });
+    var noCta = arts.filter(function(a){ return !a.cta; }).length;
+    if (noCta) out.push({ text: "サービス導線なし " + noCta + "/" + arts.length + " 本", act: "goto-articles", arg: "nocta", btn: "一覧" });
+    var stale = arts.filter(function(a){ return daysBetween(a.modified, t) >= 180; }).length;
+    if (stale) out.push({ text: "180日以上未更新 " + stale + " 本", act: "goto-articles", arg: "stale", btn: "一覧" });
+    return out;
+  }
+
+  // データがいつまで入っているか＋取り込み漏れ
+  function rangeEnd(kind, m){
+    var r = S.ranges[kind] && S.ranges[kind][m];
+    return r && r.end ? r.end : m + "-" + String(monthDays(m)).padStart(2, "0");
+  }
+  function dataStrip(){
+    var parts = [], warns = [];
+    var lp = latest(S.pages);
+    if (lp) parts.push("PV 〜" + dayLabel(rangeEnd("pages", lp)));
+    var gm = [latest(S.landing), latest(S.queries)].filter(Boolean).sort().pop();
+    if (gm) parts.push("Google 〜" + dayLabel(S.landing[gm] ? rangeEnd("landing", gm) : rangeEnd("queries", gm)));
+    var bm = latest(S.bingd);
+    if (bm) parts.push("Bing 〜" + dayLabel(bingDayStats(bm).lastDay));
+    var sm = latest(S.sources), sn = S.state.sourceSnapshot;
+    if (sm) parts.push("流入元 〜" + dayLabel(rangeEnd("sources", sm)));
+    else if (sn && sn.end) parts.push("流入元 〜" + dayLabel(sn.end) + "（通算）");
+    var expected = addMonths(curMonth(), -1);
+    [["PV（ページとスクリーン）", latest(S.pages)], ["Google 検索クエリ", latest(S.queries)]].forEach(function(k){
+      if (!k[1]) warns.push(k[0] + "が未取り込み");
+      else if (k[1] < expected) warns.push(k[0] + " " + monthLabel(addMonths(k[1], 1)) + "〜" + monthLabel(expected) + " が未取り込み");
+    });
+    var shares = sourceShares();
+    if (!shares) warns.push("流入元が未取り込み");
+    else if (shareOf(shares.g, "bing") >= 40 && !hasBing()) warns.push("Bing の CSV が未取り込み");
+    if (S.postsErr) warns.push("記事の取得に失敗");
+    return '<div class="jh-datastrip"><span class="jh-sublabel" style="margin:0">データ</span>' +
+      parts.map(function(p){ return '<span>' + esc(p) + '</span>'; }).join("") +
+      warns.map(function(w){ return '<span class="is-warn">' + esc(w) + '</span>'; }).join("") +
+      (warns.length ? btn("取り込む", "import-dir", null, "is-ghost") : "") +
+      (S.postsErr ? btn("再取得", "posts-reload", null, "is-ghost") : "") + '</div>';
+  }
+
+  function segBar(cur, tgt, label){
+    var on = Math.round(Math.min(1, cur / tgt) * 10), seg = "";
+    for (var i = 0; i < 10; i++) seg += '<i' + (i < on ? ' class="on"' : '') + '></i>';
+    return '<div class="jh-goal-mini"><div class="jh-goal-head"><span class="jh-faint">' + esc(label) + '</span>' +
+      '<span class="jh-goal-val">' + Math.round(cur / tgt * 100) + '%</span></div>' +
+      '<div class="jh-seg' + (cur >= tgt ? ' is-done' : '') + '">' + seg + '</div></div>';
+  }
+
+  // ① 伸びてる？
+  function answerGrow(){
+    var st = pvStatus(), tgt = +S.state.goals.pv || 0;
+    var html = '<div class="jh-answer-q"><span>伸びてる？</span>' + btn("目標", "goal-edit", null, "is-ghost") + '</div>';
+    if (!st){
+      return '<section class="panel jh-answer">' + html + '<div class="jh-answer-line">PV の CSV（GA4「ページとスクリーン」）がまだありません。</div>' +
+        '<div class="jh-actions">' + btn("取り込む", "import-dir") + '</div></section>';
+    }
+    if (st.full){
+      html += '<div class="jh-answer-big">' + fmtN(st.v) + '<small>PV ・ ' + esc(jpMonth(st.full)) + (st.manual ? "（手入力）" : "") + '</small></div>';
+      if (st.diff != null){
+        html += '<div class="jh-answer-line">前月比 <span class="jh-delta ' + (st.diff >= 0 ? "is-good" : "is-bad") + '">' + (st.diff >= 0 ? "+" : "") + st.diff.toFixed(0) + '%</span>' +
+          '<span class="jh-faint">（' + esc(jpMonth(st.prevM)) + ' ' + fmtN(st.prevV) + '）</span></div>';
+      }
+    }
+    if (st.partial){
+      html += '<div class="jh-answer-line">' + esc(jpMonth(st.partial.m)) + 'は ' + st.partial.day + ' 日で <b>' + fmtN(st.partial.v) + '</b>' +
+        (st.partial.pace ? ' ・ このペースなら約 <b>' + fmtN(Math.round(st.partial.pace / 100) * 100) + '</b>' : '') + '</div>';
+    }
+    var sparkMonths = st.months.filter(function(m){ return !st.partial || m !== st.partial.m; }).slice(-12);
+    html += spark(sparkMonths.map(function(m){ return monthPV(m).v; }));
+    if (tgt){
+      var cur = st.partial && st.partial.pace ? st.partial.pace : (st.v || 0);
+      html += segBar(cur, tgt, (st.partial ? jpMonth(st.partial.m) + "の見込み " : jpMonth(st.full) + " ") + fmtN(cur) + " / 目標 " + fmtN(tgt));
+    }
+    return '<section class="panel jh-answer">' + html + '</section>';
+  }
+
+  // ② どこから来てる？
+  var STACK_KEYS = [["bing", "Bing"], ["google", "Google"], ["yahoo", "Yahoo!"], ["direct", "直接"], ["other", "ほか"]];
+  function answerSource(){
+    var s = sourceShares();
+    var html = '<div class="jh-answer-q"><span>どこから来てる？</span>' + (s ? btn(S.showSources ? "内訳を閉じる" : "内訳", "toggle-sources", null, "is-ghost") : "") + '</div>';
+    if (s){
+      var g = Object.assign({}, s.g), tot = 0;
+      g.other = (g.other || 0) + (g.ai || 0);
+      STACK_KEYS.forEach(function(k){ tot += g[k[0]] || 0; });
+      var pct = function(k){ return tot ? (g[k] || 0) / tot * 100 : 0; };
+      html += '<div class="jh-stack">' + STACK_KEYS.map(function(k){
+        var p = pct(k[0]);
+        return p ? '<i class="k-' + k[0] + '" style="width:' + p.toFixed(2) + '%" title="' + esc(k[1] + " " + fmtPct(p)) + '"></i>' : "";
+      }).join("") + '</div>' +
+        '<div class="jh-stack-legend">' + STACK_KEYS.map(function(k){
+          var p = pct(k[0]);
+          return p >= 0.5 ? '<span class="k-' + k[0] + '">' + esc(k[1]) + ' ' + fmtPct(p, 0) + '</span>' : "";
+        }).join("") + '</div>' +
+        '<div class="jh-answer-line jh-faint">' + esc(s.label) + '</div>';
+    } else {
+      html += '<div class="jh-answer-line">流入元（Bing / Google / Yahoo! など）がまだありません。GA4 の「レポートのスナップショット」か「トラフィック獲得」を取り込むと出ます。</div>';
+    }
+    var gs = googleStatus(), bs = bingStatus(), lines = [];
+    if (gs && gs.s) lines.push('Google <b>' + fmtN(gs.s.c) + '</b><span class="jh-faint">（' + esc(jpMonth(gs.m)) + (gs.partial ? "・途中" : "") + '）</span>');
+    if (bs) lines.push('Bing <b>' + fmtN(bs.c) + '</b><span class="jh-faint">（' + esc(jpMonth(bs.m)) + (bs.short ? "・" + bs.days + "日分" : "") + '）</span>');
+    if (lines.length) html += '<div class="jh-answer-line">検索クリック ' + lines.join(" ／ ") + '</div>';
+    var tgt = +S.state.goals.clicks || 0;
+    if (tgt && gs && gs.s) html += segBar(gs.s.c, tgt, "Google " + jpMonth(gs.m) + " " + fmtN(gs.s.c) + " / 目標 " + fmtN(tgt));
+    return '<section class="panel jh-answer">' + html + '</section>';
+  }
+  ACTIONS["toggle-sources"] = function(){ S.showSources = !S.showSources; render(); };
+
+  // ③ 次にやる1つ
+  function answerNext(first){
+    var html = '<div class="jh-answer-q"><span>次にやる1つ</span></div>';
+    if (first){
+      html += '<div class="jh-next-title">' + esc(first.title) + '</div>' +
+        '<div class="jh-answer-line jh-faint">' + esc(first.sub) + '</div>' +
+        (first.impact < 1e9 ? '<div class="jh-next-impact">取りこぼし 月 約 ' + fmtN(roundImpact(first.impact)) + ' クリック</div>' : '') +
+        '<div class="jh-actions">' + (first.task ? btn("タスク化", "todo-task", first.id, "is-primary") : "") +
+        (first.act ? btn(first.btn, first.act, first.arg) : "") + btn("あとで", "todo-snooze", first.id, "is-ghost") + '</div>';
+    } else {
+      html += '<div class="jh-answer-line">いま優先して直すものはありません。</div>';
+    }
+    var foot = [];
+    if (S.posts){
+      var arts = articles(), last = arts.map(function(a){ return a.date; }).sort().pop(), ago = last ? daysBetween(last, todayKey()) : null;
+      var cm = curMonth(), newN = arts.filter(function(a){ return a.date.indexOf(cm) === 0; }).length, pg = +S.state.goals.posts || 0;
+      foot.push('記事 ' + arts.length + ' 本' + (ago != null ? ' ・ 最終投稿 <span class="' + (ago >= 30 ? "is-warn" : "") + '">' + ago + ' 日前</span>' : '') +
+        (pg ? ' ・ 今月の新規 ' + newN + '/' + pg : ''));
+    } else {
+      foot.push(S.postsErr ? "記事の取得に失敗" : "記事を取得中…");
+    }
+    var rg = +S.state.goals.revenue || 0;
+    if ((S.state.revenue || []).length || rg) foot.push('今月の収益 ' + fmtYen(revenueIn(curMonth())) + (rg ? ' / 目標 ' + fmtYen(rg) : ''));
+    return '<section class="panel jh-answer">' + html + '<div class="jh-answer-foot">' + foot.join("<br>") + '</div></section>';
+  }
+
+  function todoRow(x, i){
+    return '<div class="jh-todo-row lv-' + x.lv + (i === 0 ? ' is-first' : '') + '">' +
+      '<span class="jh-rank-no">' + (i + 1) + '</span>' +
+      '<div class="jh-todo-main"><div class="jh-todo-title">' + esc(x.title) + '</div>' +
+      '<div class="jh-todo-sub">' + (x.impact < 1e9 ? '<span class="jh-todo-impact">月 約 ' + fmtN(roundImpact(x.impact)) + ' クリック</span> ・ ' : '') + esc(x.sub) + '</div></div>' +
+      '<div class="jh-todo-acts">' + (x.task ? btn("タスク化", "todo-task", x.id) : "") + (x.act ? btn(x.btn, x.act, x.arg) : "") +
+      btn("あとで", "todo-snooze", x.id, "is-ghost") + '</div></div>';
+  }
+  function weekCard(items, snoozedN){
+    var top = items.slice(0, 3), rest = items.slice(3), chron = chronicIssues();
+    var body = top.length
+      ? '<div class="jh-todo">' + top.map(todoRow).join("") + '</div>'
+      : '<div class="sched-empty">いま自動で出せる改善候補はありません。</div>';
+    if (rest.length){
+      body += '<button type="button" class="jh-more-toggle" data-act="toggle-more">' + (S.showMore ? "ほかの気づきを閉じる" : "ほかの気づき " + rest.length + " 件") + '</button>';
+      if (S.showMore) body += '<div class="jh-todo">' + rest.map(function(x, i){ return todoRow(x, i + 3); }).join("") + '</div>';
+    }
+    if (chron.length){
+      body += '<div class="jh-chronic"><span class="jh-sublabel" style="margin:0">ずっと残っている課題</span>' + chron.map(function(c){
+        return '<span class="jh-chronic-item"><span class="' + (c.lv === "warn" ? "is-warn" : "") + '">' + esc(c.text) + '</span>' + btn(c.btn, c.act, c.arg, "is-ghost") + '</span>';
+      }).join("") + '</div>';
+    }
+    var head = '<span class="jh-head-actions"><span class="jh-note">取りこぼしているクリックの多い順</span>' +
+      (snoozedN ? '<span class="jh-note">あとで ' + snoozedN + ' 件</span>' + btn("戻す", "todo-unsnooze", null, "is-ghost") : "") + '</span>';
+    return card("今週の3つ", body, { head: head });
+  }
+  ACTIONS["toggle-more"] = function(){ S.showMore = !S.showMore; render(); };
+  ACTIONS["todo-task"] = function(id){
+    var x = lastItems.filter(function(it){ return it.id === id; })[0];
+    if (x && x.task) newPlanTask(x.task);
+  };
+  ACTIONS["todo-snooze"] = function(id){
+    var map = Object.assign({}, S.state.todoSnooze || {}), t = todayKey();
+    Object.keys(map).forEach(function(k){ if (map[k] < t) delete map[k]; }); // 期限が過ぎたものは掃除
+    map[id] = addDaysKey(t, SNOOZE_DAYS);
+    S.state.todoSnooze = map;
+    saveState();
+    render();
+  };
+  ACTIONS["todo-unsnooze"] = function(){ S.state.todoSnooze = {}; saveState(); render(); };
+
   var GOALS = [
-    { k: "pv", label: "月間PV（最新月）", unit: "PV", cur: function(){ var ms = allMonths().filter(monthPV); return ms.length ? monthPV(ms[ms.length - 1]).v : 0; } },
-    { k: "clicks", label: "Google 検索クリック（最新月）", unit: "件", cur: function(){ var m = latestSearchMonth(); return m ? searchStats(m).c : 0; } },
+    { k: "pv", label: "月間PV（途中の月は見込み）", unit: "PV", cur: function(){ var st = pvStatus(); return !st ? 0 : st.partial && st.partial.pace ? st.partial.pace : (st.v || 0); } },
+    { k: "clicks", label: "Google 検索クリック（揃っている最新月）", unit: "件", cur: function(){ var g = googleStatus(); return g && g.s ? g.s.c : 0; } },
     { k: "posts", label: "今月の新規記事", unit: "本", cur: function(){ var cm = curMonth(); return articles().filter(function(a){ return a.date.indexOf(cm) === 0; }).length; } },
     { k: "revenue", label: "今月の収益", unit: "円", cur: function(){ return revenueIn(curMonth()); } }
   ];
+  // 目標は「伸びてる？」の「目標」ボタンで開く（普段は各答えの下にバーで出す）
   function goalsCard(){
     var g = S.state.goals;
     var body = GOALS.map(function(d){
-      if (S.goalEdit){
-        return '<div class="jh-goal"><div class="jh-goal-head"><span>' + esc(d.label) + '</span><span class="jh-form">' +
-          '<input type="number" min="0" class="jh-in is-num" style="width:110px" data-goal="' + d.k + '" value="' + esc(g[d.k] || 0) + '">' +
-          '<span class="jh-faint">' + esc(d.unit) + '</span></span></div></div>';
-      }
-      var cur = d.cur() || 0, tgt = +g[d.k] || 0;
-      if (!tgt){
-        return '<div class="jh-goal"><div class="jh-goal-head"><span>' + esc(d.label) + '</span><span class="jh-goal-val">' + fmtN(cur) + ' ' + esc(d.unit) + ' ・ 目標未設定</span></div></div>';
-      }
-      var on = Math.round(Math.min(1, cur / tgt) * 10), seg = "";
-      for (var i = 0; i < 10; i++) seg += '<i' + (i < on ? ' class="on"' : '') + '></i>';
-      return '<div class="jh-goal"><div class="jh-goal-head"><span>' + esc(d.label) + '</span><span class="jh-goal-val">' +
-        fmtN(cur) + ' / ' + fmtN(tgt) + ' ' + esc(d.unit) + ' ・ ' + Math.round(cur / tgt * 100) + '%</span></div>' +
-        '<div class="jh-seg' + (cur >= tgt ? ' is-done' : '') + '">' + seg + '</div></div>';
-    }).join("");
-    var head = S.goalEdit
-      ? '<span class="jh-head-actions">' + btn("やめる", "goal-cancel") + btn("保存", "goal-save", null, "is-primary") + '</span>'
-      : btn("編集", "goal-edit");
+      return '<div class="jh-goal"><div class="jh-goal-head"><span>' + esc(d.label) + '<span class="jh-faint"> ・ 今 ' + fmtN(d.cur() || 0) + '</span></span><span class="jh-form">' +
+        '<input type="number" min="0" class="jh-in is-num" style="width:110px" data-goal="' + d.k + '" value="' + esc(g[d.k] || 0) + '">' +
+        '<span class="jh-faint">' + esc(d.unit) + '</span></span></div></div>';
+    }).join("") + '<p class="jh-legend">0 にすると目標なし（バーを出さない）。</p>';
+    var head = '<span class="jh-head-actions">' + btn("やめる", "goal-cancel") + btn("保存", "goal-save", null, "is-primary") + '</span>';
     return card("目標", body, { head: head });
   }
-  ACTIONS["goal-edit"] = function(){ S.goalEdit = true; render(); };
+  ACTIONS["goal-edit"] = function(){ S.goalEdit = !S.goalEdit; render(); };
   ACTIONS["goal-cancel"] = function(){ S.goalEdit = false; render(); };
   ACTIONS["goal-save"] = function(){
     Array.prototype.forEach.call(document.querySelectorAll("#jh-body [data-goal]"), function(inp){
@@ -1156,24 +1372,47 @@
     render();
   };
 
-  function monthlyCard(){
+  // 推移：PV / Google / Bing を切り替える1枚。表と手入力 PV は「表で見る」の中
+  var TREND_LEGEND = {
+    pv: "薄い棒＝月の途中・手入力の月",
+    google: "ランディングページ CSV の合計（無い月は検索クエリ CSV）。薄い棒＝月の途中",
+    bing: "Bing Webmaster Tools の日別 CSV の合計。薄い棒＝日が揃っていない月（Bing 側で抜けがある）"
+  };
+  function trendCard(){
     var ms = allMonths();
     if (!ms.length){
-      return card("月次推移", '<div class="sched-empty">まだデータがありません。右上の「フォルダ」から CSVバックアップフォルダを取り込んでください。</div>');
+      return card("推移", '<div class="sched-empty">まだデータがありません。右上の「フォルダ」から CSVバックアップフォルダを取り込んでください。</div>');
     }
-    var show = ms.slice(-12);
-    var pvs = show.map(function(m){ var x = monthPV(m); return x ? x.v : null; });
-    var pvMarks = show.map(function(m){ var x = monthPV(m); return !x ? "" : x.manual ? "is-manual" : partialEnd("pages", m) ? "is-partial" : ""; });
-    var cls = show.map(function(m){ var s = searchStats(m); return s ? s.c : null; });
-    var clMarks = show.map(function(m){ return searchPartialEnd(m) ? "is-partial" : ""; });
-    var withBing = Object.keys(S.bingd).length > 0;
-    var bcs = show.map(function(m){ var b = bingDayStats(m); return b ? b.c : null; });
-    var bMarks = show.map(function(m){ return bingPartialEnd(m) ? "is-partial" : ""; });
-    var chart = '<div class="jh-bars-title">PV</div>' + bars(show, pvs, fmtK, pvMarks) +
-      '<div class="jh-bars-title">Google 検索クリック</div>' + bars(show, cls, fmtK, clMarks, true) +
-      (withBing ? '<div class="jh-bars-title">Bing 検索クリック</div>' + bars(show, bcs, fmtK, bMarks, true) : "") +
-      '<p class="jh-legend">薄い棒＝手入力の月 / 月の途中までの CSV。Google の検索クリック・表示・CTR・順位は、ランディングページ CSV がある月はその合計（クエリの匿名化で消える分も含む）、無い月は検索クエリ CSV の合計。平均順位は表示回数で重み付けした平均。' +
-      (withBing ? "Bing クリックは Bing Webmaster Tools の日別 CSV の月合計（Bing 側で日が抜ける月があり、薄い棒と「N日分」はその月が揃っていない印）。" : "") + '</p>';
+    var withBing = Object.keys(S.bingd).length > 0, cm = curMonth();
+    if (S.trend === "bing" && !withBing) S.trend = "pv";
+    var kind = S.trend || "pv", show = ms.slice(-12), vals, marks;
+    if (kind === "google"){
+      vals = show.map(function(m){ var s = searchStats(m); return s ? s.c : null; });
+      marks = show.map(function(m){ return searchPartialEnd(m) || m >= cm ? "is-partial" : ""; });
+    } else if (kind === "bing"){
+      vals = show.map(function(m){ var b = bingDayStats(m); return b ? b.c : null; });
+      marks = show.map(function(m){ return bingPartialEnd(m) ? "is-partial" : ""; });
+    } else {
+      vals = show.map(function(m){ var x = monthPV(m); return x ? x.v : null; });
+      marks = show.map(function(m){ var x = monthPV(m); return !x ? "" : x.manual ? "is-manual" : partialEnd("pages", m) || m >= cm ? "is-partial" : ""; });
+    }
+    // 選んだ指標でデータが始まる月から出す（検索クエリだけある 2025 年の空の月で棒の幅を食わないように）
+    var first = 0;
+    while (first < vals.length - 1 && vals[first] == null) first++;
+    show = show.slice(first);
+    vals = vals.slice(first);
+    marks = marks.slice(first);
+    var chips = '<div class="jh-chips">' + chip("PV", "trend", "pv", kind === "pv") + chip("Google", "trend", "google", kind === "google") +
+      (withBing ? chip("Bing", "trend", "bing", kind === "bing") : "") + '</div>';
+    var body = bars(show, vals, fmtK, marks) + '<p class="jh-legend">' + esc(TREND_LEGEND[kind]) + '</p>' +
+      '<button type="button" class="jh-more-toggle" data-act="toggle-trend-table">' + (S.trendTable ? "表を閉じる" : "表で見る（PV・検索・手入力 PV）") + '</button>';
+    if (S.trendTable) body += monthlyTable(ms, withBing);
+    return card("推移", body, { head: chips });
+  }
+  ACTIONS["trend"] = function(k){ S.trend = k; render(); };
+  ACTIONS["toggle-trend-table"] = function(){ S.trendTable = !S.trendTable; render(); };
+
+  function monthlyTable(ms, withBing){
     var rows = ms.slice().reverse().map(function(m){
       var pv = monthPV(m), s = searchStats(m), pe = partialEnd("pages", m) || searchPartialEnd(m), bs = bingDayStats(m), bpe = bingPartialEnd(m);
       return '<tr><td>' + monthLabel(m) + (pe ? ' <span class="jh-faint">〜' + pe + '日</span>' : '') + '</td>' +
@@ -1182,17 +1421,16 @@
         '<td class="num">' + (s ? fmtN(s.i) : '—') + '</td>' +
         '<td class="num">' + (s ? fmtPct(s.ctr, 2) : '—') + '</td>' +
         '<td class="num">' + (s ? s.pos.toFixed(1) : '—') + '</td>' +
-        (withBing ? '<td class="num">' + (bs ? fmtN(bs.c) + (bpe ? ' <span class="jh-faint">' + bpe + '日分</span>' : '') : '—') + '</td>' : '') +
-        '<td class="num jh-faint">' + (S.pages[m] ? S.pages[m].length : '—') + ' / ' + (S.queries[m] ? S.queries[m].length : '—') + ' / ' + (S.landing[m] ? S.landing[m].length : '—') + '</td></tr>';
+        (withBing ? '<td class="num">' + (bs ? fmtN(bs.c) + (bpe ? ' <span class="jh-faint">' + bpe + '日分</span>' : '') : '—') + '</td>' : '') + '</tr>';
     }).join("");
-    var table = '<div class="jh-table-wrap" style="max-height:320px;margin-top:12px"><table class="jh-table"><thead><tr>' +
-      '<th>月</th><th class="num">PV</th><th class="num">Google クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th>' + (withBing ? '<th class="num">Bing クリック</th>' : '') + '<th class="num">行数 ページ/クエリ/LP</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    var table = '<div class="jh-table-wrap" style="max-height:320px;margin-top:10px"><table class="jh-table"><thead><tr>' +
+      '<th>月</th><th class="num">PV</th><th class="num">Google クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th>' +
+      (withBing ? '<th class="num">Bing クリック</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     var form = '<div class="jh-form" style="margin-top:10px"><span class="jh-faint">CSV が無い月の PV を手入力：</span>' +
       '<input type="month" class="jh-in is-num" data-keep="jh-mpv-m">' +
       '<input type="number" min="0" class="jh-in is-num" style="width:110px" placeholder="PV" data-keep="jh-mpv-v" data-enter="mpv-save">' +
       btn("保存", "mpv-save") + '</div>';
-    return card("月次推移", chart + table + form, { head: '<span class="jh-note">GA4 CSV（ページとスクリーン / オーガニック検索クエリ）' + (withBing ? "＋ Bing Webmaster Tools CSV" : "") + '</span>' });
+    return table + form;
   }
   ACTIONS["mpv-save"] = function(){
     var m = document.querySelector('#jh-body [data-keep="jh-mpv-m"]'), v = document.querySelector('#jh-body [data-keep="jh-mpv-v"]');
@@ -1205,12 +1443,10 @@
   };
   ACTIONS["mpv-del"] = function(m){ delete S.state.manualPV[m]; saveState(); render(); };
 
-  // 流入元の割合。Google の検索データ（クエリ・順位・ランディングページ）がどれだけの範囲を映しているかを先に見せる。
+  // 流入元の内訳（「どこから来てる？」の「内訳」で開く）
   function sourcesCard(){
     var s = sourceShares();
-    if (!s){
-      return card("流入元", '<div class="sched-empty">GA4 の「トラフィック獲得（セッションのソース / メディア）」を月ごとに、または「レポートのスナップショット」を取り込むと、Bing・Google・Yahoo! などの割合が出ます。</div>');
-    }
+    if (!s) return "";
     var groups = SOURCE_GROUPS.filter(function(x){ return s.g[x.k] > 0; }).sort(function(a, b){ return s.g[b.k] - s.g[a.k]; });
     var body = groups.map(function(x, i){
       var p = shareOf(s.g, x.k);
@@ -1230,57 +1466,30 @@
     var sn = s.snapshot, notes = [];
     if (sn && sn.totals) notes.push("アクティブユーザー " + fmtN(sn.totals.users) + " ・ 平均エンゲージメント " + Math.round(sn.totals.avgEngSec) + " 秒");
     if (sn && (sn.cities || []).length) notes.push("多い地域：" + sn.cities.slice(0, 6).map(function(c){ return c.src; }).join("・"));
-    notes.push("GA4 の検索クエリ・順位・ランディングページの数字は、このうち Google の分（" + fmtPct(shareOf(s.g, "google"), 0) + "）だけを映しています");
-    if (hasBing()) notes.push("Bing の分は Bing Webmaster Tools の CSV から（検索クエリ・ページタブの「Bing」と月次推移）");
+    notes.push("GA4 の検索クエリ・順位・ランディングページは Google の分（" + fmtPct(shareOf(s.g, "google"), 0) + "）だけ");
+    if (hasBing()) notes.push("Bing の分は検索クエリ・ページタブの「Bing」");
     var bdev = bingSnapRows("devices");
     if (bdev){
       var dt = sum(bdev, function(r){ return r.i; });
       var dd = sum(bdev.filter(function(r){ return /desktop|pc|パソコン/i.test(r.k); }), function(r){ return r.i; });
       if (dt) notes.push("Bing での表示のうち PC " + fmtPct(dd / dt * 100, 0));
     }
-    return card("流入元", body + '<p class="jh-legend">' + esc(notes.join(" ／ ")) + '</p>', { head: '<span class="jh-note">' + esc(s.label) + '</span>' });
+    return card("流入元の内訳", body + '<p class="jh-legend">' + esc(notes.join(" ／ ")) + '</p>',
+      { head: '<span class="jh-head-actions"><span class="jh-note">' + esc(s.label) + '</span>' + btn("閉じる", "toggle-sources", null, "is-ghost") + '</span>' });
   }
 
   function renderOverview(){
-    var pvMonths = allMonths().filter(monthPV), lp = pvMonths[pvMonths.length - 1];
-    var pvK = "—", pvSub = "CSV 未取り込み", pvCls = "";
-    if (lp){
-      var cur = monthPV(lp), prev = monthPV(addMonths(lp, -1)), pe = partialEnd("pages", lp);
-      pvK = fmtN(cur.v);
-      pvSub = monthLabel(lp) + (pe ? "（〜" + pe + "日）" : "") + (cur.manual ? " 手入力" : "");
-      if (prev && prev.v){
-        var d = (cur.v - prev.v) / prev.v * 100;
-        pvSub += " ・ 前月比 " + (d >= 0 ? "+" : "") + d.toFixed(0) + "%";
-        pvCls = d >= 0 ? "is-good" : "is-bad";
-      }
-    }
-    var lq = latestSearchMonth(), qs = lq ? searchStats(lq) : null, qp = lq ? searchStats(addMonths(lq, -1)) : null;
-    var arts = articles(), lastPost = arts.map(function(a){ return a.date; }).sort().pop();
-    var ago = lastPost ? daysBetween(lastPost, todayKey()) : null;
-    var revGoal = +S.state.goals.revenue || 0;
-    var html = '<section class="panel kpi-band">' +
-      kpi("最新月 PV", pvK, pvSub, pvCls, true) +
-      kpi("Google 検索クリック" + (lq ? "（" + shortMonth(lq) + "）" : ""), qs ? fmtN(qs.c) : "—",
-        qs ? "CTR " + fmtPct(qs.ctr) + " ・ 平均 " + qs.pos.toFixed(1) + " 位" +
-          (sourceShares() ? " ・ 流入の " + fmtPct(shareOf(sourceShares().g, "google"), 0) : "") : "CSV 未取り込み",
-        qs && qp ? (qs.c >= qp.c ? "is-good" : "is-bad") : "") +
-      kpi("公開記事", S.posts ? String(arts.length) : "—",
-        lastPost ? "最終投稿 " + ago + " 日前" : (S.postsErr ? "取得失敗" : "WordPress から取得中…"),
-        ago != null && ago >= 30 ? "is-bad" : "") +
-      kpi("今月の収益", fmtYen(revenueIn(curMonth())),
-        revGoal ? "目標 " + fmtYen(revGoal) : "累計 " + fmtYen(sum(S.state.revenue, function(r){ return +r.amount; }))) +
-      '</section>';
-    var list = todos();
-    var todoHtml = list.length
-      ? '<div class="jh-todo">' + list.map(function(x){
-          return '<div class="jh-todo-row lv-' + x.lv + '"><span class="jh-todo-text">' + esc(x.text) + '</span>' +
-            (x.href ? '<a class="jh-btn" href="' + esc(x.href) + '" target="_blank" rel="noopener noreferrer">' + esc(x.btn) + '</a>'
-              : x.act ? btn(x.btn, x.act, x.arg) : "") + '</div>';
-        }).join("") + '</div>'
-      : '<div class="sched-empty">いま自動で出せる改善候補はありません。</div>';
-    html += '<div class="jh-grid2">' + card("やること", todoHtml, { head: '<span class="jh-note">データから自動で出しています</span>' }) + goalsCard() + '</div>';
-    html += sourcesCard();
-    html += monthlyCard();
+    var all = overviewItems(), snoozedN = 0;
+    lastItems = all;
+    var items = all.filter(function(x){
+      if (snoozed(x.id)){ snoozedN++; return false; }
+      return true;
+    });
+    var html = '<div class="jh-answers">' + answerGrow() + answerSource() + answerNext(items[0]) + '</div>';
+    if (S.goalEdit) html += goalsCard();
+    html += dataStrip();
+    html += '<div class="jh-grid2">' + weekCard(items, snoozedN) + trendCard() + '</div>';
+    if (S.showSources) html += sourcesCard();
     return html;
   }
 
