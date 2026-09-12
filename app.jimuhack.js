@@ -404,9 +404,11 @@
   async function repairMisfiledLanding(){
     if (repairDone) return;
     repairDone = true;
+    // 誤保存の行には「(not set)」も混ざる（本物の検索クエリは "/" で始まらない）ので、8割以上が "/" 始まりなら誤保存とみなす。
     var bad = Object.keys(S.queries).filter(function(m){
       var rows = S.queries[m] || [];
-      return rows.length && rows.every(function(r){ return String(r.q).charAt(0) === "/"; });
+      var slash = rows.filter(function(r){ return String(r.q).charAt(0) === "/"; }).length;
+      return rows.length && slash / rows.length >= 0.8;
     }).sort();
     if (!bad.length) return;
     var moved = [], ng = [];
@@ -415,7 +417,8 @@
       setStatus("取り込み違いを修正中… " + (i + 1) + "/" + bad.length);
       try {
         if (!S.landing[m]){
-          var rows = S.queries[m].map(function(r){ return { page: r.q, c: r.c, i: r.i, t: r.t, p: r.p, users: 0, sec: 0 }; });
+          var rows = S.queries[m].filter(function(r){ return String(r.q).charAt(0) === "/" && (r.c > 0 || r.i > 0); })
+            .map(function(r){ return { page: String(r.q).split("?")[0], c: r.c, i: r.i, t: r.t, p: r.p, users: 0, sec: 0 }; });
           await apiFetch("/api/jimuhack/months/landing/" + m, {
             method: "PUT",
             body: JSON.stringify({ rows: rows, range: S.ranges.queries[m] || null })
