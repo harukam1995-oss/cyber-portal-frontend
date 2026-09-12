@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 131;
+  var BUILD_V = 132;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -928,7 +928,7 @@
   // プライベートのクイックアクセス: はるかを選択済みにしてサブ画面を開く
   [["pv-quick-tasks", "tasks"], ["pv-quick-calendar", "calendar"], ["pv-quick-notes", "notes"],
    ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"],
-   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"]].forEach(function(pair){
+   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"], ["pv-quick-jimuhack", "jimuhack"]].forEach(function(pair){
     var b = document.getElementById(pair[0]);
     if (b) b.addEventListener("click", function(){
       if (typeof setDefaultAccount === "function") setDefaultAccount("haruka");
@@ -944,9 +944,6 @@
       showView(pair[1]);
     });
   });
-  // 事務ハック(個人のブログ)は SYSLEA の業務ではないのでアカウントは切り替えない。
-  var bizQuickJimuhack = document.getElementById("biz-quick-jimuhack");
-  if (bizQuickJimuhack) bizQuickJimuhack.addEventListener("click", function(){ showView("jimuhack"); });
 
   /* ================= プライベート画面 (v1a / v1b) =================
      TODAY / WEATHER は共通ロジック(tick / loadWeather)が pv 要素も更新する。

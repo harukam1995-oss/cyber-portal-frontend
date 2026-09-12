@@ -2449,6 +2449,10 @@
       grid-template-columns: repeat(4, 1fr);
       gap: 8px;
     }
+    /* プライベートは「事務ハック」を足して9枚（v2.33.51）。4列だと3行になり枠からはみ出すので5列で2行に保つ。 */
+    html.fixed-aspect #view-private:not([hidden]) .pv-bottom .quick-grid{
+      grid-template-columns: repeat(5, 1fr);
+    }
     html.fixed-aspect #view-private:not([hidden]) .pv-bottom .quick-tile,
     html.fixed-aspect #view-business:not([hidden]) .pv-bottom .quick-tile{
       padding: 10px 6px;
