@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 130;
+  var BUILD_V = 131;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -617,6 +617,7 @@
   var viewSlack = document.getElementById("view-slack");
   var viewFinance = document.getElementById("view-finance");
   var viewSubs = document.getElementById("view-subs");
+  var viewJimuhack = document.getElementById("view-jimuhack");
   var appTopbar = document.getElementById("app-topbar");
 
   /* サブ画面(カレンダー/メール/請求書管理/収支/サブスク/契約書/タスク/メモ/アイデア帳)の
@@ -665,6 +666,7 @@
   var privateInitialized = false;
   var businessInitialized = false;
   var payablesInitialized = false;
+  var jimuhackInitialized = false;
   var contractsPageInitialized = false;
   // showView("contracts") のときに開きたいタブ。モジュールのロードを待ってから
   // __CP.setContractsTab() に渡す(HOME の契約書アラート行 →「アラート」タブ 用)。
@@ -695,6 +697,7 @@
   }
   function loadPayablesModule(){ return loadModuleOnce("app.payables.js", "initPayables"); }
   function loadBusinessModule(){ return loadModuleOnce("app.business.js", "initBusinessCards"); }
+  function loadJimuhackModule(){ return loadModuleOnce("app.jimuhack.js", "initJimuhack"); }
   function bizModuleFail(err){
     ["pv-contracts-status", "pv-events-status", "pv-slack-status", "contracts-page-status", "projects-page-status", "slack-page-status"].forEach(function(id){
       var el = document.getElementById(id);
@@ -750,6 +753,7 @@
     if (viewSlack) viewSlack.hidden = name !== "slack";
     if (viewFinance) viewFinance.hidden = name !== "finance";
     if (viewSubs) viewSubs.hidden = name !== "subs";
+    if (viewJimuhack) viewJimuhack.hidden = name !== "jimuhack";
 
     if (isDash){
       currentDashboard = name;
@@ -843,6 +847,18 @@
       if (!subsPageInitialized){ subsPageInitialized = true; wireSubs(); }
       loadSubs();
     }
+    // 事務ハック(ブログ)は app.jimuhack.js に分離。2回目以降は再描画だけ(WordPress の記事一覧は
+    // モジュール側が10分キャッシュして、古ければ取り直す)。
+    if (name === "jimuhack"){
+      loadJimuhackModule().then(function(){
+        if (!jimuhackInitialized){ jimuhackInitialized = true; window.__CP.initJimuhack(); }
+        else window.__CP.renderJimuhack();
+      }).catch(function(err){
+        var el = document.getElementById("jh-status");
+        if (el) el.textContent = "事務ハックモジュールの読み込みに失敗しました。タブを開き直してください。";
+        console.error("[jimuhack]", err);
+      });
+    }
     if (!opts.fromHistory) syncHash(name, opts.replace);
     window.scrollTo(0, 0);
   }
@@ -860,7 +876,7 @@
   var VIEW_ROUTES = [
     "home", "private", "business",
     "calendar", "mail", "tasks", "notes", "ideas",
-    "payables", "contracts", "projects", "slack", "finance", "subs"
+    "payables", "contracts", "projects", "slack", "finance", "subs", "jimuhack"
   ];
   function routeFromHash(){
     var h = String(location.hash || "").slice(1);
@@ -905,7 +921,7 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back", "jimuhack-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
@@ -928,6 +944,9 @@
       showView(pair[1]);
     });
   });
+  // 事務ハック(個人のブログ)は SYSLEA の業務ではないのでアカウントは切り替えない。
+  var bizQuickJimuhack = document.getElementById("biz-quick-jimuhack");
+  if (bizQuickJimuhack) bizQuickJimuhack.addEventListener("click", function(){ showView("jimuhack"); });
 
   /* ================= プライベート画面 (v1a / v1b) =================
      TODAY / WEATHER は共通ロジック(tick / loadWeather)が pv 要素も更新する。
@@ -6193,11 +6212,13 @@
     try{
       var res = await apiFetch("/api/tasks");
       tasksState = res.tasks || [];
+      tasksLoadOk = true;
       setTasksStatus("ポータルに保存済み");
     } catch(err){
       tasksState = [];
       setTasksStatus(apiErrorMessage(err, "タスク"), "err");
     }
+    tasksLoadDone = true;
     renderTasks();
     // プロジェクト一覧(サイドバー・モーダルのセレクト用)を裏で用意しておく
     ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
@@ -6222,25 +6243,7 @@
     check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l6 6L20 6"/></svg>';
     check.addEventListener("click", function(e){
       e.stopPropagation();
-      if (!task.done && task.repeat && task.repeat !== "none"){
-        // Repeating task: completing it rolls the due date to the next
-        // occurrence instead of leaving it checked off permanently.
-        var base = (task.due && task.due > todayKey) ? task.due : todayKey;
-        var next = nextRepeatDueKey(task, base);
-        if (next){
-          task.due = next;
-          task.done = false;
-        } else {
-          task.done = true;
-        }
-      } else {
-        task.done = !task.done;
-      }
-      // 完了時刻。完了タブの「古い完了」の畳み込み・整理に使う。
-      if (task.done) task.completedAt = Date.now();
-      else delete task.completedAt;
-      renderTasks();
-      scheduleTasksSave();
+      toggleTaskDone(task, todayKey);
     });
 
     var text = document.createElement("span");
@@ -6402,6 +6405,8 @@
   function renderTasks(){
     renderTaskCards(); // ダッシュボードの「最近のタスク」ミニリストも同時に更新
     renderTaskSidebar();
+    // 事務ハック画面の計画リストも同期する(モジュール未ロードなら何もしない)
+    if (window.__CP && typeof window.__CP.onTasksChanged === "function") window.__CP.onTasksChanged();
     var todayKey = jstDateKey(new Date());
 
     // 未完了/完了タブの件数(アカウントタブ通過後)
@@ -6640,6 +6645,61 @@
       '<div class="empty-title">' + (searching ? "該当するタスクはありません" : (taskStatusTab === "done" ? "完了したタスクはまだありません" : "未完了のタスクはありません")) + '</div>' +
       '<div class="empty-sub">' + (searching ? "検索やサイドバーの絞り込みを外すと全件に戻ります。" : "右上の「+ 新規タスク」から追加できます。") + '</div>';
     return wrap;
+  }
+
+  // 完了チェックの共通処理。タスク行のチェックボタンと、事務ハック画面の計画リスト(__CP 経由)で共用。
+  function toggleTaskDone(task, todayKey){
+    if (!task.done && task.repeat && task.repeat !== "none"){
+      // Repeating task: completing it rolls the due date to the next
+      // occurrence instead of leaving it checked off permanently.
+      var base = (task.due && task.due > todayKey) ? task.due : todayKey;
+      var next = nextRepeatDueKey(task, base);
+      if (next){
+        task.due = next;
+        task.done = false;
+      } else {
+        task.done = true;
+      }
+    } else {
+      task.done = !task.done;
+    }
+    // 完了時刻。完了タブの「古い完了」の畳み込み・整理に使う。
+    if (task.done) task.completedAt = Date.now();
+    else delete task.completedAt;
+    renderTasks();
+    scheduleTasksSave();
+  }
+
+  // タスクを本体の外(app.jimuhack.js)から触るための入口。
+  // PUT /api/tasks/bulk は全置換なので、一覧の読み込みが成功する前に1件足して保存すると
+  // 既存タスクが消える。外から作る/触る前に必ずこれで読み込み完了(成功)を待つ。
+  var tasksLoadDone = false;
+  var tasksLoadOk = false;
+  function ensureTasksLoaded(){
+    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
+    return new Promise(function(resolve){
+      var n = 0;
+      (function wait(){
+        if (tasksLoadDone || n++ > 150) return resolve(tasksLoadOk);
+        setTimeout(wait, 100);
+      })();
+    });
+  }
+  // 本文・自由タグ・期限・URL・備考を入れた状態で新規タスクモーダルを開く(保存はユーザーが押す)。
+  function openNewTaskPreset(p){
+    p = p || {};
+    return ensureTasksLoaded().then(function(ok){
+      if (!ok) return false;
+      openNewTask("haruka");
+      taskTitleInput.value = p.text || "";
+      var tg = document.getElementById("task-tags-input");
+      if (tg && p.tags) tg.value = p.tags.join(", ");
+      renderTaskTagChips();
+      if (p.due) taskDueInput.value = p.due;
+      if (p.url) taskUrlInput.value = p.url;
+      if (p.remarks) taskRemarksInput.value = p.remarks;
+      return true;
+    });
   }
 
   function scheduleTasksSave(){
@@ -8849,7 +8909,19 @@
     contractAlertLabels: contractAlertLabels,
     contractAutoAdvanced: contractAutoAdvanced,
     // 「確認済みにする」で INBOX の件数もその場で消すため（再取得を待たない）。
-    refreshHomeContractCounts: applyHomeContractAlerts
+    refreshHomeContractCounts: applyHomeContractAlerts,
+    // 事務ハック(app.jimuhack.js)の計画リスト＝ポータルのタスク(自由タグ「事務ハック」)を使う。
+    ensureTasksLoaded: ensureTasksLoaded,
+    getTasks: function(){ return tasksState; },
+    openNewTaskPreset: openNewTaskPreset,
+    openEditTaskById: function(id){
+      var t = tasksState.filter(function(x){ return x.id === id; })[0];
+      if (t) openEditTask(t);
+    },
+    toggleTaskDoneById: function(id){
+      var t = tasksState.filter(function(x){ return x.id === id; })[0];
+      if (t) toggleTaskDone(t, jstDateKey(new Date()));
+    }
   };
 
 })();

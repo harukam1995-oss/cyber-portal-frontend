@@ -133,3 +133,27 @@ test("showView writes the URL hash (routing not silently dropped)", () => {
   assert.match(appSrc, /addEventListener\("popstate", applyRoute\)/);
   assert.match(appSrc, /addEventListener\("hashchange", applyRoute\)/);
 });
+
+/* ---- ルートと画面・オンデマンドモジュールの整合（v2.33.50 事務ハック追加時） ----
+   VIEW_ROUTES に名前を足して index.html に #view-<name> を置き忘れると、showView() は
+   どの画面も出さない真っ暗な状態になる。loadModuleOnce("app.xxx.js") の実ファイル漏れも見る
+   （SHELL 外なのでスモークテストでは拾えない）。 */
+test("every VIEW_ROUTES entry has a #view-<name> frame in index.html", () => {
+  const routes = JSON.parse(
+    "[" + appSrc.match(/var VIEW_ROUTES = \[([\s\S]*?)\]/)[1].replace(/\s+/g, " ").replace(/,\s*$/, "") + "]"
+  );
+  for (const name of routes){
+    assert.ok(htmlSrc.includes(`id="view-${name}"`), `route "${name}" has no <div id="view-${name}"> in index.html`);
+  }
+});
+
+test("on-demand modules loaded by app.js exist and register their entry point", () => {
+  const loads = [...appSrc.matchAll(/loadModuleOnce\("([^"]+)", "([^"]+)"\)/g)];
+  assert.ok(loads.length >= 3, "expected payables / business / jimuhack module loaders");
+  for (const [, file, key] of loads){
+    let src = "";
+    try { src = readFileSync(dir + "../" + file, "utf8"); } catch (e) {}
+    assert.ok(src, `${file} is loaded by app.js but missing from the repo`);
+    assert.match(src, new RegExp("\\." + key + "\\s*="), `${file} never assigns __CP.${key}`);
+  }
+});

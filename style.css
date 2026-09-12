@@ -3214,3 +3214,170 @@
   .task-item.prio-high.is-cursor > .task-row::before,
   .task-item.prio-mid.is-cursor > .task-row::before,
   .task-item.prio-low.is-cursor > .task-row::before{ left:3px; }
+
+  /* ================= 事務ハック（#view-jimuhack・app.jimuhack.js） =================
+     旧ローカル HTML の紙色・8色チャートは持ち込まず、B/アンバー（アクセント1色＋意味色）で組み直した。
+     KPI は既存の .kpi-band、タブは .pv-contracts-tab、カードは .panel＋.card-head を流用。
+     このブロックを消すと見た目は素の部品に戻る（機能は動く）。 */
+  #view-jimuhack .cal-toolbar{ row-gap:8px; }
+  .jh-wrap{ width:100%; max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:12px; padding-bottom:24px; }
+  .jh-wrap .kpi-band{ margin-bottom:0; }
+  .jh-grid2{ display:grid; grid-template-columns: 1.5fr 1fr; gap:12px; align-items:start; }
+  .jh-grid2 > *{ min-width:0; }
+  .jh-card .card-head h2{ font-size:12px; letter-spacing:1.5px; }
+  .jh-card .card-head{ gap:10px; flex-wrap:wrap; }
+  .jh-note{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); }
+  .jh-head-actions{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .jh-btn{
+    font-family: var(--font-body); font-size:11.5px; padding:4px 10px; border-radius:2px; cursor:pointer; white-space:nowrap;
+    border:1px solid var(--panel-border); background: rgba(255,255,255,0.02); color: var(--text-dim);
+    transition: border-color .15s ease, color .15s ease; text-decoration:none; display:inline-block;
+  }
+  .jh-btn:hover{ border-color: var(--accent); color: var(--text); }
+  .jh-btn.is-primary{ background: var(--accent); border-color: var(--accent); color:#0a0d10; font-weight:600; }
+  .jh-btn.is-primary:hover{ filter:brightness(1.08); color:#0a0d10; }
+  .jh-btn.is-danger:hover{ border-color: var(--err); color: var(--err); }
+  .jh-btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .jh-in{
+    background: rgba(255,255,255,0.04); border:1px solid var(--panel-border); border-radius:2px; color: var(--text);
+    font-family: var(--font-body); font-size:12px; padding:5px 8px; color-scheme: dark; min-width:0;
+  }
+  .jh-in:focus{ outline:none; border-color: var(--accent); }
+  .jh-in.is-num{ font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  select.jh-in option{ background: var(--panel-solid); color: var(--text); }
+  textarea.jh-in{ width:100%; min-height:64px; resize:vertical; line-height:1.6; }
+  .jh-form{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .jh-form .jh-grow{ flex:1 1 180px; }
+
+  /* 絞り込みチップ */
+  .jh-toolrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .jh-chips{ display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+  .jh-chip{
+    font-family: var(--font-mono); font-size:10.5px; letter-spacing:.2px; padding:3px 9px; cursor:pointer;
+    border:1px solid var(--hairline); border-radius:2px; background:transparent; color: var(--text-faint);
+  }
+  .jh-chip:hover{ color: var(--text); border-color: var(--panel-border); }
+  .jh-chip.is-on{ color: var(--accent); border-color: var(--accent-dim); background: rgba(255,143,63,0.08); }
+  .jh-chip .n{ opacity:.7; margin-left:4px; }
+  .jh-summary{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+  /* 表 */
+  .jh-table-wrap{ overflow:auto; max-height:600px; border-top:1px solid var(--hairline); }
+  .jh-table{ width:100%; border-collapse:collapse; font-size:12px; }
+  .jh-table th{
+    position:sticky; top:0; z-index:1; background: var(--panel-solid); text-align:left; white-space:nowrap;
+    font-family: var(--font-mono); font-size:9.5px; letter-spacing:1px; font-weight:500; color: var(--text-faint);
+    padding:7px 8px; border-bottom:1px solid var(--panel-border);
+  }
+  .jh-table th[data-act]{ cursor:pointer; user-select:none; }
+  .jh-table th[data-act]:hover{ color: var(--text); }
+  .jh-table th.is-sorted{ color: var(--accent); }
+  .jh-table td{ padding:6px 8px; border-bottom:1px solid var(--hairline); color: var(--text); vertical-align:middle; }
+  .jh-table td.num, .jh-table th.num{ text-align:right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .jh-table tr.is-row{ cursor:pointer; }
+  .jh-table tr.is-row:hover td{ background: rgba(255,255,255,0.025); }
+  .jh-table tr.is-open td{ background: rgba(255,143,63,0.05); }
+  .jh-table td.jh-detail{ background: rgba(255,255,255,0.015); padding:12px 14px; cursor:default; }
+  .jh-cell-title{ display:block; max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jh-cell-sub{ display:block; font-family: var(--font-mono); font-size:10px; color: var(--text-faint); margin-top:2px; }
+  .jh-faint{ color: var(--text-faint); }
+  .jh-ok{ color: var(--ok); }
+  .jh-warn{ color: var(--warn); }
+  .jh-err{ color: var(--err); }
+  .jh-accent{ color: var(--accent); }
+  .jh-more{ margin:10px auto 0; display:block; }
+  .jh-link{ color: var(--accent); text-decoration:none; }
+  .jh-link:hover{ text-decoration:underline; }
+
+  /* 順位バッジ（3位以内=ok / 10位以内=アクセント / それ以下=控えめ）とスパークライン */
+  .jh-rank{
+    display:inline-block; min-width:38px; text-align:center; font-family: var(--font-mono); font-size:10.5px;
+    padding:1px 5px; border-radius:2px; border:1px solid var(--hairline); color: var(--text-faint);
+  }
+  .jh-rank.is-top{ color: var(--ok); border-color: rgba(94,201,138,.35); }
+  .jh-rank.is-mid{ color: var(--accent); border-color: var(--accent-dim); }
+  .jh-spark{ width:64px; height:18px; color: var(--accent); display:block; }
+  .jh-spark-none{ color: var(--text-faint); font-family: var(--font-mono); font-size:10px; }
+  .jh-tag{
+    font-family: var(--font-mono); font-size:9.5px; padding:1px 6px; border-radius:2px;
+    border:1px solid var(--hairline); color: var(--text-dim); white-space:nowrap;
+  }
+  .jh-tag.is-accent{ color: var(--accent); border-color: var(--accent-dim); }
+  .jh-tag.is-warn{ color: var(--warn); border-color: rgba(216,194,74,.35); }
+  .jh-tag.is-ok{ color: var(--ok); border-color: rgba(94,201,138,.35); }
+
+  /* やること（データから自動で出す改善候補） */
+  .jh-todo{ display:flex; flex-direction:column; }
+  .jh-todo-row{ display:flex; align-items:center; gap:10px; padding:8px 10px 8px 14px; border-bottom:1px solid var(--hairline); position:relative; }
+  .jh-todo-row:last-child{ border-bottom:none; }
+  .jh-todo-row::before{ content:""; position:absolute; left:0; top:7px; bottom:7px; width:2px; background: var(--accent); }
+  .jh-todo-row.lv-warn::before{ background: var(--warn); }
+  .jh-todo-row.lv-err::before{ background: var(--err); }
+  .jh-todo-text{ flex:1; min-width:0; font-size:12.5px; line-height:1.55; }
+  .jh-notice{ padding:10px 14px; font-size:12px; line-height:1.6; color: var(--text-dim); }
+  .jh-notice.is-err{ color: var(--err); }
+  .jh-notice ul{ margin:4px 0 0; padding-left:18px; }
+
+  /* 月次の棒（値は棒の上に mono。色はアクセント1色、手入力の月と途中月は薄く） */
+  .jh-bars-title{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); margin:6px 0 2px; }
+  .jh-bars{ display:flex; align-items:flex-end; gap:6px; height:128px; padding:4px 2px 0; }
+  .jh-bars.is-short{ height:92px; }
+  .jh-bar-col{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; }
+  .jh-bar-val{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .jh-bar-track{ flex:1; width:100%; max-width:34px; display:flex; align-items:flex-end; }
+  .jh-bar{ width:100%; background: var(--accent); border-radius:1px 1px 0 0; }
+  .jh-bar.is-manual{ background: var(--accent-dim); }
+  .jh-bar.is-partial{ opacity:.55; }
+  .jh-bar.is-sub{ background: var(--text-dim); }
+  .jh-bar-lbl{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); }
+  .jh-legend{ font-size:10.5px; color: var(--text-faint); margin-top:6px; }
+
+  /* 目標のセグメント進捗（デザイン方針の「セグメント進捗」を事務ハックではここで1回だけ使う） */
+  .jh-goal{ padding:8px 0; border-bottom:1px solid var(--hairline); }
+  .jh-goal:last-child{ border-bottom:none; }
+  .jh-goal-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; }
+  .jh-goal-val{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .jh-seg{ display:grid; grid-template-columns: repeat(10, 1fr); gap:2px; margin-top:6px; }
+  .jh-seg i{ height:5px; background: rgba(255,255,255,0.06); }
+  .jh-seg i.on{ background: var(--accent); }
+  .jh-seg.is-done i.on{ background: var(--ok); }
+
+  /* 計画（ポータルのタスク）・ネタ帳・収益化ステータス */
+  .jh-plan-group{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); padding:12px 0 4px; }
+  .jh-plan-group.is-warn{ color: var(--err); }
+  .jh-task{ display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid var(--hairline); }
+  .jh-task-check{
+    width:16px; height:16px; flex:none; padding:0; cursor:pointer; border:1px solid var(--panel-border); border-radius:2px;
+    background:transparent; color: var(--ok); font-size:11px; line-height:1; display:flex; align-items:center; justify-content:center;
+  }
+  .jh-task-check.is-done{ background: rgba(94,201,138,0.15); border-color: var(--ok); }
+  .jh-task-text{ flex:1; min-width:0; font-size:12.5px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jh-task-text:hover{ color: var(--accent); }
+  .jh-task.is-done .jh-task-text{ color: var(--text-faint); text-decoration:line-through; }
+  .jh-task-due{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); white-space:nowrap; }
+  .jh-task-due.is-over{ color: var(--err); }
+  .jh-idea{ display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--hairline); }
+  .jh-idea-title{ flex:1; min-width:0; font-size:12.5px; }
+  .jh-idea.is-done .jh-idea-title{ color: var(--text-faint); text-decoration:line-through; }
+  /* 右列（1fr）は 350px 前後まで細くなるので、名前とメモは1行を占有させ、状態と日付を2列で並べる */
+  .jh-status-row{ display:grid; grid-template-columns: 1fr 1fr; gap:6px; align-items:center; padding:8px 0; border-bottom:1px solid var(--hairline); }
+  .jh-status-row:last-child{ border-bottom:none; }
+  .jh-status-name{ font-size:12px; grid-column: 1 / -1; }
+  .jh-status-row input[type="text"]{ grid-column: 1 / -1; }
+  .jh-detail-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+  .jh-mini-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  .jh-mini-table td, .jh-mini-table th{
+    padding:3px 6px; border-bottom:1px solid var(--hairline); text-align:right;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  }
+  .jh-mini-table th{ font-size:9.5px; color: var(--text-faint); font-weight:500; }
+  .jh-mini-table td:first-child, .jh-mini-table th:first-child{ text-align:left; }
+  .jh-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+  .jh-sublabel{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); margin-bottom:6px; }
+
+  @media (max-width: 900px){
+    .jh-grid2, .jh-detail-grid{ grid-template-columns: 1fr; }
+    .jh-wrap .kpi-band{ grid-template-columns: 1fr 1fr; row-gap:12px; }
+    .jh-status-row{ grid-template-columns: 1fr 1fr; }
+    .jh-cell-title{ max-width:220px; }
+  }
