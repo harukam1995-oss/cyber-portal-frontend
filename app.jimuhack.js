@@ -339,6 +339,11 @@
       if (fm) month = fm[1] + "-" + fm[2];
     }
     if (!month) return { error: "年月が分かりません（CSV の開始日かファイル名に YYYYMM が必要）" };
+    // 開始日と終了日が別の月（例: 2025/01/01〜2026/09/12 の通算）を1か月分として保存すると、その月のデータが
+    // 通算値で上書きされる。月ごとに書き出したものだけ受け付ける。
+    if (sm && em && (sm[1] + sm[2]) !== (em[1] + em[2])){
+      return { error: "複数の月をまとめた CSV です（" + sm[1] + "/" + sm[2] + "/" + sm[3] + "〜" + em[1] + "/" + em[2] + "/" + em[3] + "）。GA4 で期間を1か月ずつにして書き出してください" };
+    }
     var range = { start: sm ? sm[1] + "-" + sm[2] + "-" + sm[3] : "", end: em ? em[1] + "-" + em[2] + "-" + em[3] : "" };
     var col = function(re, fallback){
       for (var i = 1; i < hdr.length; i++) if (re.test(hdr[i])) return i;
