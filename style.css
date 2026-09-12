@@ -3385,3 +3385,12 @@
     .jh-status-row{ grid-template-columns: 1fr 1fr; }
     .jh-cell-title{ max-width:220px; }
   }
+  /* 流入元の割合（横棒。いちばん多い1本だけアクセント、残りは控えめ） */
+  .jh-share{ display:grid; grid-template-columns: 180px 1fr 130px; gap:10px; align-items:center; padding:5px 0; font-size:12px; }
+  .jh-share-track{ height:8px; background: rgba(255,255,255,0.05); border-radius:1px; overflow:hidden; }
+  .jh-share-bar{ display:block; height:100%; background: var(--accent); }
+  .jh-share-bar.is-sub{ background: var(--text-dim); opacity:.55; }
+  .jh-share-val{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  @media (max-width: 900px){
+    .jh-share{ grid-template-columns: 110px 1fr 96px; }
+  }
