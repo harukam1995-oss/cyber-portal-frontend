@@ -76,7 +76,8 @@
     state: defaultState(),
     pages: {},
     queries: {},
-    ranges: { pages: {}, queries: {} },
+    landing: {},   // GA4「Google オーガニック検索レポート: ランディング ページ」CSV（ページ別の検索クリック・表示・順位）
+    ranges: { pages: {}, queries: {}, landing: {} },
     dataVer: 0,
     posts: null,
     postsAt: 0,
@@ -140,9 +141,22 @@
     rows.forEach(function(r){ c += r.c; i += r.i; pw += r.p * r.i; });
     return { c: c, i: i, ctr: i ? c / i * 100 : 0, pos: i ? pw / i : 0, n: rows.length };
   }
+  // ランディングページ CSV の月合計。クエリの匿名化で消える分も入るので、検索クリックの総数はこちらが正確
+  // （例: 2026/06 はクエリ CSV の合計 313 に対しランディングページ合計 1,064）。
+  function landingStats(m){
+    var rows = S.landing[m];
+    if (!rows) return null;
+    var c = 0, i = 0, pw = 0;
+    rows.forEach(function(r){ c += r.c; i += r.i; pw += r.p * r.i; });
+    return { c: c, i: i, ctr: i ? c / i * 100 : 0, pos: i ? pw / i : 0, n: rows.length, src: "landing" };
+  }
+  function searchStats(m){ return landingStats(m) || qStats(m); }
+  function latestSearchMonth(){ return [latest(S.landing), latest(S.queries)].filter(Boolean).sort().pop() || null; }
+  function searchPartialEnd(m){ return S.landing[m] ? partialEnd("landing", m) : partialEnd("queries", m); }
+
   function allMonths(){
     var set = {};
-    [S.pages, S.queries, S.state.manualPV || {}].forEach(function(o){ Object.keys(o).forEach(function(m){ set[m] = 1; }); });
+    [S.pages, S.queries, S.landing, S.state.manualPV || {}].forEach(function(o){ Object.keys(o).forEach(function(m){ set[m] = 1; }); });
     return Object.keys(set).sort();
   }
   // CSV の終了日が月末より前（例: 4/29 にエクスポート）なら途中までのデータ
@@ -180,7 +194,8 @@
       var res = await apiFetch("/api/jimuhack");
       S.pages = res.pages || {};
       S.queries = res.queries || {};
-      S.ranges = res.ranges || { pages: {}, queries: {} };
+      S.landing = res.landing || {};
+      S.ranges = Object.assign({ pages: {}, queries: {}, landing: {} }, res.ranges || {});
       S.state = mergeState(res.state);
       S.loaded = true;
       S.loadErr = null;
@@ -190,6 +205,7 @@
       S.loadErr = apiErrorMessage(err, "事務ハック");
       setStatus(S.loadErr, "err");
     }
+    if (S.loaded) await repairMisfiledLanding();
     render();
   }
 
@@ -329,6 +345,37 @@
       return fallback;
     };
     var rows = data.slice(1).map(splitCsvLine);
+    // 「ランディング ページ + クエリ文字列」は見出しに「クエリ」も「ページ」も含むので、必ず先に判定する
+    // （v2.33.52 まではここが無く、検索クエリとして保存してしまっていた）。
+    // ?nstoken= などクエリ文字列付きの URL は同じページに合算し、(not set) や空の行は捨てる。
+    if (/ランディング|landing/i.test(hdr[0])){
+      var lc = col(/クリック数|clicks/i, 1), li = col(/表示回数|impressions/i, 2), lp = col(/掲載順位|position/i, 4);
+      var lu = col(/^(アクティブ ユーザー|active users)$/i, 5), ls = col(/平均エンゲージメント時間|engagement time/i, 8);
+      var agg = {};
+      rows.forEach(function(r){
+        var page = String(r[0] || "").split("?")[0].split("#")[0];
+        if (page.charAt(0) !== "/") return;
+        var a = agg[page] || (agg[page] = { page: page, c: 0, i: 0, pw: 0, users: 0, sw: 0 });
+        var c = +r[lc] || 0, im = +r[li] || 0, u = +r[lu] || 0;
+        a.c += c;
+        a.i += im;
+        a.pw += (+r[lp] || 0) * im;
+        a.users += u;
+        a.sw += (+r[ls] || 0) * u;
+      });
+      return {
+        kind: "landing", month: month, range: range,
+        rows: Object.keys(agg).map(function(k){
+          var a = agg[k];
+          return {
+            page: a.page, c: a.c, i: a.i,
+            t: a.i ? Math.round(a.c / a.i * 10000) / 100 : 0,
+            p: a.i ? Math.round(a.pw / a.i * 100) / 100 : 0,
+            users: a.users, sec: a.users ? Math.round(a.sw / a.users * 10) / 10 : 0
+          };
+        }).filter(function(r){ return r.c > 0 || r.i > 0; }).sort(function(x, y){ return y.c - x.c || y.i - x.i; })
+      };
+    }
     if (/クエリ|query/i.test(hdr[0])){
       var ci = col(/クリック数|clicks/i, 1), ii = col(/表示回数|impressions/i, 2), ti = col(/クリック率|ctr/i, 3), pi = col(/掲載順位|position/i, 4);
       return {
@@ -350,6 +397,50 @@
     return { error: "対応していない CSV です（ページとスクリーン / オーガニック検索クエリのみ）" };
   }
 
+  // v2.33.52 までは「ランディング ページ + クエリ文字列」CSV を見出しの「クエリ」で検索クエリと誤判定して保存していた。
+  // 行がすべて "/" で始まる検索クエリの月はそれとみなし、ランディングページの月へ移す（同じ月が既にあれば消すだけ）。
+  // 1回のロードで1度だけ。移した後は本物の検索クエリ CSV を取り込み直してもらう。
+  var repairDone = false;
+  async function repairMisfiledLanding(){
+    if (repairDone) return;
+    repairDone = true;
+    var bad = Object.keys(S.queries).filter(function(m){
+      var rows = S.queries[m] || [];
+      return rows.length && rows.every(function(r){ return String(r.q).charAt(0) === "/"; });
+    }).sort();
+    if (!bad.length) return;
+    var moved = [], ng = [];
+    for (var i = 0; i < bad.length; i++){
+      var m = bad[i];
+      setStatus("取り込み違いを修正中… " + (i + 1) + "/" + bad.length);
+      try {
+        if (!S.landing[m]){
+          var rows = S.queries[m].map(function(r){ return { page: r.q, c: r.c, i: r.i, t: r.t, p: r.p, users: 0, sec: 0 }; });
+          await apiFetch("/api/jimuhack/months/landing/" + m, {
+            method: "PUT",
+            body: JSON.stringify({ rows: rows, range: S.ranges.queries[m] || null })
+          });
+          S.landing[m] = rows;
+          S.ranges.landing[m] = S.ranges.queries[m] || null;
+        }
+        await apiFetch("/api/jimuhack/months/queries/" + m, { method: "DELETE" });
+        delete S.queries[m];
+        delete S.ranges.queries[m];
+        moved.push(monthLabel(m));
+      } catch (err){
+        ng.push(monthLabel(m) + "：" + apiErrorMessage(err, "修正"));
+      }
+    }
+    S.dataVer++;
+    S.importLog = {
+      title: "取り込み違いの自動修正",
+      ok: moved.length ? ["検索クエリとして入っていたランディングページ CSV を「ランディングページ」に移しました：" + moved.join("・")] : [],
+      ng: ng, skip: [],
+      note: "検索クエリの CSV（CSVバックアップ/クエリ）をもう一度取り込んでください。ランディングページ CSV も取り込み直すと、ページ別のユーザー数・滞在時間まで入ります。"
+    };
+    setStatus(ng.length ? "修正 " + moved.length + "件 ・ 失敗 " + ng.length + "件" : "取り込み違いを修正しました", ng.length ? "err" : "");
+  }
+
   async function importFiles(fileList){
     var files = Array.prototype.filter.call(fileList || [], function(f){ return /\.csv$/i.test(f.name); });
     if (!files.length){ setStatus("CSV ファイルが見つかりません", "err"); return; }
@@ -369,7 +460,7 @@
         });
         S[parsed.kind][parsed.month] = parsed.rows;
         S.ranges[parsed.kind][parsed.month] = parsed.range;
-        ok.push((parsed.kind === "pages" ? "ページ " : "検索クエリ ") + monthLabel(parsed.month) + "（" + parsed.rows.length + "行）");
+        ok.push(({ pages: "ページ ", queries: "検索クエリ ", landing: "ランディングページ " })[parsed.kind] + monthLabel(parsed.month) + "（" + parsed.rows.length + "行）");
       } catch (err){
         ng.push(f.name + "：" + apiErrorMessage(err, "保存"));
       }
@@ -505,12 +596,13 @@
   function importNoticeHtml(){
     var L = S.importLog;
     return '<section class="panel jh-notice' + (L.ng.length ? " is-err" : "") + '">' +
-      '<div class="jh-toolrow"><span>CSV 取り込み：成功 ' + L.ok.length + ' 件' + (L.ng.length ? ' ・ 失敗 ' + L.ng.length + ' 件' : '') +
+      '<div class="jh-toolrow"><span>' + esc(L.title || "CSV 取り込み") + '：成功 ' + L.ok.length + ' 件' + (L.ng.length ? ' ・ 失敗 ' + L.ng.length + ' 件' : '') +
       ((L.skip || []).length ? ' ・ データなしでスキップ ' + L.skip.length + ' 件' : '') + '</span>' +
       btn("閉じる", "import-dismiss") + '</div><ul>' +
       L.ok.map(function(s){ return '<li>' + esc(s) + '</li>'; }).join("") +
       (L.skip || []).map(function(s){ return '<li class="jh-faint">データなし：' + esc(s) + '</li>'; }).join("") +
-      L.ng.map(function(s){ return '<li class="jh-err">' + esc(s) + '</li>'; }).join("") + '</ul></section>';
+      L.ng.map(function(s){ return '<li class="jh-err">' + esc(s) + '</li>'; }).join("") + '</ul>' +
+      (L.note ? '<p class="jh-legend">' + esc(L.note) + '</p>' : '') + '</section>';
   }
 
   function goTab(tab, patch){
@@ -602,6 +694,9 @@
   ACTIONS["goto-queries"] = function(arg){
     goTab("queries", function(){ S.q.filter = arg || "all"; S.q.month = latest(S.queries) || "all"; S.q.search = ""; });
   };
+  ACTIONS["goto-pages"] = function(m){
+    goTab("pages", function(){ S.p.month = m || ""; S.p.sort = "si"; S.p.dir = -1; S.p.limit = 200; });
+  };
   ACTIONS["sort"] = function(arg){
     var p = String(arg).split(":"), st = S[p[0]];
     if (!st) return;
@@ -658,6 +753,19 @@
         list.push({ lv: "accent", text: monthLabel(lq) + "：表示100回以上で CTR 1% 未満のクエリ " + low + " 件", act: "goto-queries", arg: "lowctr", btn: "見る" });
       }
     }
+    var ll = latest(S.landing);
+    if (ll){
+      var weak = S.landing[ll].filter(function(r){ return r.i >= 500 && r.t < 1.5; });
+      if (weak.length){
+        var worst = weak.slice().sort(function(a, b){ return b.i - a.i; })[0], wp = postByPath(worst.page);
+        list.push({
+          lv: "accent",
+          text: monthLabel(ll) + "：検索で500回以上表示されているのに CTR 1.5% 未満の記事 " + weak.length + " 本（最大：" +
+            (wp ? wp.title : worst.page) + " ・ 表示 " + fmtN(worst.i) + " ・ CTR " + fmtPct(worst.t) + "）",
+          act: "goto-pages", arg: ll, btn: "ページで見る"
+        });
+      }
+    }
     var over = planTasks().filter(function(x){ return !x.done && x.due && x.due < t; }).length;
     if (over) list.push({ lv: "err", text: "事務ハックのタスクが " + over + " 件 期限切れ", act: "tab", arg: "plan", btn: "計画" });
     return list;
@@ -665,7 +773,7 @@
 
   var GOALS = [
     { k: "pv", label: "月間PV（最新月）", unit: "PV", cur: function(){ var ms = allMonths().filter(monthPV); return ms.length ? monthPV(ms[ms.length - 1]).v : 0; } },
-    { k: "clicks", label: "検索クリック（最新月）", unit: "件", cur: function(){ var m = latest(S.queries); return m ? qStats(m).c : 0; } },
+    { k: "clicks", label: "検索クリック（最新月）", unit: "件", cur: function(){ var m = latestSearchMonth(); return m ? searchStats(m).c : 0; } },
     { k: "posts", label: "今月の新規記事", unit: "本", cur: function(){ var cm = curMonth(); return articles().filter(function(a){ return a.date.indexOf(cm) === 0; }).length; } },
     { k: "revenue", label: "今月の収益", unit: "円", cur: function(){ return revenueIn(curMonth()); } }
   ];
@@ -711,23 +819,23 @@
     var show = ms.slice(-12);
     var pvs = show.map(function(m){ var x = monthPV(m); return x ? x.v : null; });
     var pvMarks = show.map(function(m){ var x = monthPV(m); return !x ? "" : x.manual ? "is-manual" : partialEnd("pages", m) ? "is-partial" : ""; });
-    var cls = show.map(function(m){ var s = qStats(m); return s ? s.c : null; });
-    var clMarks = show.map(function(m){ return partialEnd("queries", m) ? "is-partial" : ""; });
+    var cls = show.map(function(m){ var s = searchStats(m); return s ? s.c : null; });
+    var clMarks = show.map(function(m){ return searchPartialEnd(m) ? "is-partial" : ""; });
     var chart = '<div class="jh-bars-title">PV</div>' + bars(show, pvs, fmtK, pvMarks) +
       '<div class="jh-bars-title">検索クリック</div>' + bars(show, cls, fmtK, clMarks, true) +
-      '<p class="jh-legend">薄い棒＝手入力の月 / 月の途中までの CSV。平均順位は表示回数で重み付けした平均。</p>';
+      '<p class="jh-legend">薄い棒＝手入力の月 / 月の途中までの CSV。検索クリック・表示・CTR・順位は、ランディングページ CSV がある月はその合計（クエリの匿名化で消える分も含む）、無い月は検索クエリ CSV の合計。平均順位は表示回数で重み付けした平均。</p>';
     var rows = ms.slice().reverse().map(function(m){
-      var pv = monthPV(m), s = qStats(m), pe = partialEnd("pages", m) || partialEnd("queries", m);
+      var pv = monthPV(m), s = searchStats(m), pe = partialEnd("pages", m) || searchPartialEnd(m);
       return '<tr><td>' + monthLabel(m) + (pe ? ' <span class="jh-faint">〜' + pe + '日</span>' : '') + '</td>' +
         '<td class="num">' + (pv ? fmtN(pv.v) + (pv.manual ? ' <span class="jh-faint">手入力</span> ' + btn("✕", "mpv-del", m, "is-danger") : '') : '—') + '</td>' +
         '<td class="num">' + (s ? fmtN(s.c) : '—') + '</td>' +
         '<td class="num">' + (s ? fmtN(s.i) : '—') + '</td>' +
         '<td class="num">' + (s ? fmtPct(s.ctr, 2) : '—') + '</td>' +
         '<td class="num">' + (s ? s.pos.toFixed(1) : '—') + '</td>' +
-        '<td class="num jh-faint">' + (S.pages[m] ? S.pages[m].length : '—') + ' / ' + (S.queries[m] ? S.queries[m].length : '—') + '</td></tr>';
+        '<td class="num jh-faint">' + (S.pages[m] ? S.pages[m].length : '—') + ' / ' + (S.queries[m] ? S.queries[m].length : '—') + ' / ' + (S.landing[m] ? S.landing[m].length : '—') + '</td></tr>';
     }).join("");
     var table = '<div class="jh-table-wrap" style="max-height:320px;margin-top:12px"><table class="jh-table"><thead><tr>' +
-      '<th>月</th><th class="num">PV</th><th class="num">検索クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th><th class="num">行数 ページ/クエリ</th>' +
+      '<th>月</th><th class="num">PV</th><th class="num">検索クリック</th><th class="num">表示</th><th class="num">CTR</th><th class="num">平均順位</th><th class="num">行数 ページ/クエリ/LP</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     var form = '<div class="jh-form" style="margin-top:10px"><span class="jh-faint">CSV が無い月の PV を手入力：</span>' +
       '<input type="month" class="jh-in is-num" data-keep="jh-mpv-m">' +
@@ -759,7 +867,7 @@
         pvCls = d >= 0 ? "is-good" : "is-bad";
       }
     }
-    var lq = latest(S.queries), qs = lq ? qStats(lq) : null, qp = lq ? qStats(addMonths(lq, -1)) : null;
+    var lq = latestSearchMonth(), qs = lq ? searchStats(lq) : null, qp = lq ? searchStats(addMonths(lq, -1)) : null;
     var arts = articles(), lastPost = arts.map(function(a){ return a.date; }).sort().pop();
     var ago = lastPost ? daysBetween(lastPost, todayKey()) : null;
     var revGoal = +S.state.goals.revenue || 0;
@@ -792,6 +900,7 @@
     { k: "stale", label: "180日以上未更新", test: function(a){ return a.age >= 180; } },
     { k: "noimg", label: "本文画像なし", test: function(a){ return a.imgs === 0; } },
     { k: "short", label: "2,000字未満", test: function(a){ return a.chars < 2000; } },
+    { k: "lowctr", label: "検索表示多・CTR低", test: function(a){ return a.si >= 500 && a.sctr < 1.5; } },
     { k: "prio", label: "優先度あり", test: function(a){ return !!a.meta.pri; } }
   ];
   var PRI_LABEL = { high: "高", mid: "中", low: "低" };
@@ -804,11 +913,27 @@
   function words(s){ return String(s || "").trim().toLowerCase().split(/\s+/).filter(Boolean); }
 
   function articleRows(){
-    var t = todayKey(), lm = latest(S.pages), pvMap = {};
+    var t = todayKey(), lm = latest(S.pages), pvMap = {}, ll = latest(S.landing), lpMap = {};
     if (lm) S.pages[lm].forEach(function(r){ pvMap[r.page] = (pvMap[r.page] || 0) + r.pv; });
+    if (ll) S.landing[ll].forEach(function(r){ lpMap[r.page] = r; });
     return articles().map(function(a){
-      return Object.assign({}, a, { age: daysBetween(a.modified, t), pv: pvMap[a.path] || 0, meta: S.state.articleMeta[a.slug] || {} });
+      var lp = lpMap[a.path];
+      return Object.assign({}, a, {
+        age: daysBetween(a.modified, t), pv: pvMap[a.path] || 0,
+        sc: lp ? lp.c : 0, si: lp ? lp.i : 0, sctr: lp ? lp.t : 0,
+        meta: S.state.articleMeta[a.slug] || {}
+      });
     });
+  }
+  // 記事の詳細に出す、その記事の Google 検索実績（ランディングページ CSV の直近6か月）
+  function landingTrendHtml(a){
+    var rows = Object.keys(S.landing).sort().slice(-6).map(function(m){
+      var r = (S.landing[m] || []).filter(function(x){ return x.page === a.path; })[0];
+      return r ? '<tr><td>' + monthLabel(m) + '</td><td>' + fmtN(r.c) + '</td><td>' + fmtN(r.i) + '</td><td>' + fmtPct(r.t) + '</td><td>' + r.p.toFixed(1) + '</td></tr>' : "";
+    }).reverse().join("");
+    if (!rows) return "";
+    return '<div class="jh-sublabel" style="margin-top:12px">この記事の Google 検索（ランディングページ）</div>' +
+      '<table class="jh-mini-table"><thead><tr><th>月</th><th>クリック</th><th>表示</th><th>CTR</th><th>順位</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
   // タイトルに、クエリの語（2文字以上）がすべて含まれる検索クエリ。最新月のみ。
   function relatedQueries(a){
@@ -854,6 +979,7 @@
           qs.map(function(q){ return '<tr><td>' + esc(q.q) + '</td><td>' + q.p.toFixed(1) + '</td><td>' + fmtN(q.i) + '</td><td>' + fmtN(q.c) + '</td></tr>'; }).join("") +
           '</tbody></table>'
         : '<div class="jh-faint">タイトルの語と一致するクエリはありません</div>') +
+      landingTrendHtml(a) +
       '</div></div>';
   }
 
@@ -862,7 +988,7 @@
       if (S.postsErr) return card("記事", '<div class="jh-toolrow"><span class="jh-err">' + esc(S.postsErr) + '</span>' + btn("再取得", "posts-reload") + '</div>');
       return card("記事", '<div class="sched-empty">WordPress から記事一覧を取得中…</div>');
     }
-    var all = articleRows(), st = S.a, lm = latest(S.pages);
+    var all = articleRows(), st = S.a, lm = latest(S.pages), ll = latest(S.landing);
     var f = ART_FILTERS.filter(function(x){ return x.k === st.filter; })[0] || ART_FILTERS[0];
     var ws = words(st.search);
     var rows = all.filter(f.test).filter(function(a){
@@ -873,7 +999,7 @@
     rows = sortRows(rows, st, {
       date: function(a){ return a.date; }, title: function(a){ return a.title; }, modified: function(a){ return a.modified; },
       chars: function(a){ return a.chars; }, imgs: function(a){ return a.imgs; }, cta: function(a){ return a.cta ? 1 : 0; },
-      pv: function(a){ return a.pv; }, pri: function(a){ return PRI_RANK[a.meta.pri] || 0; }
+      pv: function(a){ return a.pv; }, sc: function(a){ return a.sc; }, pri: function(a){ return PRI_RANK[a.meta.pri] || 0; }
     });
     var avg = all.length ? Math.round(sum(all, function(a){ return a.chars; }) / all.length) : 0;
     var summary = all.length + " 本 ・ 平均 " + fmtN(avg) + " 字 ・ 導線あり " + all.filter(function(a){ return a.cta; }).length +
@@ -893,14 +1019,16 @@
         '<td class="num">' + a.imgs + '</td>' +
         '<td class="num">' + (a.cta ? '<span class="jh-ok">✓</span>' : '<span class="jh-faint">—</span>') + '</td>' +
         '<td class="num">' + (lm ? fmtN(a.pv) : "—") + '</td>' +
+        '<td class="num' + (a.si >= 500 && a.sctr < 1.5 ? " jh-warn" : "") + '" title="' + (ll ? esc("表示 " + fmtN(a.si) + " ・ CTR " + fmtPct(a.sctr)) : "") + '">' + (ll ? fmtN(a.sc) : "—") + '</td>' +
         '<td class="num">' + (a.meta.pri ? '<span class="jh-tag' + (a.meta.pri === "high" ? " is-warn" : " is-accent") + '">' + PRI_LABEL[a.meta.pri] + '</span>' : "") + '</td></tr>';
-      if (open) tr += '<tr><td colspan="8" class="jh-detail">' + articleDetail(a) + '</td></tr>';
+      if (open) tr += '<tr><td colspan="9" class="jh-detail">' + articleDetail(a) + '</td></tr>';
       return tr;
     }).join("");
     var table = '<div class="jh-table-wrap"><table class="jh-table"><thead><tr>' +
       th("公開", "a", "date", true) + th("タイトル", "a", "title") + th("更新", "a", "modified", true) + th("文字数", "a", "chars", true) +
-      th("画像", "a", "imgs", true) + th("導線", "a", "cta", true) + th("PV" + (lm ? "（" + shortMonth(lm) + "）" : ""), "a", "pv", true) + th("優先", "a", "pri", true) +
-      '</tr></thead><tbody>' + (body || '<tr><td colspan="8" class="jh-faint">該当する記事はありません</td></tr>') + '</tbody></table></div>';
+      th("画像", "a", "imgs", true) + th("導線", "a", "cta", true) + th("PV" + (lm ? "（" + shortMonth(lm) + "）" : ""), "a", "pv", true) +
+      th("検索" + (ll ? "（" + shortMonth(ll) + "）" : ""), "a", "sc", true) + th("優先", "a", "pri", true) +
+      '</tr></thead><tbody>' + (body || '<tr><td colspan="9" class="jh-faint">該当する記事はありません</td></tr>') + '</tbody></table></div>';
     return card("記事", tool + '<p class="jh-summary">' + esc(summary) + '</p>' + table,
       { head: '<span class="jh-note">WordPress から自動取得（お知らせカテゴリは除く）。行を押すとメモ・関連クエリ</span>' }) + changesCard(all);
   }
@@ -1135,53 +1263,97 @@
     var d = cur - prev, pct = Math.round(d / prev * 100);
     return '<span class="' + (d >= 0 ? "jh-ok" : "jh-err") + '">' + (d >= 0 ? "+" : "") + fmtN(d) + '（' + (d >= 0 ? "+" : "") + pct + '%）</span>';
   }
+  // ページ別。「ページとスクリーン」（PV・ユーザー・滞在）と「ランディングページ」（Google 検索のクリック・表示・CTR・順位）を
+  // 同じ月・同じパスで横に並べる。どちらか片方しか無い月は、ある方の列だけ出す。
   function renderPages(){
-    var months = Object.keys(S.pages).sort();
+    var set = {};
+    Object.keys(S.pages).concat(Object.keys(S.landing)).forEach(function(x){ set[x] = 1; });
+    var months = Object.keys(set).sort();
     if (!months.length){
-      return card("ページ", '<div class="sched-empty">ページ別の CSV がまだありません。GA4 の「ページとスクリーン」CSV を取り込んでください。</div>');
+      return card("ページ", '<div class="sched-empty">ページ別の CSV がまだありません。GA4 の「ページとスクリーン」または「Google オーガニック検索レポート: ランディング ページ」の CSV を取り込んでください。</div>');
     }
     var st = S.p;
-    if (!st.month || !S.pages[st.month]) st.month = months[months.length - 1];
-    var m = st.month, prevRows = S.pages[addMonths(m, -1)];
-    var pmaps = months.map(function(x){ var o = {}; S.pages[x].forEach(function(y){ o[y.page] = y.pv; }); return o; });
-    var prevMap = prevRows ? pmaps[months.indexOf(addMonths(m, -1))] : null;
-    var all = S.pages[m].map(function(r){
-      var post = postByPath(r.page);
-      return Object.assign({}, r, { title: post ? post.title : "", post: post, prev: prevMap ? (prevMap[r.page] || 0) : null });
+    if (!st.month || !set[st.month]) st.month = months[months.length - 1];
+    var m = st.month, hasPv = !!S.pages[m], hasLp = !!S.landing[m];
+    var pvMonths = months.filter(function(x){ return S.pages[x]; });
+    var pmaps = pvMonths.map(function(x){ var o = {}; S.pages[x].forEach(function(y){ o[y.page] = y.pv; }); return o; });
+    var lpMonths = months.filter(function(x){ return S.landing[x]; });
+    var lmaps = lpMonths.map(function(x){ var o = {}; S.landing[x].forEach(function(y){ o[y.page] = y; }); return o; });
+    var prevPv = S.pages[addMonths(m, -1)] ? pmaps[pvMonths.indexOf(addMonths(m, -1))] : null;
+    var lpNow = hasLp ? lmaps[lpMonths.indexOf(m)] : {};
+    var byPage = {};
+    (S.pages[m] || []).forEach(function(r){ byPage[r.page] = { page: r.page, pv: r.pv, users: r.users, sec: r.sec }; });
+    (S.landing[m] || []).forEach(function(r){ if (!byPage[r.page]) byPage[r.page] = { page: r.page, pv: null, users: null, sec: null }; });
+    var all = Object.keys(byPage).map(function(k){
+      var r = byPage[k], post = postByPath(r.page), lp = lpNow[r.page];
+      return Object.assign(r, {
+        title: post ? post.title : "", post: post,
+        prev: hasPv && prevPv && r.pv != null ? (prevPv[r.page] || 0) : null,
+        sc: lp ? lp.c : null, si: lp ? lp.i : null, sctr: lp ? lp.t : null, spos: lp ? lp.p : null
+      });
     });
     var rows = st.articlesOnly ? all.filter(function(r){ return isArticlePath(r.page); }) : all;
+    if (!hasPv && /^(pv|users|sec|diff)$/.test(st.sort)){ st.sort = "sc"; st.dir = -1; }
+    if (!hasLp && /^(sc|si|sctr|spos)$/.test(st.sort)){ st.sort = "pv"; st.dir = -1; }
     rows = sortRows(rows, st, {
       page: function(r){ return r.title || r.page; }, pv: function(r){ return r.pv; }, users: function(r){ return r.users; },
-      sec: function(r){ return r.sec; }, diff: function(r){ return r.prev == null ? 0 : r.pv - r.prev; }
+      sec: function(r){ return r.sec; }, diff: function(r){ return r.prev == null || r.pv == null ? 0 : r.pv - r.prev; },
+      sc: function(r){ return r.sc; }, si: function(r){ return r.si; }, sctr: function(r){ return r.sctr; },
+      spos: function(r){ return r.spos || 999; }
     });
-    var total = sum(all, function(r){ return r.pv; });
-    var artTotal = sum(all.filter(function(r){ return isArticlePath(r.page); }), function(r){ return r.pv; });
+    var parts = [];
+    if (hasPv){
+      var total = sum(S.pages[m], function(r){ return r.pv; });
+      var artTotal = sum(S.pages[m].filter(function(r){ return isArticlePath(r.page); }), function(r){ return r.pv; });
+      parts.push("PV " + fmtN(total) + "（記事 " + (total ? Math.round(artTotal / total * 100) : 0) + "%）");
+    }
+    if (hasLp){
+      var ls = landingStats(m);
+      parts.push("検索クリック " + fmtN(ls.c) + " ・ 表示 " + fmtN(ls.i) + " ・ CTR " + fmtPct(ls.ctr) + " ・ 平均 " + ls.pos.toFixed(1) + " 位");
+    }
+    parts.push(rows.length + " ページ");
     var monthOpts = months.slice().reverse().map(function(x){
-      var pe = partialEnd("pages", x);
-      return '<option value="' + x + '"' + (x === m ? " selected" : "") + '>' + monthLabel(x) + (pe ? "（〜" + pe + "日）" : "") + '</option>';
+      var pe = partialEnd("pages", x) || partialEnd("landing", x);
+      var src = S.pages[x] && S.landing[x] ? "" : S.pages[x] ? "（PVのみ）" : "（検索のみ）";
+      return '<option value="' + x + '"' + (x === m ? " selected" : "") + '>' + monthLabel(x) + (pe ? "（〜" + pe + "日）" : "") + src + '</option>';
     }).join("");
     var tool = '<div class="jh-toolrow"><div class="jh-form"><select class="jh-in" data-change="p-month">' + monthOpts + '</select>' +
       '<label class="jh-form jh-faint"><input type="checkbox" data-change="p-articles"' + (st.articlesOnly ? " checked" : "") + '> 記事だけ</label></div>' +
-      '<span class="jh-summary">' + esc("合計 " + fmtN(total) + " PV ・ 記事 " + fmtN(artTotal) + " PV（" + (total ? Math.round(artTotal / total * 100) : 0) + "%）・ " + rows.length + " ページ") + '</span></div>';
+      '<span class="jh-summary">' + esc(parts.join(" ・ ")) + '</span></div>';
     var shown = rows.slice(0, st.limit);
     var body = shown.map(function(r){
-      var hist = pmaps.map(function(o){ return o[r.page] != null ? o[r.page] : null; });
       var titleCell = r.post
         ? '<a class="jh-link jh-cell-title" href="' + esc(r.post.link) + '" target="_blank" rel="noopener noreferrer" title="' + esc(r.page) + '">' + esc(r.title) + '</a><span class="jh-cell-sub">' + esc(r.page) + '</span>'
         : '<span class="jh-cell-title" title="' + esc(r.page) + '">' + esc(r.page) + '</span>';
+      var lowCtr = r.si >= 500 && r.sctr < 1.5;
+      var hist = hasLp
+        ? lmaps.map(function(o){ return o[r.page] ? o[r.page].c : null; })
+        : pmaps.map(function(o){ return o[r.page] != null ? o[r.page] : null; });
       return '<tr><td>' + titleCell + '</td>' +
-        '<td class="num">' + fmtN(r.pv) + '</td><td class="num">' + fmtN(r.users) + '</td>' +
-        '<td class="num' + (r.sec < 30 ? " jh-faint" : "") + '">' + Math.round(r.sec) + '</td>' +
-        '<td class="num">' + diffHtml(r.pv, r.prev) + '</td>' +
+        (hasPv
+          ? '<td class="num">' + fmtN(r.pv) + '</td><td class="num">' + fmtN(r.users) + '</td>' +
+            '<td class="num' + (r.sec != null && r.sec < 30 ? " jh-faint" : "") + '">' + (r.sec == null ? "—" : Math.round(r.sec)) + '</td>' +
+            '<td class="num">' + (r.pv == null ? '<span class="jh-faint">—</span>' : diffHtml(r.pv, r.prev)) + '</td>'
+          : "") +
+        (hasLp
+          ? '<td class="num' + (r.sc ? "" : " jh-faint") + '">' + fmtN(r.sc) + '</td><td class="num">' + fmtN(r.si) + '</td>' +
+            '<td class="num' + (lowCtr ? " jh-warn" : "") + '">' + (r.sctr == null ? "—" : fmtPct(r.sctr)) + '</td>' +
+            '<td class="num">' + (r.spos ? rankBadge(r.spos) : "—") + '</td>'
+          : "") +
         '<td>' + spark(hist) + '</td>' +
         '<td class="num">' + (r.post ? (r.post.cta ? '<span class="jh-ok">✓</span>' : '<span class="jh-faint">—</span>') : "") + '</td></tr>';
     }).join("");
-    var table = '<div class="jh-table-wrap"><table class="jh-table"><thead><tr>' +
-      th("ページ", "p", "page") + th("PV", "p", "pv", true) + th("ユーザー", "p", "users", true) + th("滞在秒", "p", "sec", true) +
-      th("前月比", "p", "diff", true) + '<th>PVの推移</th><th class="num">導線</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="7" class="jh-faint">該当なし</td></tr>') + '</tbody></table></div>' +
+    var cols = 3 + (hasPv ? 4 : 0) + (hasLp ? 4 : 0);
+    var head = th("ページ", "p", "page") +
+      (hasPv ? th("PV", "p", "pv", true) + th("ユーザー", "p", "users", true) + th("滞在秒", "p", "sec", true) + th("前月比", "p", "diff", true) : "") +
+      (hasLp ? th("検索クリック", "p", "sc", true) + th("表示", "p", "si", true) + th("CTR", "p", "sctr", true) + th("順位", "p", "spos", true) : "") +
+      '<th>' + (hasLp ? "検索クリックの推移" : "PVの推移") + '</th><th class="num">導線</th>';
+    var table = '<div class="jh-table-wrap"><table class="jh-table"><thead><tr>' + head + '</tr></thead><tbody>' +
+      (body || '<tr><td colspan="' + cols + '" class="jh-faint">該当なし</td></tr>') + '</tbody></table></div>' +
       (rows.length > shown.length ? btn("さらに表示（残り " + (rows.length - shown.length) + " 件）", "more", "p", "jh-more") : "");
-    return card("ページ", tool + table, { head: '<span class="jh-note">GA4「ページとスクリーン」。滞在秒＝アクティブユーザーあたりの平均エンゲージメント時間</span>' });
+    return card("ページ", tool + table, {
+      head: '<span class="jh-note">PV・ユーザー・滞在秒＝GA4「ページとスクリーン」／検索クリック・表示・CTR・順位＝「ランディングページ」。黄色の CTR＝表示500回以上で1.5%未満</span>'
+    });
   }
   CHANGES["p-month"] = function(el){ S.p.month = el.value; S.p.limit = 200; render(); };
   CHANGES["p-articles"] = function(el){ S.p.articlesOnly = el.checked; render(); };
