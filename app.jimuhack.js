@@ -312,7 +312,8 @@
     var lines = text.replace(/\r/g, "").split("\n");
     var comments = lines.filter(function(l){ return l.trim().charAt(0) === "#"; }).join("\n");
     var data = lines.filter(function(l){ return l.trim() && l.trim().charAt(0) !== "#"; });
-    if (data.length < 2) return { error: "データ行がありません" };
+    // 見出し行だけ（GA4 はデータの無い月もこの形で出す）は失敗ではなくスキップ扱い
+    if (data.length < 2) return { empty: true };
     var hdr = splitCsvLine(data[0]);
     var sm = comments.match(/開始日:\s*(\d{4})(\d{2})(\d{2})/);
     var em = comments.match(/終了日:\s*(\d{4})(\d{2})(\d{2})/);
@@ -353,13 +354,15 @@
     var files = Array.prototype.filter.call(fileList || [], function(f){ return /\.csv$/i.test(f.name); });
     if (!files.length){ setStatus("CSV ファイルが見つかりません", "err"); return; }
     if (!S.loaded){ setStatus("読み込みに失敗しているため取り込めません。開き直してください。", "err"); return; }
-    var ok = [], ng = [];
+    var ok = [], ng = [], skip = [];
     for (var i = 0; i < files.length; i++){
       var f = files[i];
       setStatus("取り込み中… " + (i + 1) + "/" + files.length);
       try {
         var parsed = parseGa4Csv(decodeCsvBuffer(await f.arrayBuffer()), f.name);
+        if (parsed.empty){ skip.push(f.name); continue; }
         if (parsed.error){ ng.push(f.name + "：" + parsed.error); continue; }
+        if (!parsed.rows.length){ skip.push(f.name + "（" + monthLabel(parsed.month) + "）"); continue; }
         await apiFetch("/api/jimuhack/months/" + parsed.kind + "/" + parsed.month, {
           method: "PUT",
           body: JSON.stringify({ rows: parsed.rows, range: parsed.range })
@@ -372,8 +375,9 @@
       }
     }
     S.dataVer++;
-    S.importLog = { ok: ok, ng: ng };
-    setStatus(ng.length ? "取り込み " + ok.length + "件 ・ 失敗 " + ng.length + "件" : "取り込み完了 " + ok.length + "件", ng.length ? "err" : "");
+    S.importLog = { ok: ok, ng: ng, skip: skip };
+    setStatus((ng.length ? "取り込み " + ok.length + "件 ・ 失敗 " + ng.length + "件" : "取り込み完了 " + ok.length + "件") +
+      (skip.length ? " ・ データなし " + skip.length + "件" : ""), ng.length ? "err" : "");
     render();
   }
 
@@ -501,9 +505,11 @@
   function importNoticeHtml(){
     var L = S.importLog;
     return '<section class="panel jh-notice' + (L.ng.length ? " is-err" : "") + '">' +
-      '<div class="jh-toolrow"><span>CSV 取り込み：成功 ' + L.ok.length + ' 件' + (L.ng.length ? ' ・ 失敗 ' + L.ng.length + ' 件' : '') + '</span>' +
+      '<div class="jh-toolrow"><span>CSV 取り込み：成功 ' + L.ok.length + ' 件' + (L.ng.length ? ' ・ 失敗 ' + L.ng.length + ' 件' : '') +
+      ((L.skip || []).length ? ' ・ データなしでスキップ ' + L.skip.length + ' 件' : '') + '</span>' +
       btn("閉じる", "import-dismiss") + '</div><ul>' +
       L.ok.map(function(s){ return '<li>' + esc(s) + '</li>'; }).join("") +
+      (L.skip || []).map(function(s){ return '<li class="jh-faint">データなし：' + esc(s) + '</li>'; }).join("") +
       L.ng.map(function(s){ return '<li class="jh-err">' + esc(s) + '</li>'; }).join("") + '</ul></section>';
   }
 
@@ -628,11 +634,18 @@
       list.push({ lv: "err", text: S.postsErr, act: "posts-reload", btn: "再取得" });
     }
     var expected = addMonths(curMonth(), -1);
-    var lastData = [latest(S.pages), latest(S.queries)].filter(Boolean).sort().pop();
-    if (!lastData){
+    // ページとクエリは別々に出すので、種類ごとに見る（片方だけ新しいと、もう片方の抜けが隠れていた）
+    var lastP = latest(S.pages), lastQ = latest(S.queries);
+    if (!lastP && !lastQ){
       list.push({ lv: "warn", text: "GA4 の CSV がまだありません。CSVバックアップフォルダを取り込むと推移とクエリ分析が出ます", act: "import-dir", btn: "フォルダを選ぶ" });
-    } else if (lastData < expected){
-      list.push({ lv: "warn", text: monthLabel(addMonths(lastData, 1)) + "〜" + monthLabel(expected) + " の CSV が未取り込みです", act: "import-files", btn: "取り込む" });
+    } else {
+      [["ページとスクリーン", lastP], ["検索クエリ", lastQ]].forEach(function(k){
+        if (!k[1]){
+          list.push({ lv: "warn", text: k[0] + " の CSV がまだありません", act: "import-files", btn: "取り込む" });
+        } else if (k[1] < expected){
+          list.push({ lv: "warn", text: k[0] + " の CSV：" + monthLabel(addMonths(k[1], 1)) + "〜" + monthLabel(expected) + " が未取り込みです", act: "import-files", btn: "取り込む" });
+        }
+      });
     }
     var lq = latest(S.queries);
     if (lq){
