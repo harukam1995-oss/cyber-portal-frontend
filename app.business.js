@@ -141,7 +141,7 @@
     try {
       await apiFetch("/api/contracts/bulk", {
         method: "PUT",
-        headers: { "X-Allow-Empty": "1" },
+        headers: payload.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ contracts: payload })
       });
       await loadContracts(); // 成功時は再描画で行ごと作り直されるのでボタンの後始末は不要
@@ -160,7 +160,9 @@
     contractSetStatus("");
   }
   function failContracts(err){
-    contractsState = [];
+    // 一度読めていたら直前の一覧を残す。空にすると contractsLoadOk=true のまま、次の保存
+    // (PUT /bulk＝全置換)が全件をその1行に置き換えてしまう。
+    if (!contractsLoadOk) contractsState = [];
     renderContractsAll();
     contractSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
   }
@@ -596,7 +598,7 @@
     try {
       await apiFetch("/api/contracts/bulk", {
         method: "PUT",
-        headers: { "X-Allow-Empty": "1" },
+        headers: payload.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ contracts: payload })
       });
       await loadContracts();
@@ -951,7 +953,8 @@
     try {
       await apiFetch("/api/contracts/bulk", {
         method: "PUT",
-        headers: { "X-Allow-Empty": "1" },
+        // 空での全置換は「全部消した」ときだけ許可(読み込み失敗中の全消し防止ガードを殺さない)
+        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ contracts: cleaned })
       });
       closeContractModal();
@@ -1103,7 +1106,7 @@
     eventSetStatus("");
   }
   function failEventTrackers(err){
-    eventTrackersState = [];
+    if (!eventTrackersLoadOk) eventTrackersState = []; // 契約書と同じ理由で、読めていた一覧は残す
     renderEventTrackersAll();
     eventSetStatus(apiErrorMessage(err, "プロジェクトボード"), true);
   }
@@ -1409,13 +1412,14 @@
   // テンプレから新規プロジェクト作業行を1件つくって詳細を開く
   function pbCreateFromTemplate(tpl){
     var name = tpl.name || "";
+    // keyParts は app.js 本体の中にしか無い(ここで呼ぶと ReferenceError で何も起きなかった)
+    var ym = jstDateKey(new Date()).slice(0, 7); // "YYYY-MM"
     if (tpl.cadence === "monthly"){
-      var p = keyParts(jstDateKey(new Date()));
-      name = p.y + "年" + p.m + "月度_" + name;
+      name = ym.slice(0, 4) + "年" + Number(ym.slice(5, 7)) + "月度_" + name;
     }
     var row = {
       id: uid(), name: name, kind: tpl.cadence === "monthly" ? "recurring" : "oneoff",
-      period: tpl.cadence === "monthly" ? (function(){ var p = keyParts(jstDateKey(new Date())); return p.y + "-" + String(p.m).padStart(2, "0"); })() : "",
+      period: tpl.cadence === "monthly" ? ym : "",
       dueDate: "", status: "計画中", autoIngest: true, archived: false, confidential: false,
       match: {
         keywords: (tpl.match.keywords || []).slice(), gmailQuery: tpl.match.gmailQuery || "",
@@ -1780,7 +1784,7 @@
     try {
       await apiFetch("/api/event-trackers/bulk", {
         method: "PUT",
-        headers: { "X-Allow-Empty": "1" },
+        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ eventTrackers: cleaned })
       });
       closePbModal();
@@ -2453,4 +2457,9 @@
   CP.loadEventTrackers = loadEventTrackers;
   // タスク画面の projectName() がプロジェクト名の予備解決に使う(主は tasks 側の projectsForLink)。
   CP.getEventTrackers = function(){ return eventTrackersState; };
+  // Esc で閉じる(app.js の Esc スタックへ登録。閉じる関数はこの IIFE の中にしか無い)。
+  if (CP.registerEscModal){
+    CP.registerEscModal("pb-modal", pbModalBack);
+    CP.registerEscModal("contract-modal", contractModalBack);
+  }
 })();

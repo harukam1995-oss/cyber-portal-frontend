@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 146;
+  var BUILD_V = 147;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -127,12 +127,20 @@
     var delays = [0, 2500, 5000];
     var lastErr = null;
     var counted = false;
+    // POST / PATCH / DELETE は「サーバーに届いたか分からない」失敗(ネットワークエラー・504)で
+    // 送り直すと二重作成(家計簿の行・台帳の行・下書き)になりうるので再送しない。
+    var method = String((init && init.method) || "GET").toUpperCase();
+    var retrySafe = method !== "POST" && method !== "PATCH" && method !== "DELETE";
     try {
       for (var i = 0; i < delays.length; i++){
         if (delays[i]) await sleep(delays[i]);
         try {
           var res = await fetch(url, init);
           if (res.status === 502 || res.status === 503 || res.status === 504){
+            // バックエンド自身が返した 5xx(X-Portal-App 付き)は起動待ちではないので待たずに返す。
+            // 付いていない＝Render の前段が返した(アプリに届いていない)ときだけ起動待ちとして再送する。
+            if (res.headers.get("X-Portal-App") === "1") return res;
+            if (!retrySafe && res.status === 504) return res;
             lastErr = new Error("APIエラー: " + res.status);
             lastErr.code = "http_" + res.status;
             if (!counted){ counted = true; setWarming(1); }
@@ -141,6 +149,7 @@
           return res;
         } catch(netErr){
           lastErr = netErr;
+          if (!retrySafe) throw netErr;
           if (!counted){ counted = true; setWarming(1); }
         }
       }
@@ -2754,6 +2763,8 @@
   var planItems = [];           // [{id,text,time,done}]
   var planTemplates = [];       // [{id,name,items:[{id,text,time}],order}]
   var planSaveTimer = null;
+  var planSaveFlush = null;     // 保留中の保存を今すぐ送る関数(別の日を読み込む前に呼ぶ)
+  var planLoadSeq = 0;          // 前日/翌日の連打で古い応答が表示を巻き戻さないための番号
   var planWired = false;
   var planTplRows = [];         // テンプレ管理モーダルの作業コピー
   var planTplDetailIdx = null;  // null = 一覧ビュー、数値 = そのテンプレの詳細ビュー
@@ -2793,14 +2804,18 @@
     // 習慣トラッカーと同じ理由でローディングテキストは出さない(日付を送るたびに
     // カード高が伸縮するのを防ぐ)。既存行を残して薄くディムするだけにする。
     list.classList.add("is-loading");
+    if (planSaveFlush) planSaveFlush();
+    var seq = ++planLoadSeq;
     try {
       var res = await apiFetch("/api/plan?date=" + encodeURIComponent(planDateKey));
+      if (seq !== planLoadSeq) return;
       planItems = (res.items || []).slice();
       planTemplates = res.templates || [];
       if (res.date) planDateKey = res.date;
       renderPlan();
       planSetStatus("");
     } catch (err){
+      if (seq !== planLoadSeq) return;
       planItems = []; planTemplates = [];
       renderPlan();
       planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true);
@@ -2875,13 +2890,18 @@
 
   function schedulePlanSave(){
     if (planSaveTimer) clearTimeout(planSaveTimer);
-    planSaveTimer = setTimeout(function(){
-      planSaveTimer = null;
+    // 日付と項目は「予約した時点」のものを送る。発火時の planDateKey を読んでいたので、
+    // 編集して 500ms 以内に前日/翌日へ移ると、移動先の日を元の日の項目で上書きしていた。
+    var date = planDateKey, items = planItems;
+    planSaveFlush = function(){
+      clearTimeout(planSaveTimer);
+      planSaveTimer = null; planSaveFlush = null;
       apiFetch("/api/plan/day", {
         method: "PUT",
-        body: JSON.stringify({ date: planDateKey, items: planItems })
+        body: JSON.stringify({ date: date, items: items })
       }).catch(function(err){ planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true); });
-    }, 500);
+    };
+    planSaveTimer = setTimeout(planSaveFlush, 500);
   }
 
   function togglePlanItem(id){
@@ -3988,16 +4008,19 @@
   function htmlDescriptionToPlainText(html){
     if (!html) return "";
     if (html.indexOf("<") === -1) return html; // already plain text, nothing to strip
-    var container = document.createElement("div");
-    container.innerHTML = html;
+    // 本体 document の要素に innerHTML すると、切り離した div でも <img onerror> 等が実行される
+    // (外部からの招待で第三者が説明文に仕込める)。DOMParser の文書はスクリプトもリソース
+    // 読み込みも起きない不活性な文書なので、そこで解析してテキストだけ取り出す。
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var container = doc.body;
     container.querySelectorAll("a").forEach(function(a){
       var href = a.getAttribute("href") || "";
       var text = a.textContent || "";
       var replacement = (href && href !== text) ? (text + " (" + href + ")") : text;
-      a.replaceWith(document.createTextNode(replacement));
+      a.replaceWith(doc.createTextNode(replacement));
     });
-    container.querySelectorAll("br").forEach(function(br){ br.replaceWith(document.createTextNode("\n")); });
-    container.querySelectorAll("p, div, li").forEach(function(el){ el.append(document.createTextNode("\n")); });
+    container.querySelectorAll("br").forEach(function(br){ br.replaceWith(doc.createTextNode("\n")); });
+    container.querySelectorAll("p, div, li").forEach(function(el){ el.append(doc.createTextNode("\n")); });
     return (container.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
 
@@ -4732,12 +4755,15 @@
       renderMailList(); // refresh unread dot state
       try{
         var res = await apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(mail.threadId), mailState.account));
+        // 応答待ちの間に別のメールを開いていたら捨てる(前のスレッドの返信先が今のメールに入り誤送信になる)
+        if (currentMailInfo !== mail) return;
         bodyEl.textContent = res.body || mail.snippet || "(本文がありません)";
         renderMailAttachments(res.attachments || []);
         currentMailBodyText = res.body || "";
         currentMailReply = res.reply || null;
         setMailReplyEnabled(!!currentMailReply);
       } catch(err){
+        if (currentMailInfo !== mail) return;
         bodyEl.textContent = apiErrorMessage(err, "Gmail") || "本文の取得に失敗しました。";
       }
       return;
@@ -5643,7 +5669,12 @@
     tasksStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
-  async function initTasks(){
+  function initTasks(){
+    tasksLoadPromise = loadTasksFromApi();
+    return tasksLoadPromise;
+  }
+  async function loadTasksFromApi(){
+    tasksLoadDone = false;
     setTasksStatus("読み込み中…");
     try{
       var res = await apiFetch("/api/tasks");
@@ -5651,7 +5682,8 @@
       tasksLoadOk = true;
       setTasksStatus("ポータルに保存済み");
     } catch(err){
-      tasksState = [];
+      // 以前読めていた一覧は残す(空にすると次の保存＝全置換で全部消える)。
+      if (!tasksLoadOk) tasksState = [];
       setTasksStatus(apiErrorMessage(err, "タスク"), "err");
     }
     tasksLoadDone = true;
@@ -6106,20 +6138,15 @@
     scheduleTasksSave();
   }
 
-  // タスクを本体の外(app.jimuhack.js)から触るための入口。
   // PUT /api/tasks/bulk は全置換なので、一覧の読み込みが成功する前に1件足して保存すると
-  // 既存タスクが消える。外から作る/触る前に必ずこれで読み込み完了(成功)を待つ。
+  // 既存タスクが消える。作る/触る前にこれで読み込み完了(成功)を待つ(モーダルの保存・app.jimuhack.js)。
+  // 失敗済みなら読み直す。コールドスタート(~50秒)でも途中で諦めない。
   var tasksLoadDone = false;
   var tasksLoadOk = false;
+  var tasksLoadPromise = null;
   function ensureTasksLoaded(){
-    if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
-    return new Promise(function(resolve){
-      var n = 0;
-      (function wait(){
-        if (tasksLoadDone || n++ > 150) return resolve(tasksLoadOk);
-        setTimeout(wait, 100);
-      })();
-    });
+    if (!tasksLoadPromise || (tasksLoadDone && !tasksLoadOk)){ tasksInitialized = true; initTasks(); }
+    return tasksLoadPromise.then(function(){ return tasksLoadOk; });
   }
   // 本文・自由タグ・期限・URL・備考を入れた状態で新規タスクモーダルを開く(保存はユーザーが押す)。
   function openNewTaskPreset(p){
@@ -6144,16 +6171,31 @@
     taskSaveTimer = setTimeout(saveTasksNow, 600);
   }
 
+  var tasksSaving = false, tasksSaveQueued = false;
   async function saveTasksNow(){
+    // 全置換なので、一覧を読めていない状態では送らない(送ると既存のタスクが消える)。
+    if (!tasksLoadOk){
+      setTasksStatus("タスクを読み込めていないため保存していません。再読み込みしてください。", "err");
+      return;
+    }
+    // 送信中に次の保存が来たら、終わってから最新の一覧でもう1回送る
+    // (リトライで遅れた古い一覧が後から着いて新しい保存を上書きするのを防ぐ)。
+    if (tasksSaving){ tasksSaveQueued = true; return; }
+    tasksSaving = true;
     try{
       await apiFetch("/api/tasks/bulk", {
         method: "PUT",
+        // 空の一覧での全置換はサーバーが拒否する。本当に最後の1件を消したときだけ許可する。
+        headers: tasksState.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ tasks: tasksState })
       });
-      setTasksStatus("保存済み ・ " + fmtSavedAt(Date.now()));
+      if (!tasksSaveQueued) setTasksStatus("保存済み ・ " + fmtSavedAt(Date.now()));
     } catch(err){
       console.error("[saveTasksNow] failed:", err);
       setTasksStatus(artifactErrorMessage(err), "err");
+    } finally {
+      tasksSaving = false;
+      if (tasksSaveQueued){ tasksSaveQueued = false; saveTasksNow(); }
     }
   }
 
@@ -6384,8 +6426,20 @@
   document.getElementById("task-cancel").addEventListener("click", closeTaskModal);
   taskModal.addEventListener("click", function(e){ if (e.target === taskModal) closeTaskModal(); });
 
-  taskForm.addEventListener("submit", function(e){
+  taskForm.addEventListener("submit", async function(e){
     e.preventDefault();
+    // 一覧の読み込み前(コールドスタート中・メール/メモからのタスク化直後)に足すと、
+    // 全置換の保存で既存のタスクが消える。読み込みの完了を待ち、失敗なら保存しない。
+    if (!tasksLoadOk){
+      taskFormError.hidden = false;
+      taskFormError.textContent = "タスク一覧を読み込み中です…";
+      if (!(await ensureTasksLoaded())){
+        taskFormError.textContent = "タスク一覧を読み込めませんでした。既存のタスクを消さないよう保存を止めています。時間をおいてもう一度保存してください。";
+        return;
+      }
+      taskFormError.hidden = true;
+      if (taskModal.hidden) return; // 待っている間に閉じられた
+    }
     var text = taskTitleInput.value.trim();
     if (!text){
       taskFormError.hidden = false;
@@ -6468,16 +6522,31 @@
     notesStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
-  async function initNotes(){
+  // タスクと同じく PUT /api/notes/bulk は全置換。読み込みに成功するまでは保存しない。
+  var notesLoadDone = false;
+  var notesLoadOk = false;
+  var notesLoadPromise = null;
+  function initNotes(){
+    notesLoadPromise = loadNotesFromApi();
+    return notesLoadPromise;
+  }
+  function ensureNotesLoaded(){
+    if (!notesLoadPromise || (notesLoadDone && !notesLoadOk)){ notesInitialized = true; initNotes(); }
+    return notesLoadPromise.then(function(){ return notesLoadOk; });
+  }
+  async function loadNotesFromApi(){
+    notesLoadDone = false;
     setNotesStatus("読み込み中…");
     try{
       var res = await apiFetch("/api/notes");
       notesState = res.notes || [];
+      notesLoadOk = true;
       setNotesStatus("ポータルに保存済み");
     } catch(err){
-      notesState = [];
+      if (!notesLoadOk) notesState = [];
       setNotesStatus(apiErrorMessage(err, "メモ"), "err");
     }
+    notesLoadDone = true;
     renderNotes();
   }
 
@@ -6829,16 +6898,27 @@
     noteSaveTimer = setTimeout(saveNotesNow, 600);
   }
 
+  var notesSaving = false, notesSaveQueued = false;
   async function saveNotesNow(){
+    if (!notesLoadOk){
+      setNotesStatus("メモを読み込めていないため保存していません。再読み込みしてください。", "err");
+      return;
+    }
+    if (notesSaving){ notesSaveQueued = true; return; }
+    notesSaving = true;
     try{
       await apiFetch("/api/notes/bulk", {
         method: "PUT",
+        headers: notesState.length ? {} : { "X-Allow-Empty": "1" },
         body: JSON.stringify({ notes: notesState })
       });
-      setNotesStatus("保存済み ・ " + fmtSavedAt(Date.now()));
+      if (!notesSaveQueued) setNotesStatus("保存済み ・ " + fmtSavedAt(Date.now()));
     } catch(err){
       console.error("[saveNotesNow] failed:", err);
       setNotesStatus(artifactErrorMessage(err), "err");
+    } finally {
+      notesSaving = false;
+      if (notesSaveQueued){ notesSaveQueued = false; saveNotesNow(); }
     }
   }
 
@@ -7059,8 +7139,18 @@
   document.getElementById("note-cancel").addEventListener("click", closeNoteModal);
   noteModal.addEventListener("click", function(e){ if (e.target === noteModal) closeNoteModal(); });
 
-  noteForm.addEventListener("submit", function(e){
+  noteForm.addEventListener("submit", async function(e){
     e.preventDefault();
+    if (!notesLoadOk){
+      noteFormError.hidden = false;
+      noteFormError.textContent = "メモ一覧を読み込み中です…";
+      if (!(await ensureNotesLoaded())){
+        noteFormError.textContent = "メモ一覧を読み込めませんでした。既存のメモを消さないよう保存を止めています。時間をおいてもう一度保存してください。";
+        return;
+      }
+      noteFormError.hidden = true;
+      if (noteModal.hidden) return;
+    }
     var title = noteTitleInput.value.trim();
     if (!title){
       noteFormError.hidden = false;
@@ -7103,6 +7193,10 @@
   // 開いているものを閉じて打ち切る。以前は if/else の二段チェーンだったが、
   // モーダルを増やすたびに追記が必要で漏れやすかったため配列1本にした
   // (並び順＝優先順位。標準モーダルは生成済みの変数、管理モーダルは都度 getElementById)。
+  // 分離モジュール(app.business.js / app.payables.js)のモーダルは、閉じる関数がそのモジュールの
+  // IIFE の中にしか無い。下の配列に名前を直接書くと ReferenceError で Esc 全体が止まっていた
+  // (2026/09/09 の分割以降、Esc でどのモーダルも閉じなかった)ので、モジュール側から登録してもらう。
+  var escModuleModals = [];
   document.addEventListener("keydown", function(e){
     if (e.key !== "Escape") return;
     var byId = function(id){ return document.getElementById(id); };
@@ -7118,12 +7212,14 @@
       { el: byId("plan-apply-modal"), close: function(){ closePlanApply("cancel"); } },
       { el: byId("finance-modal"),    close: closeFinanceModal },
       { el: byId("habit-modal"),      close: habitModalBack },
-      { el: byId("plan-modal"),       close: planModalBack },
-      { el: byId("pb-modal"),         close: pbModalBack },
-      { el: byId("contract-modal"),   close: contractModalBack },
-      { el: byId("subs-modal"),       close: closeSubsModal },
-      { el: byId("habit-count-pop"),  close: function(){ closeHabitCountPop(false); } }
-    ];
+      { el: byId("plan-modal"),       close: planModalBack }
+    ].concat(
+      escModuleModals.map(function(m){ return { el: byId(m.id), close: m.close }; }),
+      [
+        { el: byId("subs-modal"),       close: closeSubsModal },
+        { el: byId("habit-count-pop"),  close: function(){ closeHabitCountPop(false); } }
+      ]
+    );
     for (var i = 0; i < stack.length; i++){
       if (stack[i].el && !stack[i].el.hidden){ stack[i].close(); return; }
     }
@@ -8336,6 +8432,8 @@
     askConfirm: askConfirm,
     mkHabitIconBtn: mkHabitIconBtn,
     showView: showView,
+    // モジュールのモーダルを Esc で閉じられるようにする(上の Esc スタックに足す)。
+    registerEscModal: function(id, close){ escModuleModals.push({ id: id, close: close }); },
     acctPath: acctPath,
     extractPdfText: extractPdfText,
     mailAttachBytes: mailAttachBytes,

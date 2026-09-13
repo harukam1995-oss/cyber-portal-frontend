@@ -228,9 +228,11 @@
     p2Load();
   }
 
+  // Promise を返す(p2SheetPull などが p2Load().then で完了を待つ。返していなかったので
+  // スプシ取り込みが成功しても TypeError でエラー表示になっていた)。
   function p2Load(){
     p2Status("読み込み中…");
-    apiFetch("/api/payables").then(function(res){
+    return apiFetch("/api/payables").then(function(res){
       p2.payables = (res && res.payables) || [];
       p2.vendors = (res && res.vendors) || [];
       p2.receipts = (res && res.receipts) || [];
@@ -1769,4 +1771,10 @@
 
   // app.js の showView が初回ロード後に呼ぶエントリポイント。
   CP.initPayables = initPayables;
+  // Esc で閉じる(app.js の Esc スタックへ登録)。
+  if (CP.registerEscModal){
+    CP.registerEscModal("pay2-edit-modal", p2CloseEdit);
+    CP.registerEscModal("pay2-vendor-modal", p2CloseVendor);
+    CP.registerEscModal("pay2-import-modal", p2CloseImport);
+  }
 })();

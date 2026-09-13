@@ -6,7 +6,7 @@
 // このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
 // install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
 // (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
-const CACHE = "cyber-portal-shell-v146";
+const CACHE = "cyber-portal-shell-v147";
 // ヒーロー画像はここに入れない。install 時に全部(4枚)を事前DLしていたが、
 // 実際は1枚しか使わない(スマホは0枚)。fetch ハンドラの stale-while-revalidate
 // で、実際に表示されたものだけ実行時にキャッシュされる。
@@ -21,14 +21,21 @@ const SHELL = [
   "./icon-512.png"
 ];
 
+// 起動に必須のシェル。1つでも取れなければ install を失敗させ、旧 SW と旧キャッシュを残す
+// (以前は失敗を握りつぶして skipWaiting → activate で旧キャッシュを消し、欠けたシェルで動いていた)。
+const CORE = ["./index.html", "./style.css", "./app.js", "./auth.js"];
+
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE)
       .then((c) => Promise.all(
         SHELL.map((u) =>
           fetch(new Request(u, { cache: "reload" }))
-            .then((res) => (res && res.ok ? c.put(u, res) : null))
-            .catch(() => {})
+            .then((res) => {
+              if (res && res.ok) return c.put(u, res);
+              throw new Error("shell fetch failed: " + u + " " + (res && res.status));
+            })
+            .catch((err) => { if (CORE.includes(u)) throw err; })
         )
       ))
       .then(() => self.skipWaiting())
@@ -54,13 +61,18 @@ self.addEventListener("fetch", (e) => {
 
   if (isHTML) {
     e.respondWith(
-      fetch(req)
+      // 既定の HTTP キャッシュ(Pages の max-age=600)に当たると、デプロイ直後に古い index.html が
+      // 返って新しい app.js と食い違う。no-cache で毎回再検証する(変わっていなければ 304 で軽い)。
+      fetch(new Request(req, { cache: "no-cache" }))
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          // エラーページはキャッシュしない。SPA なので保存先は index.html 1つに正規化する。
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put("./index.html", copy)).catch(() => {});
+          }
           return res;
         })
-        .catch(() => caches.match(req).then((m) => m || caches.match("./index.html")))
+        .catch(() => caches.match("./index.html").then((m) => m || caches.match("./")))
     );
     return;
   }
@@ -69,7 +81,9 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     caches.open(CACHE).then((cache) =>
       cache.match(req).then((cached) => {
-        const network = fetch(req)
+        // 裏の更新も no-cache で再検証する。HTTP キャッシュの古いコピーが、install で
+        // 取り込んだ新しい app.js / style.css を上書きするのを防ぐ。
+        const network = fetch(new Request(req, { cache: "no-cache" }))
           .then((res) => {
             if (res && res.ok && res.type === "basic") cache.put(req, res.clone());
             return res;
