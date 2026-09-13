@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 139;
+  var BUILD_V = 140;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -5165,7 +5165,10 @@
   var payHistCache = null;   // GET /list の結果(履歴表示用、パネルを閉じるまで保持)
 
   function payInSortableView(){
-    return mailState.account === "syslea" && mailState.labelName === "01.payment";
+    // 2026/09/13 に 01.payment のラベル構成を変更（01.銀行振込/02.口座振替/03.UPSIDER/04.変更通知/05.対象外、
+    // 済_YYYY/MM 廃止）。この機能は旧構成（スレッド単位で親ラベルを外す）前提なので入口を閉じる。
+    // ラベル付けは請求書管理（台帳の method からメール1通単位）へ移行し、ここは撤去予定。
+    return false;
   }
   function updateMailSortBtn(){
     if (!mailSortBtn) return;
