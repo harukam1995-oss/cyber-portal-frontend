@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 147;
+  var BUILD_V = 148;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -2215,6 +2215,160 @@
     });
   }
 
+  /* ================= shared: 管理モーダル（一覧 → 詳細の master-detail） =================
+     習慣 / TODAY'S PLAN のテンプレ / 契約書トラッカー（app.business.js）の管理モーダルは、
+     「作業コピーの一覧 → 行を押して詳細 → まとめて保存」を同じ形で3回コピーしていた。
+     id は prefix で揃っている（<p>-modal / -modal-title / -modal-close / -form / -list-view / -new /
+     -rows / -detail-view / -detail-back / -detail-body / -detail-del / -form-error / -cancel / -save）。
+     違うのは「行の中身・詳細フォーム・検証・保存先」だけなので cfg で渡す。
+       prefix / titles:[一覧の見出し, 詳細の見出し] / emptyHtml / label(エラー文言の機能名)
+       toRow(保存済み1件) → 作業コピー1行 / newRow() / rowName(r) 一覧の名前・削除確認に使う
+       rowHint(r) / rowClass(r)?(先頭に空白) / rowDot(r)?(CSS色 or null=色なし。無ければドット無し)
+       renderDetail(body, r, idx) 入力で r を直接書き換える / clean(r) → { row } か { error }
+       save(rows) → Promise / afterSave()? / canEdit()?(false なら保存しない＝読み込み失敗中の全置換防止) */
+  function makeMasterDetail(cfg){
+    var p = cfg.prefix;
+    function $(s){ return document.getElementById(p + "-" + s); }
+    var md = { rows: [], detailIdx: null };
+
+    function setErr(msg){
+      var el = $("form-error");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.hidden = !msg;
+    }
+    md.open = function(sourceRows, targetId){
+      var modal = $("modal");
+      if (!modal) return;
+      setErr("");
+      md.rows = (sourceRows || []).map(cfg.toRow);
+      md.detailIdx = null;
+      for (var i = 0; targetId && i < md.rows.length; i++){
+        if (md.rows[i].id === targetId){ md.detailIdx = i; break; }
+      }
+      md.render();
+      modal.hidden = false;
+    };
+    md.close = function(){ var m = $("modal"); if (m) m.hidden = true; };
+    // Esc / 戻る: 詳細なら一覧へ、一覧ならモーダルを閉じる
+    md.back = function(){
+      if (md.detailIdx != null){ md.detailIdx = null; md.render(); }
+      else md.close();
+    };
+    md.current = function(){ return md.detailIdx != null ? md.rows[md.detailIdx] || null : null; };
+    md.addNew = function(){
+      md.rows.push(cfg.newRow());
+      md.detailIdx = md.rows.length - 1; // 新規はそのまま詳細を開く
+      md.render();
+    };
+    md.render = function(){
+      var inDetail = md.detailIdx != null && !!md.rows[md.detailIdx];
+      if (!inDetail) md.detailIdx = null;
+      var lv = $("list-view"), dv = $("detail-view"), title = $("modal-title");
+      if (lv) lv.hidden = inDetail;
+      if (dv) dv.hidden = !inDetail;
+      if (title) title.textContent = cfg.titles[inDetail ? 1 : 0];
+      if (!inDetail) return renderList();
+      var body = $("detail-body");
+      if (!body) return;
+      body.innerHTML = "";
+      cfg.renderDetail(body, md.rows[md.detailIdx], md.detailIdx);
+    };
+    function renderList(){
+      var wrap = $("rows");
+      if (!wrap) return;
+      wrap.innerHTML = "";
+      var rows = md.rows;
+      if (!rows.length){ wrap.innerHTML = cfg.emptyHtml; return; }
+      rows.forEach(function(r, idx){
+        var row = document.createElement("div");
+        row.className = "habit-list-row" + (cfg.rowClass ? cfg.rowClass(r) : "");
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        if (cfg.rowDot){
+          var dot = document.createElement("span");
+          dot.className = "habit-list-dot";
+          var color = cfg.rowDot(r);
+          if (color) dot.style.background = color; else dot.classList.add("none");
+          row.appendChild(dot);
+        }
+        var txt = document.createElement("div");
+        txt.className = "habit-list-txt";
+        var nm = document.createElement("div");
+        nm.className = "habit-list-name";
+        nm.textContent = cfg.rowName(r) || "（名称未設定）";
+        var hint = document.createElement("div");
+        hint.className = "habit-list-hint";
+        hint.textContent = cfg.rowHint(r);
+        txt.appendChild(nm); txt.appendChild(hint);
+        function move(d){
+          return function(e){
+            e.stopPropagation();
+            var j = idx + d;
+            if (j < 0 || j >= rows.length) return;
+            rows[idx] = rows[j]; rows[j] = r;
+            renderList();
+          };
+        }
+        var up = mkHabitIconBtn("↑", "上へ", "", move(-1));
+        var down = mkHabitIconBtn("↓", "下へ", "", move(1));
+        up.hidden = down.hidden = rows.length <= 1;
+        up.disabled = idx === 0;
+        down.disabled = idx === rows.length - 1;
+        var chev = document.createElement("span");
+        chev.className = "habit-list-chev";
+        chev.textContent = "›";
+        row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
+        function open(){ md.detailIdx = idx; md.render(); }
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+        wrap.appendChild(row);
+      });
+    }
+    md.submit = async function(e){
+      if (e) e.preventDefault();
+      setErr("");
+      if (cfg.canEdit && !cfg.canEdit()){ setErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
+      var cleaned = [];
+      for (var i = 0; i < md.rows.length; i++){
+        var res = cfg.clean(md.rows[i]);
+        if (res.error){ md.detailIdx = i; md.render(); setErr(res.error); return; }
+        cleaned.push(res.row);
+      }
+      var saveBtn = $("save");
+      if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+      try {
+        await cfg.save(cleaned);
+        md.close();
+        if (cfg.afterSave) cfg.afterSave();
+      } catch (err){
+        setErr(apiErrorMessage(err, cfg.label));
+      } finally {
+        if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    };
+    md.wire = function(){
+      var modal = $("modal");
+      [$("modal-close"), $("cancel")].forEach(function(b){ if (b) b.addEventListener("click", md.close); });
+      if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) md.close(); });
+      var nb = $("new"), bb = $("detail-back"), db = $("detail-del"), form = $("form");
+      if (nb) nb.addEventListener("click", md.addNew);
+      if (bb) bb.addEventListener("click", function(){ md.detailIdx = null; md.render(); });
+      if (db) db.addEventListener("click", async function(){
+        var r = md.current();
+        if (!r) return;
+        var name = cfg.rowName(r);
+        if (name && !(await askConfirm('「' + name + '」を削除しますか?'))) return;
+        var i = md.rows.indexOf(r);
+        if (i !== -1) md.rows.splice(i, 1);
+        md.detailIdx = null;
+        md.render();
+      });
+      if (form) form.addEventListener("submit", md.submit);
+    };
+    return md;
+  }
+
   /* ================= プライベート: 習慣トラッカー (v1c / v1c+) =================
      Firestore に習慣定義(habits)と日次ログ(habit_log)を持つ。週は日曜始まり。
      binary(やった/やってない) は 0↔1 トグル、count(回数系) はセルのステッパーで入力。
@@ -2232,7 +2386,6 @@
   var habitDays = [];       // 表示中の週の7つの dateKey
   var habitLogTimers = {};  // "habitId|date" -> debounce timeout
   var habitTrackerWired = false;
-  var habitEditRows = [];   // 管理モーダルの作業コピー
   var habitPopHabitId = null, habitPopDate = null;
 
   function habitMdLabel(key){ return mdLabel(key); }
@@ -2458,14 +2611,12 @@
   }
 
   /* ---- 管理モーダル (一覧 → タイトルを押して詳細設定 / 新規作成) ---- */
-  var habitDetailIdx = null; // null = 一覧ビュー、数値 = その習慣の詳細ビュー
-
-  function openHabitModal(){
-    var modal = document.getElementById("habit-modal");
-    if (!modal) return;
-    var errEl = document.getElementById("habit-form-error");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    habitEditRows = habitsState.map(function(h){
+  var habitMD = makeMasterDetail({
+    prefix: "habit",
+    titles: ["習慣の管理", "習慣の設定"],
+    emptyHtml: '<div class="habit-edit-empty">習慣がありません。「＋ 新規作成」から追加してください。</div>',
+    label: "習慣トラッカー",
+    toRow: function(h){
       return {
         id: h.id,
         name: h.name,
@@ -2477,20 +2628,35 @@
         active: h.active !== false,
         color: HABIT_COLOR_KEYS.indexOf(h.color) !== -1 ? h.color : null
       };
-    });
-    habitDetailIdx = null;
-    renderHabitModal();
-    modal.hidden = false;
-  }
-  function closeHabitModal(){
-    var modal = document.getElementById("habit-modal");
-    if (modal) modal.hidden = true;
-  }
-  // Esc / 戻る: 詳細ビューなら一覧へ、一覧ビューならモーダルを閉じる
-  function habitModalBack(){
-    if (habitDetailIdx != null){ habitDetailIdx = null; renderHabitModal(); }
-    else closeHabitModal();
-  }
+    },
+    newRow: habitNewRow,
+    rowName: function(r){ return (r.name || "").trim(); },
+    rowHint: habitHint,
+    rowClass: function(r){ return r.active === false ? " is-paused" : ""; },
+    rowDot: function(r){ return (r.color && HABIT_COLOR_CSS[r.color]) || null; },
+    renderDetail: renderHabitDetailView,
+    clean: function(r){
+      var nm = (r.name || "").trim();
+      if (!nm) return { error: "習慣名を入力してください。" };
+      var cadence = r.cadence === "days" ? "days" : "daily";
+      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
+      if (cadence === "days" && !days.length) return { error: "「" + nm + "」の曜日を1つ以上選んでください。" };
+      return { row: {
+        id: r.id,
+        name: nm,
+        type: r.type === "count" ? "count" : "binary",
+        target: r.type === "count" ? Math.max(1, Math.round(Number(r.target) || 1)) : 1,
+        unit: r.type === "count" ? String(r.unit || "").trim().slice(0, 8) : "",
+        cadence: cadence,
+        days: days,
+        active: r.active !== false,
+        color: HABIT_COLOR_KEYS.indexOf(r.color) !== -1 ? r.color : null
+      } };
+    },
+    save: function(rows){ return apiFetch("/api/habits/bulk", { method: "PUT", body: JSON.stringify({ habits: rows }) }); },
+    afterSave: function(){ loadHabits(); }
+  });
+  function openHabitModal(){ habitMD.open(habitsState); }
   function mkHabitIconBtn(label, aria, cls, fn){
     var b = document.createElement("button");
     b.type = "button";
@@ -2511,78 +2677,8 @@
     return t + " ・ " + c + (r.active === false ? " ・ 停止中" : "");
   }
 
-  function renderHabitModal(){
-    var listView = document.getElementById("habit-list-view");
-    var detailView = document.getElementById("habit-detail-view");
-    var title = document.getElementById("habit-modal-title");
-    var inDetail = habitDetailIdx != null && !!habitEditRows[habitDetailIdx];
-    if (!inDetail) habitDetailIdx = null;
-    if (listView) listView.hidden = inDetail;
-    if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "習慣の設定" : "習慣の管理";
-    if (inDetail) renderHabitDetailView(habitDetailIdx);
-    else renderHabitListView();
-  }
-
-  function renderHabitListView(){
-    var wrap = document.getElementById("habit-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    if (!habitEditRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">習慣がありません。「＋ 新規作成」から追加してください。</div>';
-      return;
-    }
-    var single = habitEditRows.length <= 1;
-    habitEditRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row" + (r.active === false ? " is-paused" : "");
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-
-      var dot = document.createElement("span");
-      dot.className = "habit-list-dot";
-      if (r.color && HABIT_COLOR_CSS[r.color]) dot.style.background = HABIT_COLOR_CSS[r.color];
-      else dot.classList.add("none");
-
-      var txt = document.createElement("div");
-      txt.className = "habit-list-txt";
-      var nm = document.createElement("div");
-      nm.className = "habit-list-name";
-      nm.textContent = (r.name || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div");
-      hint.className = "habit-list-hint";
-      hint.textContent = habitHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = habitEditRows[idx - 1]; habitEditRows[idx - 1] = r; habitEditRows[idx] = t; renderHabitListView(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < habitEditRows.length - 1){ var t = habitEditRows[idx + 1]; habitEditRows[idx + 1] = r; habitEditRows[idx] = t; renderHabitListView(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === habitEditRows.length - 1;
-
-      var chev = document.createElement("span");
-      chev.className = "habit-list-chev";
-      chev.textContent = "›";
-
-      row.appendChild(dot); row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ habitDetailIdx = idx; renderHabitModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
-  }
-
-  function renderHabitDetailView(idx){
-    var body = document.getElementById("habit-detail-body");
-    var r = habitEditRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
+  // 詳細フォーム（habitMD が body を空にしてから呼ぶ）。入力はその場で作業コピー r を書き換える。
+  function renderHabitDetailView(body, r){
 
     // --- 名前 ---
     var name = document.createElement("input");
@@ -2676,45 +2772,6 @@
     body.appendChild(lineMisc);
   }
 
-  async function onHabitModalSubmit(e){
-    e.preventDefault();
-    var errEl = document.getElementById("habit-form-error");
-    var saveBtn = document.getElementById("habit-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
-    function failAt(i, msg){ habitDetailIdx = i; renderHabitModal(); showErr(msg); }
-    var cleaned = [];
-    for (var i = 0; i < habitEditRows.length; i++){
-      var r = habitEditRows[i];
-      var nm = (r.name || "").trim();
-      if (!nm){ failAt(i, "習慣名を入力してください。"); return; }
-      var cadence = r.cadence === "days" ? "days" : "daily";
-      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
-      if (cadence === "days" && !days.length){ failAt(i, "「" + nm + "」の曜日を1つ以上選んでください。"); return; }
-      cleaned.push({
-        id: r.id,
-        name: nm,
-        type: r.type === "count" ? "count" : "binary",
-        target: r.type === "count" ? Math.max(1, Math.round(Number(r.target) || 1)) : 1,
-        unit: r.type === "count" ? String(r.unit || "").trim().slice(0, 8) : "",
-        cadence: cadence,
-        days: days,
-        active: r.active !== false,
-        color: HABIT_COLOR_KEYS.indexOf(r.color) !== -1 ? r.color : null
-      });
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      await apiFetch("/api/habits/bulk", { method: "PUT", body: JSON.stringify({ habits: cleaned }) });
-      closeHabitModal();
-      loadHabits();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "習慣トラッカー"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
   function wireHabitTracker(){
     if (habitTrackerWired) return;
     habitTrackerWired = true;
@@ -2725,31 +2782,7 @@
     if (next) next.addEventListener("click", function(){ habitWeekKey = addDaysKey(habitWeekKey, 7); loadHabits(); });
     if (manage) manage.addEventListener("click", openHabitModal);
 
-    var modal = document.getElementById("habit-modal");
-    var closeBtn = document.getElementById("habit-modal-close");
-    var cancelBtn = document.getElementById("habit-cancel");
-    var newBtn = document.getElementById("habit-new");
-    var backBtn = document.getElementById("habit-detail-back");
-    var delBtn = document.getElementById("habit-detail-del");
-    var form = document.getElementById("habit-form");
-    if (closeBtn) closeBtn.addEventListener("click", closeHabitModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closeHabitModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeHabitModal(); });
-    if (newBtn) newBtn.addEventListener("click", function(){
-      habitEditRows.push(habitNewRow());
-      habitDetailIdx = habitEditRows.length - 1; // 新規はそのまま詳細を開く
-      renderHabitModal();
-    });
-    if (backBtn) backBtn.addEventListener("click", function(){ habitDetailIdx = null; renderHabitModal(); });
-    if (delBtn) delBtn.addEventListener("click", async function(){
-      if (habitDetailIdx == null) return;
-      var r = habitEditRows[habitDetailIdx];
-      if (r && r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
-      habitEditRows.splice(habitDetailIdx, 1);
-      habitDetailIdx = null;
-      renderHabitModal();
-    });
-    if (form) form.addEventListener("submit", onHabitModalSubmit);
+    habitMD.wire();
 
     wireHabitCountPop();
   }
@@ -2766,8 +2799,6 @@
   var planSaveFlush = null;     // 保留中の保存を今すぐ送る関数(別の日を読み込む前に呼ぶ)
   var planLoadSeq = 0;          // 前日/翌日の連打で古い応答が表示を巻き戻さないための番号
   var planWired = false;
-  var planTplRows = [];         // テンプレ管理モーダルの作業コピー
-  var planTplDetailIdx = null;  // null = 一覧ビュー、数値 = そのテンプレの詳細ビュー
   var planApplyResolve = null;
 
   var planSetStatus = makeStatusSetter("pv-plan-status");
@@ -2995,12 +3026,12 @@
   }
 
   /* ---- テンプレ管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
-  function openPlanModal(){
-    var modal = document.getElementById("plan-modal");
-    if (!modal) return;
-    var errEl = document.getElementById("plan-form-error");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    planTplRows = planTemplates.map(function(t){
+  var planMD = makeMasterDetail({
+    prefix: "plan",
+    titles: ["テンプレートの管理", "テンプレートの設定"],
+    emptyHtml: '<div class="habit-edit-empty">テンプレートがありません。「＋ 新規作成」から追加してください。</div>',
+    label: "TODAY'S PLAN",
+    toRow: function(t){
       return {
         id: t.id,
         name: t.name,
@@ -3008,19 +3039,27 @@
         cadence: t.cadence === "daily" ? "daily" : (t.cadence === "days" ? "days" : "manual"),
         days: Array.isArray(t.days) ? t.days.slice() : []
       };
-    });
-    planTplDetailIdx = null;
-    renderPlanModal();
-    modal.hidden = false;
-  }
-  function closePlanModal(){
-    var modal = document.getElementById("plan-modal");
-    if (modal) modal.hidden = true;
-  }
-  function planModalBack(){
-    if (planTplDetailIdx != null){ planTplDetailIdx = null; renderPlanModal(); }
-    else closePlanModal();
-  }
+    },
+    newRow: function(){ return { id: uid(), name: "", items: [], cadence: "manual", days: [] }; },
+    rowName: function(r){ return (r.name || "").trim(); },
+    rowHint: planTplHint,
+    renderDetail: renderPlanTplDetail,
+    clean: function(r){
+      var nm = (r.name || "").trim();
+      if (!nm) return { error: "テンプレ名を入力してください。" };
+      var cadence = r.cadence === "daily" ? "daily" : (r.cadence === "days" ? "days" : "manual");
+      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
+      if (cadence === "days" && !days.length) return { error: "「" + nm + "」の曜日を1つ以上選んでください。" };
+      var items = (r.items || []).map(function(it){
+        return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 120), time: planNormTime(it.time) };
+      }).filter(function(it){ return it.text; });
+      return { row: { id: r.id, name: nm.slice(0, 40), items: items, cadence: cadence, days: days } };
+    },
+    save: function(rows){ return apiFetch("/api/plan/templates", { method: "PUT", body: JSON.stringify({ templates: rows }) }); },
+    afterSave: function(){ loadPlan(); }
+  });
+  function openPlanModal(){ planMD.open(planTemplates); }
+  function closePlanModal(){ planMD.close(); }
   function planTplHint(r){
     var n = (r.items || []).filter(function(it){ return (it.text || "").trim(); }).length;
     var base = n ? (n + " 項目") : "項目なし";
@@ -3032,71 +3071,8 @@
         : "手動のみ";
     return base + " ・ " + cad;
   }
-  function renderPlanModal(){
-    var listView = document.getElementById("plan-list-view");
-    var detailView = document.getElementById("plan-detail-view");
-    var title = document.getElementById("plan-modal-title");
-    var inDetail = planTplDetailIdx != null && !!planTplRows[planTplDetailIdx];
-    if (!inDetail) planTplDetailIdx = null;
-    if (listView) listView.hidden = inDetail;
-    if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "テンプレートの設定" : "テンプレートの管理";
-    if (inDetail) renderPlanTplDetail(planTplDetailIdx);
-    else renderPlanTplList();
-  }
-  function renderPlanTplList(){
-    var wrap = document.getElementById("plan-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    if (!planTplRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">テンプレートがありません。「＋ 新規作成」から追加してください。</div>';
-      return;
-    }
-    var single = planTplRows.length <= 1;
-    planTplRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row";
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-
-      var txt = document.createElement("div");
-      txt.className = "habit-list-txt";
-      var nm = document.createElement("div");
-      nm.className = "habit-list-name";
-      nm.textContent = (r.name || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div");
-      hint.className = "habit-list-hint";
-      hint.textContent = planTplHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = planTplRows[idx - 1]; planTplRows[idx - 1] = r; planTplRows[idx] = t; renderPlanTplList(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < planTplRows.length - 1){ var t = planTplRows[idx + 1]; planTplRows[idx + 1] = r; planTplRows[idx] = t; renderPlanTplList(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === planTplRows.length - 1;
-
-      var chev = document.createElement("span");
-      chev.className = "habit-list-chev";
-      chev.textContent = "›";
-
-      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ planTplDetailIdx = idx; renderPlanModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
-  }
-  function renderPlanTplDetail(idx){
-    var body = document.getElementById("plan-detail-body");
-    var r = planTplRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
+  // 詳細フォーム（planMD が body を空にしてから呼ぶ）。
+  function renderPlanTplDetail(body, r){
 
     var name = document.createElement("input");
     name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 40;
@@ -3167,38 +3143,6 @@
     renderItems();
   }
 
-  async function onPlanModalSubmit(e){
-    e.preventDefault();
-    var errEl = document.getElementById("plan-form-error");
-    var saveBtn = document.getElementById("plan-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
-    function failAt(i, msg){ planTplDetailIdx = i; renderPlanModal(); showErr(msg); }
-    var cleaned = [];
-    for (var i = 0; i < planTplRows.length; i++){
-      var r = planTplRows[i];
-      var nm = (r.name || "").trim();
-      if (!nm){ failAt(i, "テンプレ名を入力してください。"); return; }
-      var cadence = r.cadence === "daily" ? "daily" : (r.cadence === "days" ? "days" : "manual");
-      var days = cadence === "days" ? (r.days || []).filter(function(d){ return d >= 0 && d <= 6; }) : [];
-      if (cadence === "days" && !days.length){ failAt(i, "「" + nm + "」の曜日を1つ以上選んでください。"); return; }
-      var items = (r.items || []).map(function(it){
-        return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 120), time: planNormTime(it.time) };
-      }).filter(function(it){ return it.text; });
-      cleaned.push({ id: r.id, name: nm.slice(0, 40), items: items, cadence: cadence, days: days });
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      await apiFetch("/api/plan/templates", { method: "PUT", body: JSON.stringify({ templates: cleaned }) });
-      closePlanModal();
-      loadPlan();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "TODAY'S PLAN"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
   function wirePlan(){
     if (planWired) return;
     planWired = true;
@@ -3222,36 +3166,12 @@
     var tplBtn = document.getElementById("pv-plan-templates");
     if (tplBtn) tplBtn.addEventListener("click", openPlanModal);
 
-    var modal = document.getElementById("plan-modal");
-    var closeBtn = document.getElementById("plan-modal-close");
-    var cancelBtn = document.getElementById("plan-cancel");
-    var newBtn = document.getElementById("plan-new");
-    var backBtn = document.getElementById("plan-detail-back");
-    var delBtn = document.getElementById("plan-detail-del");
+    planMD.wire();
     var applyBtn = document.getElementById("plan-detail-apply");
-    var form = document.getElementById("plan-form");
-    if (closeBtn) closeBtn.addEventListener("click", closePlanModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closePlanModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closePlanModal(); });
-    if (newBtn) newBtn.addEventListener("click", function(){
-      planTplRows.push({ id: uid(), name: "", items: [], cadence: "manual", days: [] });
-      planTplDetailIdx = planTplRows.length - 1;
-      renderPlanModal();
-    });
-    if (backBtn) backBtn.addEventListener("click", function(){ planTplDetailIdx = null; renderPlanModal(); });
-    if (delBtn) delBtn.addEventListener("click", async function(){
-      if (planTplDetailIdx == null) return;
-      var r = planTplRows[planTplDetailIdx];
-      if (r && r.name && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
-      planTplRows.splice(planTplDetailIdx, 1);
-      planTplDetailIdx = null;
-      renderPlanModal();
-    });
     if (applyBtn) applyBtn.addEventListener("click", function(){
-      if (planTplDetailIdx == null) return;
-      applyPlanTemplateItems(planTplRows[planTplDetailIdx].items);
+      var cur = planMD.current();
+      if (cur) applyPlanTemplateItems(cur.items);
     });
-    if (form) form.addEventListener("submit", onPlanModalSubmit);
 
     var aAppend = document.getElementById("plan-apply-append");
     var aReplace = document.getElementById("plan-apply-replace");
@@ -7211,8 +7131,8 @@
       { el: settingsModal, close: closeSettings },
       { el: byId("plan-apply-modal"), close: function(){ closePlanApply("cancel"); } },
       { el: byId("finance-modal"),    close: closeFinanceModal },
-      { el: byId("habit-modal"),      close: habitModalBack },
-      { el: byId("plan-modal"),       close: planModalBack }
+      { el: byId("habit-modal"),      close: habitMD.back },
+      { el: byId("plan-modal"),       close: planMD.back }
     ].concat(
       escModuleModals.map(function(m){ return { el: byId(m.id), close: m.close }; }),
       [
@@ -8432,6 +8352,7 @@
     askConfirm: askConfirm,
     mkHabitIconBtn: mkHabitIconBtn,
     showView: showView,
+    makeMasterDetail: makeMasterDetail,
     // モジュールのモーダルを Esc で閉じられるようにする(上の Esc スタックに足す)。
     registerEscModal: function(id, close){ escModuleModals.push({ id: id, close: close }); },
     acctPath: acctPath,

@@ -31,8 +31,6 @@
   var contractsTab = "";        // "" = すべて / "alert" / "依頼受領" / "送付済み" / "締結済み"
   var contractsQuery = "";      // 検索窓の文字列
   var contractsRequester = "";  // 依頼者の絞り込み("" = すべて、"__other" = 既知4名以外)
-  var contractEditRows = [];    // 管理モーダルの作業コピー
-  var contractDetailIdx = null; // null = 一覧ビュー、数値 = その契約書の詳細ビュー
   var contractsWired = false;
   var contractsLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
   var contractsShowDone = false; // 一覧ページで「報告済み」(完了)を展開しているか
@@ -667,11 +665,7 @@
     var newBtn = document.getElementById("contracts-page-new");
     if (newBtn) newBtn.addEventListener("click", function(){
       openContractModal();
-      if (contractsLoadOk){
-        contractEditRows.push(contractNewRow());
-        contractDetailIdx = contractEditRows.length - 1;
-        renderContractModal();
-      }
+      if (contractsLoadOk && contractMD) contractMD.addNew();
     });
   }
 
@@ -687,18 +681,17 @@
     else renderContractsPage();
   }
 
-  /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ---- */
-  function openContractModal(targetId){
-    var modal = document.getElementById("contract-modal");
-    if (!modal) return;
-    if (!contractsLoadOk){
-      contractSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
-      loadContracts();
-      return;
-    }
-    var errEl = document.getElementById("contract-form-error");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    contractEditRows = contractsState.map(function(c){
+  /* ---- 管理モーダル (一覧 → タイトルを押して詳細 / 新規作成) ----
+     枠(一覧・並べ替え・新規・削除・保存の流れ)は app.js の makeMasterDetail。ここは契約書固有の中身だけ。
+     デプロイ直後に古い app.js と新しいこのファイルが一瞬組み合わさると makeMasterDetail が無いので、
+     そのときは管理モーダルだけ使えなくして再読み込みを促す(カードや一覧は動かす)。 */
+  var contractMD = CP.makeMasterDetail ? CP.makeMasterDetail({
+    prefix: "contract",
+    titles: ["契約書トラッカーの管理", "契約書の設定"],
+    emptyHtml: '<div class="habit-edit-empty">契約書がありません。「＋ 新規作成」から追加してください。</div>',
+    label: "契約書トラッカー",
+    canEdit: function(){ return contractsLoadOk; },
+    toRow: function(c){
       return {
         id: c.id, title: c.title, client: c.client || "", requestedBy: c.requestedBy || "",
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
@@ -708,23 +701,49 @@
         autoAdvancedAt: Number(c.autoAdvancedAt) || 0, autoAdvancedTo: c.autoAdvancedTo || "",
         source: c.source === "slack" ? "slack" : "manual"
       };
-    });
-    contractDetailIdx = null;
-    if (targetId){
-      for (var i = 0; i < contractEditRows.length; i++){
-        if (contractEditRows[i].id === targetId){ contractDetailIdx = i; break; }
-      }
+    },
+    newRow: contractNewRow,
+    // client(会社名)が主識別子。削除確認もこれで出す(以前は title だけを見ていて、会社名だけの行は確認なしで消えた)
+    rowName: function(r){ return (r.client || "").trim() || (r.title || "").trim(); },
+    rowHint: contractHint,
+    renderDetail: renderContractDetailView,
+    clean: function(r){
+      var cl = (r.client || "").trim();
+      var nm = (r.title || "").trim();
+      if (!cl && !nm) return { error: "クライアント名（会社名）を入力してください。" };
+      return { row: {
+        id: r.id, title: nm.slice(0, 80), client: cl.slice(0, 60),
+        requestedBy: (r.requestedBy || "").trim().slice(0, 40),
+        status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
+        requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
+        dueDate: r.dueDate || "", confidential: r.confidential === true,
+        slackUrl: (r.slackUrl || "").trim().slice(0, 500),
+        notes: (r.notes || "").trim().slice(0, 500),
+        autoAdvancedAt: Number(r.autoAdvancedAt) || 0, autoAdvancedTo: r.autoAdvancedTo || "",
+        source: r.source === "slack" ? "slack" : "manual"
+      } };
+    },
+    save: function(rows){
+      return apiFetch("/api/contracts/bulk", {
+        method: "PUT",
+        // 空での全置換は「全部消した」ときだけ許可(読み込み失敗中の全消し防止ガードを殺さない)
+        headers: rows.length ? {} : { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ contracts: rows })
+      });
+    },
+    afterSave: function(){ loadContracts(); }
+  }) : null;
+  function openContractModal(targetId){
+    if (!contractMD){
+      contractSetStatus("新しい版に更新されています。ページを再読み込みしてください。", true);
+      return;
     }
-    renderContractModal();
-    modal.hidden = false;
-  }
-  function closeContractModal(){
-    var modal = document.getElementById("contract-modal");
-    if (modal) modal.hidden = true;
-  }
-  function contractModalBack(){
-    if (contractDetailIdx != null){ contractDetailIdx = null; renderContractModal(); }
-    else closeContractModal();
+    if (!contractsLoadOk){
+      contractSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      loadContracts();
+      return;
+    }
+    contractMD.open(contractsState, targetId);
   }
   function contractNewRow(){
     return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", autoAdvancedAt: 0, autoAdvancedTo: "", source: "manual" };
@@ -733,71 +752,8 @@
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
     return (r.status || "依頼受領") + (pending ? " ・ ⚠未締結" : "") + (r.confidential ? " ・ 🔒機密" : "") + (r.source === "slack" ? " ・ Slack検知" : "");
   }
-  function renderContractModal(){
-    var listView = document.getElementById("contract-list-view");
-    var detailView = document.getElementById("contract-detail-view");
-    var title = document.getElementById("contract-modal-title");
-    var inDetail = contractDetailIdx != null && !!contractEditRows[contractDetailIdx];
-    if (!inDetail) contractDetailIdx = null;
-    if (listView) listView.hidden = inDetail;
-    if (detailView) detailView.hidden = !inDetail;
-    if (title) title.textContent = inDetail ? "契約書の設定" : "契約書トラッカーの管理";
-    if (inDetail) renderContractDetailView(contractDetailIdx);
-    else renderContractListView();
-  }
-  function renderContractListView(){
-    var wrap = document.getElementById("contract-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    if (!contractEditRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">契約書がありません。「＋ 新規作成」から追加してください。</div>';
-      return;
-    }
-    var single = contractEditRows.length <= 1;
-    contractEditRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row";
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-
-      var txt = document.createElement("div");
-      txt.className = "habit-list-txt";
-      var nm = document.createElement("div");
-      nm.className = "habit-list-name";
-      nm.textContent = (r.client || "").trim() || (r.title || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div");
-      hint.className = "habit-list-hint";
-      hint.textContent = contractHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = contractEditRows[idx - 1]; contractEditRows[idx - 1] = r; contractEditRows[idx] = t; renderContractListView(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < contractEditRows.length - 1){ var t = contractEditRows[idx + 1]; contractEditRows[idx + 1] = r; contractEditRows[idx] = t; renderContractListView(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === contractEditRows.length - 1;
-
-      var chev = document.createElement("span");
-      chev.className = "habit-list-chev";
-      chev.textContent = "›";
-
-      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ contractDetailIdx = idx; renderContractModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
-  }
-  function renderContractDetailView(idx){
-    var body = document.getElementById("contract-detail-body");
-    var r = contractEditRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
+  // 詳細フォーム（contractMD が body を空にしてから呼ぶ）。
+  function renderContractDetailView(body, r){
 
     if (r.source === "slack"){
       var slackNote = document.createElement("div");
@@ -835,7 +791,7 @@
         r.requestedBy = (r.requestedBy === nm) ? "" : nm;
         r.source = "manual";
         requestedBy.value = r.requestedBy;
-        renderContractDetailView(idx);
+        contractMD.render();
       });
       reqChips.appendChild(chip);
     });
@@ -923,49 +879,6 @@
     body.appendChild(lineMisc);
   }
 
-  async function onContractModalSubmit(e){
-    e.preventDefault();
-    var errEl = document.getElementById("contract-form-error");
-    var saveBtn = document.getElementById("contract-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
-    function failAt(i, msg){ contractDetailIdx = i; renderContractModal(); showErr(msg); }
-    if (!contractsLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
-    var cleaned = [];
-    for (var i = 0; i < contractEditRows.length; i++){
-      var r = contractEditRows[i];
-      var cl = (r.client || "").trim();
-      var nm = (r.title || "").trim();
-      if (!cl && !nm){ failAt(i, "クライアント名（会社名）を入力してください。"); return; }
-      cleaned.push({
-        id: r.id, title: nm.slice(0, 80), client: cl.slice(0, 60),
-        requestedBy: (r.requestedBy || "").trim().slice(0, 40),
-        status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
-        requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
-        dueDate: r.dueDate || "", confidential: r.confidential === true,
-        slackUrl: (r.slackUrl || "").trim().slice(0, 500),
-        notes: (r.notes || "").trim().slice(0, 500),
-        autoAdvancedAt: Number(r.autoAdvancedAt) || 0, autoAdvancedTo: r.autoAdvancedTo || "",
-        source: r.source === "slack" ? "slack" : "manual"
-      });
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      await apiFetch("/api/contracts/bulk", {
-        method: "PUT",
-        // 空での全置換は「全部消した」ときだけ許可(読み込み失敗中の全消し防止ガードを殺さない)
-        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ contracts: cleaned })
-      });
-      closeContractModal();
-      loadContracts();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "契約書トラッカー"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
   function wireContracts(){
     if (contractsWired) return;
     contractsWired = true;
@@ -985,31 +898,7 @@
     // 検索・依頼者フィルタはカードから外した（全件ページ側のツールバーで行う）。
     // contractsQuery / contractsRequester の状態自体は両画面で共用のまま残っている。
 
-    var modal = document.getElementById("contract-modal");
-    var closeBtn = document.getElementById("contract-modal-close");
-    var cancelBtn = document.getElementById("contract-cancel");
-    var newBtn = document.getElementById("contract-new");
-    var backBtn = document.getElementById("contract-detail-back");
-    var delBtn = document.getElementById("contract-detail-del");
-    var form = document.getElementById("contract-form");
-    if (closeBtn) closeBtn.addEventListener("click", closeContractModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closeContractModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closeContractModal(); });
-    if (newBtn) newBtn.addEventListener("click", function(){
-      contractEditRows.push(contractNewRow());
-      contractDetailIdx = contractEditRows.length - 1;
-      renderContractModal();
-    });
-    if (backBtn) backBtn.addEventListener("click", function(){ contractDetailIdx = null; renderContractModal(); });
-    if (delBtn) delBtn.addEventListener("click", async function(){
-      if (contractDetailIdx == null) return;
-      var r = contractEditRows[contractDetailIdx];
-      if (r && r.title && !(await askConfirm('「' + r.title + '」を削除しますか?'))) return;
-      contractEditRows.splice(contractDetailIdx, 1);
-      contractDetailIdx = null;
-      renderContractModal();
-    });
-    if (form) form.addEventListener("submit", onContractModalSubmit);
+    if (contractMD) contractMD.wire();
   }
 
   /* ================= ビジネス: プロジェクトボード =================
@@ -2460,6 +2349,6 @@
   // Esc で閉じる(app.js の Esc スタックへ登録。閉じる関数はこの IIFE の中にしか無い)。
   if (CP.registerEscModal){
     CP.registerEscModal("pb-modal", pbModalBack);
-    CP.registerEscModal("contract-modal", contractModalBack);
+    if (contractMD) CP.registerEscModal("contract-modal", contractMD.back);
   }
 })();
