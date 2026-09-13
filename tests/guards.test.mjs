@@ -15,7 +15,7 @@ const dir = fileURLToPath(new URL("..", import.meta.url));
 const read = (f) => readFileSync(dir + f, "utf8");
 
 const html = read("index.html");
-const JS_FILES = ["app.js", "app.business.js", "app.payables.js", "app.jimuhack.js", "app.smallbiz.js", "auth.js"];
+const JS_FILES = ["app.js", "app.business.js", "app.payables.js", "app.money.js", "app.jimuhack.js", "app.smallbiz.js", "auth.js"];
 const jsSrc = JS_FILES.filter((f) => existsSync(dir + f)).map(read).join("\n");
 const sw = read("sw.js");
 const app = read("app.js");
@@ -29,6 +29,21 @@ test("getElementById literals point at ids that exist", () => {
   assert.ok(refs.size > 300, `expected many getElementById literals, found ${refs.size}`);
   const missing = [...refs].filter((id) => !ids.has(id));
   assert.deepEqual(missing, [], `getElementById refers to ids that exist nowhere: ${missing.join(", ")}`);
+});
+
+/* 同じファイルの IIFE 直下で function / var の名前が重複していない。
+   2026/09/14 v2.33.67: app.business.js に新しく足した `var contractMD = ...` が既存の
+   `function contractMD(key)`（日付表示）を上書きし、ビジネスタブの描画が本番で止まった。 */
+test("no duplicate top-level function/var names inside each module", () => {
+  for (const f of JS_FILES.filter((x) => x !== "auth.js" && existsSync(dir + x))) {
+    const seen = new Map();
+    for (const m of read(f).matchAll(/^ {2}(?:(?:async )?function ([\w$]+)\(|var ([\w$]+)(?:\s*[=;,]))/gm)) {
+      const n = m[1] || m[2];
+      seen.set(n, (seen.get(n) || 0) + 1);
+    }
+    const dups = [...seen].filter(([, c]) => c > 1).map(([n]) => n);
+    assert.deepEqual(dups, [], `${f}: top-level name declared more than once: ${dups.join(", ")}`);
+  }
 });
 
 test("app.js BUILD_V matches sw.js CACHE (bump.mjs ritual)", () => {

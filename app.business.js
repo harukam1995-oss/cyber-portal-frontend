@@ -752,7 +752,7 @@
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
     return (r.status || "依頼受領") + (pending ? " ・ ⚠未締結" : "") + (r.confidential ? " ・ 🔒機密" : "") + (r.source === "slack" ? " ・ Slack検知" : "");
   }
-  // 詳細フォーム（contractMD が body を空にしてから呼ぶ）。
+  // 詳細フォーム（contractMaster が body を空にしてから呼ぶ）。
   function renderContractDetailView(body, r){
 
     if (r.source === "slack"){
