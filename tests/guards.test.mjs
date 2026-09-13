@@ -71,15 +71,17 @@ test("sw.js SHELL and CORE files exist, and CORE is inside SHELL", () => {
 /* ---- デザイン方針のラチェット ----
    現状の件数を上限にしている。CSS 整理で減らしたら、ここの数字も下げてコミットする
    （増やす変更はテストが落ちる＝方針に戻す）。コメント内の記述は数えない。 */
+// 2026/09/14 CSS 整理(v2.33.70)後の値。残る gradient は機能のもの（ドット地・スケルトン・「色なし」の斜線・
+// ヒーロー下端のフェード）、backdrop-filter は `none` 以外の1件＝パネルの打ち消し側ではなくカウント対象外の書式ゆれ。
 const CSS_LIMITS = {
-  "!important": 79,
-  "gradient(": 11,
-  "backdrop-filter (not none)": 2,
-  "text-shadow (not none)": 2,
-  "box-shadow 0 0 Npx (glow)": 9,
-  "drop-shadow(": 1,
+  "!important": 71,
+  "gradient(": 6,
+  "backdrop-filter (not none)": 1,
+  "text-shadow (not none)": 0,
+  "box-shadow 0 0 Npx (glow)": 0,
+  "drop-shadow(": 0,
   "Orbitron / Rajdhani": 0,
-  "border-radius > 3px": 101,
+  "border-radius > 3px": 0,
 };
 
 test("design-policy CSS counts do not grow (ratchet)", () => {
