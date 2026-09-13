@@ -23,9 +23,14 @@ concurrency:
   group: weekly-backup
   cancel-in-progress: false
 
+# リポジトリへの書き込み権限は要らない(外部 API を curl で叩くだけ)。
+permissions: {}
+
 jobs:
   backup:
     runs-on: ubuntu-latest
+    # 最悪ケース 90 + 3×(300+20) 秒 ≈ 17.5 分。ハングしたら既定の 6 時間待たずに落とす。
+    timeout-minutes: 25
     steps:
       - name: Trigger Drive backup
         env:
@@ -51,6 +56,11 @@ jobs:
             echo "attempt $attempt -> HTTP $code"
             if [ "$code" = "200" ]; then
               echo "$payload"
+              # 200 でも中身が伴わなければ失敗扱いにする(lastFile が返っていること)。
+              if ! printf '%s' "$payload" | grep -q '"lastFile"'; then
+                echo "::error::HTTP 200 だが応答に lastFile がありません。バックアップが作られていない可能性があります。"
+                exit 1
+              fi
               exit 0
             fi
             if [ "$code" = "401" ]; then

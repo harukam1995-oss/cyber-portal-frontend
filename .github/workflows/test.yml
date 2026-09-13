@@ -1,0 +1,36 @@
+# push / PR ごとに tests/ を回す(ネットワーク不要のテストだけ)。
+# 以前は手元で npm test したときしか動かず、ミラーのズレやルート名の食い違いを
+# デプロイ後に本番で踏むまで気づけなかった。
+# デプロイ済みサイトのスモークテスト(tests/smoke.test.mjs)は Pages の反映待ちが要るので
+# ここでは SKIP_SMOKE=1 で外す(Actions タブから手動実行したときだけ本番に対して回す)。
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: "デプロイ済みサイトのスモークテストも回す"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: node --check (構文)
+        run: for f in app*.js sw.js bump.mjs; do node --check "$f"; done
+      - name: npm test
+        env:
+          SKIP_SMOKE: ${{ (github.event_name == 'workflow_dispatch' && inputs.smoke) && '0' || '1' }}
+        run: npm test

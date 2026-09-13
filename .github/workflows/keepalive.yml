@@ -14,9 +14,12 @@ concurrency:
   group: keep-alive
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Ping backend /healthz
         run: |

@@ -1,14 +1,15 @@
-// デプロイ前のバージョン上げを1コマンドに。GitHub Web UI アップロード運用でも、
-// 手元でこれを実行してから該当ファイルを上げれば sw.js と index.html のズレが無くなる。
+// デプロイ前のバージョン上げを1コマンドに(sw.js の CACHE / app.js の BUILD_V / index.html フッター)。
 //
 //   node bump.mjs            … sw.js の CACHE を +1、index.html フッターを patch +1
 //   node bump.mjs minor      … フッターを minor +1 (patch=0)、CACHE も +1
 //   node bump.mjs 23 2.21.0  … 明示指定
+// どのディレクトリから実行してもリポジトリ直下のファイルを触る。
 import { readFileSync, writeFileSync } from "node:fs";
 
-const sw = readFileSync("sw.js", "utf8");
-const html = readFileSync("index.html", "utf8");
-const app = readFileSync("app.js", "utf8");
+const at = (f) => new URL(f, import.meta.url);
+const sw = readFileSync(at("sw.js"), "utf8");
+const html = readFileSync(at("index.html"), "utf8");
+const app = readFileSync(at("app.js"), "utf8");
 
 const curCache = Number((sw.match(/cyber-portal-shell-v(\d+)/) || [])[1]);
 const curVer = (html.match(/<span>v(\d+\.\d+\.\d+)<\/span>/) || [])[1];
@@ -28,12 +29,18 @@ if (a2 && /^\d+$/.test(a2) && a3 && /^\d+\.\d+\.\d+$/.test(a3)) {
   nextVer = a2 === "minor" ? `${maj}.${min + 1}.0` : a2 === "major" ? `${maj + 1}.0.0` : `${maj}.${min}.${pat + 1}`;
 }
 
-writeFileSync("sw.js", sw.replace(/cyber-portal-shell-v\d+/, `cyber-portal-shell-v${nextCache}`));
-writeFileSync("index.html", html.replace(/<span>v\d+\.\d+\.\d+<\/span>/, `<span>v${nextVer}</span>`));
-// BUILD_V も sw CACHE と同じ番号に揃える(app.business.js/app.payables.js の
-// オンデマンド読み込みに ?v= を付けて、CDN/ブラウザキャッシュの max-age=600 を毎回突破する)。
-writeFileSync("app.js", app.replace(/var BUILD_V = \d+;/, `var BUILD_V = ${nextCache};`));
+// BUILD_V も sw CACHE と同じ番号に揃える(オンデマンドモジュール app.*.js の読み込みに ?v= を
+// 付けて、CDN/ブラウザキャッシュの max-age=600 を毎回突破する)。
+// 置換が1件も当たらなかったら書き込まずに止める(以前は BUILD_V だけ黙って古いまま残り得た)。
+const BUILD_V_RE = /var BUILD_V = \d+;/;
+if (!BUILD_V_RE.test(app)) {
+  console.error("app.js に `var BUILD_V = N;` が見つかりません。何も書き込まずに中止しました。");
+  process.exit(1);
+}
+writeFileSync(at("sw.js"), sw.replace(/cyber-portal-shell-v\d+/, `cyber-portal-shell-v${nextCache}`));
+writeFileSync(at("index.html"), html.replace(/<span>v\d+\.\d+\.\d+<\/span>/, `<span>v${nextVer}</span>`));
+writeFileSync(at("app.js"), app.replace(BUILD_V_RE, `var BUILD_V = ${nextCache};`));
 console.log(`sw CACHE  v${curCache} -> v${nextCache}`);
 console.log(`footer    v${curVer} -> v${nextVer}`);
 console.log(`BUILD_V   -> ${nextCache}（app.js）`);
-console.log("→ 変更した index.html / sw.js / app.js（と style.css 等）をアップロードしてください。");
+console.log("→ 変更したファイルを名指しで git add して commit / push してください。");

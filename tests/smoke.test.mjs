@@ -39,13 +39,24 @@ test("shell assets referenced by the service worker all resolve", { skip }, asyn
   }
 });
 
-test("service worker CACHE version is in sync with the footer version", { skip }, async () => {
+test("deployed sw CACHE, app.js BUILD_V and footer are all present and in sync", { skip }, async () => {
   const { body: sw } = await get("./sw.js");
   const { body: html } = await get("./");
+  const { body: app } = await get("./app.js?cb=" + Date.now());
   const cache = sw.match(/cyber-portal-shell-v(\d+)/);
   const footer = html.match(/<span>v(\d+\.\d+\.\d+)<\/span>/);
-  assert.ok(cache && footer, "could not read both version markers");
-  // They are bumped together by bump.mjs; this just asserts both exist and are
-  // plausibly non-empty (no strict numeric relationship between them).
-  assert.ok(Number(cache[1]) > 0);
+  const build = app.match(/var BUILD_V = (\d+);/);
+  assert.ok(cache && footer && build, "could not read all version markers");
+  // bump.mjs が同じ番号にそろえる。ズレるとオンデマンドモジュールの ?v= が変わらず古い版が配信される。
+  assert.equal(build[1], cache[1], "BUILD_V in deployed app.js differs from sw.js CACHE");
+});
+
+test("on-demand modules resolve on the deployed site", { skip }, async () => {
+  const { body: app } = await get("./app.js?cb=" + Date.now());
+  const files = [...app.matchAll(/loadModuleOnce\("([^"]+)", "[^"]+"\)/g)].map(m => m[1]);
+  assert.ok(files.length >= 3);
+  for (const f of files){
+    const { res, url } = await get("./" + f);
+    assert.equal(res.status, 200, `module ${url} returned ${res.status}`);
+  }
 });
