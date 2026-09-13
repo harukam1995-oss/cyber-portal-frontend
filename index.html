@@ -247,7 +247,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.60</span>
+      <span>v2.33.61</span>
     </div>
   </footer>
 </div>
@@ -1005,7 +1005,7 @@
       <label class="pay2-check-inline"><input type="checkbox" id="pay2-unpaid"> 未払いのみ</label>
       <label class="pay2-check-inline" title="金額または支払期日が未入力＝まだ支払える状態でない行"><input type="checkbox" id="pay2-need-input"> 要入力のみ</label>
       <label class="pay2-check-inline"><input type="checkbox" id="pay2-show-excluded"> 対象外も表示</label>
-      <button type="button" class="pay2-tool-btn" id="pay2-import-btn">✉ メール取り込み</button>
+      <button type="button" class="pay2-tool-btn" id="pay2-import-btn" title="01.payment と台帳を突き合わせ、台帳に無いメール（入口外の請求書らしいメールを含む）を処理">✉ 未処理キュー</button>
       <button type="button" class="pay2-tool-btn" id="pay2-backfill-btn" title="01.payment メールを走査し、既存行の空きメールアドレスを補完">✉ アドレス補完</button>
       <button type="button" class="pay2-tool-btn" id="pay2-sheet-btn">↑ スプシ</button>
       <button type="button" class="pay2-tool-btn pay2-sheetpull-btn" id="pay2-sheetpull-btn">↓ スプシから取り込み</button>
@@ -1120,22 +1120,27 @@
   </div>
 </div>
 
-<!-- 01.payment メールからの取り込みモーダル -->
+<!-- 未処理キュー（01.payment と台帳の突き合わせ＋入口外。漏れ防止計画 P1） -->
 <div class="modal-overlay" id="pay2-import-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pay2-import-title">
-  <div class="modal-panel event-modal-panel">
+  <div class="modal-panel pay2-queue-panel">
     <div class="modal-head">
-      <h3 id="pay2-import-title">メールから取り込み</h3>
+      <h3 id="pay2-import-title">未処理キュー</h3>
       <button class="modal-close" type="button" id="pay2-import-close" aria-label="閉じる">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <p class="pay2-import-hint">SYSLEA アカウントの <code>01.payment</code> ラベルの未処理メールです。台帳に無いものを選んで下書き行を作成します（金額・支払期日は後で入力）。</p>
-    <div class="pay2-import-list" id="pay2-import-list"><p class="pay2-empty">読み込み中…</p></div>
+    <div class="pay2-queue-bar">
+      <span class="pay2-queue-sum" id="pay2-queue-sum"></span>
+      <button type="button" class="pay2-tool-btn" id="pay2-queue-dismiss-junk" hidden></button>
+      <button type="button" class="pay2-tool-btn" id="pay2-queue-reload">再読込</button>
+    </div>
+    <p class="pay2-import-hint pay2-queue-hint">SYSLEA の <code>01.payment</code> と台帳を突き合わせ、台帳に無いメールを出します。1通ずつ「確定（台帳に追加）」「既存の行に紐付け」「変更通知」「対象外」で閉じると、そのメールだけラベルが付け替わります（Gmail 画面でラベルを付けるとスレッド全体に付くので、ここから操作してください）。</p>
+    <div class="pay2-import-list pay2-queue-list" id="pay2-import-list"></div>
+    <datalist id="pay2-queue-vendors"></datalist>
     <div class="event-form-error" id="pay2-import-error" hidden></div>
-    <div class="event-form-actions">
+    <div class="event-form-actions pay2-queue-foot">
       <div class="event-form-actions-right">
-        <button type="button" id="pay2-import-cancel" class="ev-btn">キャンセル</button>
-        <button type="button" id="pay2-import-run" class="ev-btn ev-btn-primary" disabled>選択を取り込む</button>
+        <button type="button" id="pay2-import-cancel" class="ev-btn">閉じる</button>
       </div>
     </div>
   </div>

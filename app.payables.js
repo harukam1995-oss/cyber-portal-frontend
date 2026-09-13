@@ -212,10 +212,12 @@
       p2El("pay2-vendor-cancel").addEventListener("click", p2CloseVendor);
       p2El("pay2-vendor-form").addEventListener("submit", function(e){ e.preventDefault(); p2SaveVendor(); });
       p2El("pay2-vendor-del").addEventListener("click", p2DeleteVendor);
-      // 取り込みモーダル
+      // 未処理キュー（旧 取り込みモーダル）
       p2El("pay2-import-close").addEventListener("click", p2CloseImport);
       p2El("pay2-import-cancel").addEventListener("click", p2CloseImport);
-      p2El("pay2-import-run").addEventListener("click", p2RunImport);
+      p2El("pay2-queue-reload").addEventListener("click", p2QueueLoad);
+      p2El("pay2-queue-dismiss-junk").addEventListener("click", p2QueueDismissJunk);
+      p2El("pay2-import-list").addEventListener("click", p2QueueClick);
     }
     p2Load();
   }
@@ -1007,122 +1009,195 @@
     });
   }
 
-  /* ---- 01.payment メールからの取り込み ---- */
+  /* ---- 未処理キュー（漏れ防止計画 P1・2026/09/13）----
+     GET /api/payables/queue が「台帳に無いメール」を返す：
+       parent＝親 01.payment（payment@ 宛はフィルタでここに入る）／labeled＝方式ラベルなのに台帳に無い／
+       thread＝台帳にあるスレッドの新着（ラベル無し）／sweep＝入口外の請求書らしいメール（payment@ 以外宛）。
+     1通ずつ 確定（台帳に追加）／既存の行に紐付け／変更通知／対象外／無視（入口外のみ）で閉じる。
+     ラベルはサーバーがメール1通単位で付け替える（Gmail 画面の操作はスレッド全体に付くので使わない）。 */
+  var P2Q_METHODS = ["銀行振込", "口座振替", "UPSIDER"];
+  var P2Q_SRC = { parent: "01.payment（未処理）", labeled: "ラベルあり・台帳なし", thread: "台帳にあるスレッドの新着", sweep: "入口外（payment@ 以外に届いた請求書らしいメール）" };
+  var P2Q_SUGGEST = {
+    "new": "新しい請求書として確定",
+    link: "既存の請求書の返信・重複（紐付け）",
+    notice: "変更通知",
+    exclude: "請求書ではなさそう（対象外）",
+    dismiss: "請求書ではなさそう（無視）"
+  };
+  var P2Q_DONE = { "new": "台帳に追加", link: "既存の行に紐付け", notice: "変更通知へ", exclude: "対象外へ", dismiss: "入口外の候補から外しました" };
+  var p2q = { items: [], days: 60, truncated: false, loading: false, dirty: false };
+
   function p2OpenImport(){
     p2El("pay2-import-modal").hidden = false;
-    p2El("pay2-import-error").hidden = true;
-    p2El("pay2-import-run").disabled = true;
-    var listEl = p2El("pay2-import-list");
-    listEl.innerHTML = '<p class="pay2-empty">読み込み中…</p>';
     document.body.style.overflow = "hidden";
-    // 01.payment ラベルの実 ID を引いてから、そのラベルのメールを取得する
-    // (INBOX から外れて(アーカイブ済み)いても拾えるように)。
-    apiFetch("/api/google/gmail/labels?account=syslea").then(function(lres){
-      var labels = (lres && lres.labels) || [];
-      var lab = labels.filter(function(l){ return (l.name || "") === "01.payment"; })[0];
-      var mp = "/api/google/gmail/messages?account=syslea&maxResults=50";
-      mp += lab ? "&labelId=" + encodeURIComponent(lab.id) : ("&q=" + encodeURIComponent("label:01.payment"));
-      return apiFetch(mp);
-    })
-      .then(function(res){
-        var msgs = (res && res.messages) || [];
-        var knownMsg = {}, knownThread = {};
-        p2.payables.forEach(function(r){
-          if (r.messageId) knownMsg[r.messageId] = 1;
-          if (r.threadId) knownThread[r.threadId] = 1;
-        });
-        if (!msgs.length){
-          listEl.innerHTML = '<p class="pay2-empty">01.payment に未処理メールはありません。</p>';
-          return;
-        }
-        listEl.innerHTML = msgs.map(function(m){
-          var dup = !!(knownMsg[m.id] || knownThread[m.threadId]);
-          var dstr = m.date ? jstDateKey(new Date(m.date)) : "";
-          var addr = m.fromAddress || m.from || "";
-          var vmatch = p2VendorByEmail(addr);
-          var pmGuess = p2PeriodFromSubject(m.subject || "");
-          return '<label class="pay2-import-row' + (dup ? " dup" : "") + '">' +
-            '<input type="checkbox" class="pay2-imp-cb" value="' + escapeHtml(m.id) + '"' +
-              (dup ? " disabled" : "") +
-              ' data-messageid="' + escapeHtml(m.id) +
-              '" data-threadid="' + escapeHtml(m.threadId || "") +
-              '" data-from="' + escapeHtml(m.from || "") +
-              '" data-fromemail="' + escapeHtml(addr) +
-              '" data-subject="' + escapeHtml(m.subject || "") +
-              '" data-date="' + escapeHtml(dstr) + '">' +
-            '<span class="pay2-import-meta">' +
-              '<span class="pay2-import-from">' + escapeHtml(m.from || "(不明)") +
-                (dup ? "（登録済み）" : vmatch ? "（→ " + escapeHtml(vmatch.name) + "）" : "") +
-                (pmGuess ? " ・" + escapeHtml(pmGuess) + "分" : "") + "</span>" +
-              '<span class="pay2-import-subj">' + escapeHtml(m.subject || "") + "</span>" +
-              '<span class="pay2-import-date">' + escapeHtml(dstr) + "</span>" +
-            "</span></label>";
-        }).join("");
-        listEl.querySelectorAll(".pay2-imp-cb").forEach(function(cb){
-          cb.addEventListener("change", function(){
-            var any = listEl.querySelectorAll(".pay2-imp-cb:checked").length > 0;
-            p2El("pay2-import-run").disabled = !any;
-          });
-        });
-      })
-      .catch(function(err){
-        listEl.innerHTML = "";
-        var e = p2El("pay2-import-error");
-        e.hidden = false; e.textContent = apiErrorMessage(err, "メール");
-      });
+    p2QueueLoad();
   }
-  function p2CloseImport(){ p2El("pay2-import-modal").hidden = true; document.body.style.overflow = ""; }
-  // 差出人が noreply/中継のときは件名の （…） 【…】 からベンダー名を推測する。
-  function p2GuessVendor(from, subject){
-    var f = String(from || "").replace(/\s*via\s+.*$/i, "").replace(/^['"]+|['"]+$/g, "").trim();
-    var junk = /^(do[_-]?not[_-]?reply|no[_-]?reply|noreply|donotreply|info|billing|invoice|mail|accounts?|team|support)$/i;
-    if (f && !junk.test(f)) return f;
-    var s = String(subject || "");
-    var m = s.match(/（([^（）]{2,40})）/) || s.match(/\(([^()]{2,40})\)/);
-    if (m) return m[1].replace(/(から|より|さん|様)$/, "").trim();
-    m = s.match(/[【\[]([^】\]]{2,20})[】\]]/);
-    if (m) return m[1].trim();
-    return f || "";
+  function p2CloseImport(){
+    p2El("pay2-import-modal").hidden = true;
+    document.body.style.overflow = "";
+    if (p2q.dirty){ p2q.dirty = false; p2Load(); }
   }
-  // 件名の「2026年8月分」「8月分」→ "YYYY-MM"（サーバー側と同じ規則。表示用の当たりだけ）
-  function p2PeriodFromSubject(subj){
-    var s = String(subj || "");
-    var m = s.match(/(20\d{2})\s*年\s*0?(\d{1,2})\s*月分?/);
-    if (m && +m[2] >= 1 && +m[2] <= 12) return m[1] + "-" + ("0" + m[2]).slice(-2);
-    m = s.match(/0?(\d{1,2})\s*月分/);
-    if (m && +m[1] >= 1 && +m[1] <= 12) return (new Date().getFullYear()) + "-" + ("0" + m[1]).slice(-2);
-    return "";
-  }
-  function p2RunImport(){
-    var cbs = Array.prototype.slice.call(document.querySelectorAll("#pay2-import-list .pay2-imp-cb:checked"));
-    if (!cbs.length) return;
-    // サーバー側で ベンダー照合／方式／何月分 を埋める。フロントは生の情報だけ渡す。
-    var items = cbs.map(function(cb){
-      var tid = cb.getAttribute("data-threadid") || "";
-      return {
-        messageId: cb.getAttribute("data-messageid") || cb.value,
-        threadId: tid,
-        fromEmail: cb.getAttribute("data-fromemail") || "",
-        from: cb.getAttribute("data-from") || "",
-        subject: cb.getAttribute("data-subject") || "",
-        receivedDate: cb.getAttribute("data-date") || "",
-        sourceLink: tid
-          ? "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#all/" + encodeURIComponent(tid)
-          : ""
-      };
-    });
-    var btn = p2El("pay2-import-run");
-    btn.disabled = true; btn.textContent = "取り込み中…";
-    apiFetch("/api/payables/payables/import", { method: "POST", body: JSON.stringify({ items: items }) }).then(function(res){
-      var created = (res && res.payables) || [];
-      p2.payables = created.concat(p2.payables);
-      p2CloseImport();
-      p2RenderAll();
-      p2Status("取り込み " + created.length + " 件（スキップ " + ((res && res.skipped) || 0) + " 件）");
+  function p2QueueLoad(){
+    if (p2q.loading) return;
+    p2q.loading = true;
+    p2El("pay2-import-error").hidden = true;
+    p2El("pay2-queue-dismiss-junk").hidden = true;
+    p2El("pay2-queue-sum").textContent = "Gmail と台帳を突き合わせ中…（数十秒かかることがあります）";
+    p2El("pay2-import-list").innerHTML = "";
+    apiFetch("/api/payables/queue").then(function(res){
+      p2q.items = (res && res.items) || [];
+      p2q.days = (res && res.days) || 60;
+      p2q.truncated = !!(res && res.truncated);
+      p2QueueRender();
     }).catch(function(err){
+      p2El("pay2-queue-sum").textContent = "";
       var e = p2El("pay2-import-error");
-      e.hidden = false; e.textContent = apiErrorMessage(err, "取り込み");
-    }).finally(function(){ btn.disabled = false; btn.textContent = "選択を取り込む"; });
+      e.hidden = false; e.textContent = apiErrorMessage(err, "メール");
+    }).finally(function(){ p2q.loading = false; });
+  }
+  function p2QueueSum(){
+    var open = p2q.items.filter(function(it){ return !it.done; });
+    var c = { parent: 0, labeled: 0, thread: 0, sweep: 0 };
+    open.forEach(function(it){ c[it.source] = (c[it.source] || 0) + 1; });
+    p2El("pay2-queue-sum").innerHTML = "未処理 <b>" + open.length + "</b> 件" +
+      '<span class="pay2-sum-muted"> ／ 01.payment ' + c.parent + " ／ ラベルあり台帳なし " + c.labeled +
+      " ／ スレッド新着 " + c.thread + " ／ 入口外 " + c.sweep +
+      "（スレッド新着・入口外は直近" + p2q.days + "日" + (p2q.truncated ? "・件数が多いため先頭のみ" : "") + "）</span>";
+    var junk = open.filter(function(it){ return it.source === "sweep" && it.suggest === "dismiss"; }).length;
+    var jb = p2El("pay2-queue-dismiss-junk");
+    jb.hidden = !junk;
+    jb.textContent = "「無視」提案の入口外 " + junk + " 件をまとめて無視";
+  }
+  function p2QueueRender(){
+    var listEl = p2El("pay2-import-list");
+    var dl = p2El("pay2-queue-vendors");
+    if (dl) dl.innerHTML = p2.vendors.map(function(v){ return '<option value="' + escapeHtml(v.name || "") + '">'; }).join("");
+    if (!p2q.items.length){
+      listEl.innerHTML = '<p class="pay2-empty">未処理のメールはありません。</p>';
+      p2QueueSum();
+      return;
+    }
+    var html = "", last = "";
+    p2q.items.forEach(function(it, i){
+      if (it.source !== last){
+        last = it.source;
+        html += '<div class="pay2-q-group">' + escapeHtml(P2Q_SRC[it.source] || it.source) + "</div>";
+      }
+      html += p2QueueCard(it, i);
+    });
+    listEl.innerHTML = html;
+    p2QueueSum();
+  }
+  function p2QueueCard(it, i){
+    var sug = it.suggest || "new";
+    var rows = it.threadRows || [];
+    var btn = function(act, label, cls){
+      return '<button type="button" class="pay2-tool-btn' + (cls ? " " + cls : "") + (act === sug ? " is-suggest" : "") +
+        '" data-act="' + act + '">' + label + "</button>";
+    };
+    var labs = (it.labels || []).map(function(n){ return n === "01.payment" ? n : n.replace("01.payment/", ""); }).join(", ");
+    var h = '<div class="pay2-q-item" data-idx="' + i + '">';
+    h += '<div class="pay2-q-head">' +
+      '<span class="pay2-import-date">' + escapeHtml(it.receivedDate || "") + "</span>" +
+      (it.pdf ? '<span class="pay2-q-tag">PDF</span>' : "") +
+      (labs ? '<span class="pay2-q-tag">' + escapeHtml(labs) + "</span>" : "") +
+      (it.sourceLink ? '<a class="pay2-q-open" href="' + escapeHtml(it.sourceLink) + '" target="_blank" rel="noopener">Gmail で開く ↗</a>' : "") +
+      "</div>";
+    h += '<div class="pay2-import-from">' + escapeHtml(it.from || "(差出人不明)") + "</div>";
+    h += '<div class="pay2-q-subj">' + escapeHtml(it.subject || "(件名なし)") + "</div>";
+    if (it.snippet) h += '<div class="pay2-q-snip">' + escapeHtml(it.snippet) + "</div>";
+    if (rows.length){
+      h += '<div class="pay2-q-thread">同じスレッドの台帳: ' + rows.map(function(r){
+        return escapeHtml((r.vendorName || "?") + " " + (r.periodMonth || r.receivedDate || "") + " " + (r.method || ""));
+      }).join(" ／ ") + "</div>";
+    }
+    h += '<div class="pay2-q-suggest">提案: ' + escapeHtml(P2Q_SUGGEST[sug] || sug) + "</div>";
+    h += '<div class="pay2-q-form">' +
+      '<input type="text" class="pay2-q-vendor" list="pay2-queue-vendors" placeholder="ベンダー" value="' + escapeHtml(it.vendorName || "") + '" aria-label="ベンダー">' +
+      '<select class="pay2-q-method" aria-label="支払方式"><option value="">方式</option>' +
+        P2Q_METHODS.map(function(m){ return '<option value="' + m + '"' + (m === it.method ? " selected" : "") + ">" + m + "</option>"; }).join("") +
+      "</select>" +
+      '<input type="month" class="pay2-q-month" value="' + escapeHtml(it.periodMonth || "") + '" aria-label="何月分" title="何月分">' +
+      '<input type="text" class="pay2-q-amount" inputmode="numeric" placeholder="税込（任意）" aria-label="税込金額">' +
+      '<input type="date" class="pay2-q-due" aria-label="支払期日" title="支払期日（任意）">' +
+      "</div>";
+    h += '<div class="pay2-q-actions">' + btn("new", "確定（台帳に追加）", "pay2-tool-primary");
+    if (rows.length){
+      h += '<select class="pay2-q-link" aria-label="紐付け先の行">' + rows.map(function(r){
+        return '<option value="' + escapeHtml(r.id) + '">' + escapeHtml((r.vendorName || "?") + " " + (r.periodMonth || r.receivedDate || "")) + "</option>";
+      }).join("") + "</select>" + btn("link", "既存の行に紐付け");
+    }
+    h += btn("notice", "変更通知") + btn("exclude", "対象外");
+    if (it.source === "sweep" || it.source === "thread") h += btn("dismiss", "無視");
+    h += '</div><div class="pay2-q-msg" role="status"></div></div>';
+    return h;
+  }
+  function p2QueueClick(e){
+    var b = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
+    if (!b) return;
+    var card = b.closest(".pay2-q-item");
+    if (card) p2QueueAct(Number(card.getAttribute("data-idx")), b.getAttribute("data-act"));
+  }
+  function p2QueueAct(idx, act){
+    var it = p2q.items[idx];
+    if (!it || it.done || it.busy) return Promise.resolve();
+    var card = p2El("pay2-import-list").querySelector('.pay2-q-item[data-idx="' + idx + '"]');
+    if (!card) return Promise.resolve();
+    var msg = card.querySelector(".pay2-q-msg");
+    var body = { action: act, messageId: it.messageId, threadId: it.threadId };
+    if (act === "new"){
+      var vname = card.querySelector(".pay2-q-vendor").value.trim();
+      var method = card.querySelector(".pay2-q-method").value;
+      if (!vname || P2Q_METHODS.indexOf(method) === -1){
+        msg.className = "pay2-q-msg err";
+        msg.textContent = "ベンダーと支払方式を入れてください。";
+        return Promise.resolve();
+      }
+      var v = p2VendorByName(vname);
+      var amt = card.querySelector(".pay2-q-amount").value.replace(/[^\d]/g, "");
+      body.payable = {
+        vendorId: v ? v.id : "", vendorName: vname, method: method, fromEmail: it.fromEmail,
+        receivedDate: it.receivedDate, periodMonth: card.querySelector(".pay2-q-month").value,
+        dueDate: card.querySelector(".pay2-q-due").value, amountIncl: amt ? Number(amt) : null,
+        note: it.subject, sourceLink: it.sourceLink
+      };
+    } else if (act === "link"){
+      var sel = card.querySelector(".pay2-q-link");
+      body.payableId = sel ? sel.value : "";
+      if (!body.payableId) return Promise.resolve();
+    }
+    it.busy = true;
+    var ctrls = card.querySelectorAll("button, input, select");
+    Array.prototype.forEach.call(ctrls, function(x){ x.disabled = true; });
+    msg.className = "pay2-q-msg";
+    msg.textContent = "反映中…";
+    return apiFetch("/api/payables/queue/resolve", { method: "POST", body: JSON.stringify(body) }).then(function(res){
+      it.done = true;
+      p2q.dirty = true;
+      card.classList.add("is-done");
+      var saved = res && res.payable;
+      if (saved){
+        var ix = -1;
+        p2.payables.forEach(function(r, j){ if (r.id === saved.id) ix = j; });
+        if (ix === -1) p2.payables.unshift(saved); else p2.payables[ix] = saved;
+      }
+      msg.textContent = "✓ " + (P2Q_DONE[act] || act) + (res && res.label ? "（" + res.label.replace("01.payment/", "") + "）" : "");
+      p2QueueSum();
+    }).catch(function(err){
+      Array.prototype.forEach.call(ctrls, function(x){ x.disabled = false; });
+      msg.className = "pay2-q-msg err";
+      msg.textContent = apiErrorMessage(err, "未処理キュー");
+    }).finally(function(){ it.busy = false; });
+  }
+  function p2QueueDismissJunk(){
+    var targets = [];
+    p2q.items.forEach(function(it, i){ if (!it.done && it.source === "sweep" && it.suggest === "dismiss") targets.push(i); });
+    if (!targets.length) return;
+    if (!window.confirm("入口外の候補のうち「無視」提案の " + targets.length + " 件を候補から外します（ラベル・台帳は変わりません）。よろしいですか？")) return;
+    var jb = p2El("pay2-queue-dismiss-junk");
+    jb.disabled = true;
+    targets.reduce(function(p, i){ return p.then(function(){ return p2QueueAct(i, "dismiss"); }); }, Promise.resolve())
+      .then(function(){ jb.disabled = false; p2QueueSum(); });
   }
 
   /* ---- 01.payment メールを走査してメールアドレスを補完 ----

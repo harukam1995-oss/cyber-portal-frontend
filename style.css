@@ -3457,3 +3457,44 @@
     .jh-todo-row{ flex-wrap:wrap; }
     .jh-todo-acts{ width:100%; justify-content:flex-end; }
   }
+/* 請求書管理：未処理キュー（漏れ防止計画 P1・2026/09/13）— 旧「メールから取り込み」モーダルを置き換え。このブロックを消せば見た目は素のモーダルに戻る */
+.pay2-queue-panel{ width:min(780px, 100%); max-height:min(90vh, 920px); }
+.pay2-queue-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 18px 6px; flex:none; }
+.pay2-queue-sum{ margin-right:auto; font-family: var(--font-mono); font-size:11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pay2-queue-sum b{ color: var(--text); }
+.pay2-queue-sum .pay2-sum-muted{ color: var(--text-faint); }
+.pay2-queue-hint{ padding:0 18px 8px; flex:none; }
+.pay2-queue-list{ max-height:none; flex:1 1 auto; min-height:120px; padding:2px 18px 10px; gap:8px; }
+.pay2-queue-panel > .event-form-error{ margin:0 18px 8px; }
+.pay2-queue-foot{ padding:10px 18px 14px; margin-top:0; border-top:1px solid var(--hairline); flex:none; }
+.pay2-q-group{ padding:8px 0 0; font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint); }
+.pay2-q-item{ display:flex; flex-direction:column; gap:3px; padding:9px 11px; border:1px solid var(--panel-border); border-radius:3px; }
+.pay2-q-item.is-done > :not(.pay2-q-msg){ opacity:.4; }
+.pay2-q-head{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.pay2-q-tag{ padding:0 5px; font-family: var(--font-mono); font-size:10px; color: var(--text-dim); border:1px solid var(--hairline); border-radius:2px; }
+.pay2-q-open{ margin-left:auto; font-size:11px; color: var(--text-dim); text-decoration:none; }
+.pay2-q-open:hover{ color: var(--accent); }
+.pay2-q-subj{ font-size:12px; color: var(--text); overflow-wrap:anywhere; }
+.pay2-q-snip{ font-size:11px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pay2-q-thread{ font-size:11px; color: var(--warn); }
+.pay2-q-suggest{ font-size:11px; color: var(--text-dim); }
+.pay2-q-form{ display:grid; grid-template-columns:minmax(150px, 1.6fr) 104px 128px 104px 132px; gap:6px; margin-top:5px; }
+.pay2-q-form input, .pay2-q-form select, .pay2-q-actions select{
+  min-width:0; padding:4px 7px; font-size:11.5px; border-radius:2px; color-scheme: dark;
+  border:1px solid var(--panel-border); background: var(--panel-solid); color: var(--text);
+}
+.pay2-q-form input::placeholder{ color: var(--text-faint); }
+.pay2-q-form input:focus, .pay2-q-form select:focus, .pay2-q-actions select:focus{ outline:none; border-color: var(--accent); }
+.pay2-q-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+.pay2-q-actions select{ max-width:220px; }
+.pay2-q-actions .pay2-tool-btn{ border-radius:2px; }
+.pay2-q-actions .pay2-tool-btn.is-suggest{ border-color: var(--accent); color: var(--accent); }
+.pay2-q-actions .pay2-tool-btn:disabled{ opacity:.5; cursor:default; }
+.pay2-q-msg{ font-size:11px; color: var(--text-dim); }
+.pay2-q-msg:empty{ display:none; }
+.pay2-q-item.is-done .pay2-q-msg{ color: var(--ok); }
+.pay2-q-msg.err{ color: var(--err); }
+@media (max-width:720px){
+  .pay2-q-form{ grid-template-columns:1fr 1fr; }
+  .pay2-q-form .pay2-q-vendor{ grid-column:1 / -1; }
+}
