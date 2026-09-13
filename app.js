@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 145;
+  var BUILD_V = 146;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -618,6 +618,7 @@
   var viewFinance = document.getElementById("view-finance");
   var viewSubs = document.getElementById("view-subs");
   var viewJimuhack = document.getElementById("view-jimuhack");
+  var viewSmallbiz = document.getElementById("view-smallbiz");
   var appTopbar = document.getElementById("app-topbar");
 
   /* サブ画面(カレンダー/メール/請求書管理/収支/サブスク/契約書/タスク/メモ/アイデア帳)の
@@ -667,6 +668,7 @@
   var businessInitialized = false;
   var payablesInitialized = false;
   var jimuhackInitialized = false;
+  var smallbizInitialized = false;
   var contractsPageInitialized = false;
   // showView("contracts") のときに開きたいタブ。モジュールのロードを待ってから
   // __CP.setContractsTab() に渡す(HOME の契約書アラート行 →「アラート」タブ 用)。
@@ -698,6 +700,7 @@
   function loadPayablesModule(){ return loadModuleOnce("app.payables.js", "initPayables"); }
   function loadBusinessModule(){ return loadModuleOnce("app.business.js", "initBusinessCards"); }
   function loadJimuhackModule(){ return loadModuleOnce("app.jimuhack.js", "initJimuhack"); }
+  function loadSmallbizModule(){ return loadModuleOnce("app.smallbiz.js", "initSmallbiz"); }
   function bizModuleFail(err){
     ["pv-contracts-status", "pv-events-status", "pv-slack-status", "contracts-page-status", "projects-page-status", "slack-page-status"].forEach(function(id){
       var el = document.getElementById(id);
@@ -754,6 +757,7 @@
     if (viewFinance) viewFinance.hidden = name !== "finance";
     if (viewSubs) viewSubs.hidden = name !== "subs";
     if (viewJimuhack) viewJimuhack.hidden = name !== "jimuhack";
+    if (viewSmallbiz) viewSmallbiz.hidden = name !== "smallbiz";
 
     if (isDash){
       currentDashboard = name;
@@ -859,6 +863,17 @@
         console.error("[jimuhack]", err);
       });
     }
+    // スモビジ(小規模事業)は app.smallbiz.js に分離。Claude が別の場所で更新するので開くたびに取り直す。
+    if (name === "smallbiz"){
+      loadSmallbizModule().then(function(){
+        if (!smallbizInitialized){ smallbizInitialized = true; window.__CP.initSmallbiz(); }
+        else window.__CP.renderSmallbiz();
+      }).catch(function(err){
+        var el = document.getElementById("sb-status");
+        if (el) el.textContent = "スモビジモジュールの読み込みに失敗しました。タブを開き直してください。";
+        console.error("[smallbiz]", err);
+      });
+    }
     if (!opts.fromHistory) syncHash(name, opts.replace);
     window.scrollTo(0, 0);
   }
@@ -876,7 +891,7 @@
   var VIEW_ROUTES = [
     "home", "private", "business",
     "calendar", "mail", "tasks", "notes", "ideas",
-    "payables", "contracts", "projects", "slack", "finance", "subs", "jimuhack"
+    "payables", "contracts", "projects", "slack", "finance", "subs", "jimuhack", "smallbiz"
   ];
   function routeFromHash(){
     var h = String(location.hash || "").slice(1);
@@ -921,14 +936,14 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back", "jimuhack-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back", "jimuhack-back", "smallbiz-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
   // プライベートのクイックアクセス: はるかを選択済みにしてサブ画面を開く
   [["pv-quick-tasks", "tasks"], ["pv-quick-calendar", "calendar"], ["pv-quick-notes", "notes"],
    ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"],
-   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"], ["pv-quick-jimuhack", "jimuhack"]].forEach(function(pair){
+   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"], ["pv-quick-jimuhack", "jimuhack"], ["pv-quick-smallbiz", "smallbiz"]].forEach(function(pair){
     var b = document.getElementById(pair[0]);
     if (b) b.addEventListener("click", function(){
       if (typeof setDefaultAccount === "function") setDefaultAccount("haruka");
