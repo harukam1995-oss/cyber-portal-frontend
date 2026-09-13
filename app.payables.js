@@ -110,6 +110,15 @@
     var n = parseInt(v && v.expectDay, 10);
     return (n >= 1 && n <= 28) ? n : PAY_EXPECT_DAY_FALLBACK;
   }
+  // 月あたりの件数（同じ支払月に届く請求書の数・既定1。Findy のように毎月2件来るベンダー用）
+  function p2ExpectCount(v){
+    var n = parseInt(v && v.expectCount, 10);
+    return (n >= 1 && n <= 10) ? n : 1;
+  }
+  function p2RecvCount(v, month){
+    var e = p2._recv[v.id];
+    return (e && e.count && e.count[month]) || 0;
+  }
   // 受領実績インデックス（サーバーで syslea_payables＋payments を threadId 名寄せ済みの
   // p2.receipts から）。vendorId → { last:"YYYY-MM", byMonth: { "YYYY-MM": receipt } }
   // receipt.month は「支払月」（いつ払うか）。受領チェックはこの支払月で並べる。
@@ -118,8 +127,9 @@
     var idx = {};
     (p2.receipts || []).forEach(function(r){
       if (!r || !r.vendorId || !r.month) return;
-      var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", byMonth: {} });
+      var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", byMonth: {}, count: {} });
       if (!e.byMonth[r.month] || r.source === "payable") e.byMonth[r.month] = r; // 同月は手入力行を優先
+      e.count[r.month] = (e.count[r.month] || 0) + 1; // 同じ支払月に届いた請求書の数（月N件のベンダー用）
       if (r.month > e.last) e.last = r.month;
     });
     return idx;
@@ -138,7 +148,7 @@
   function p2VendorMonthState(v, month){
     if (!p2ExpectedInMonth(v, month)) return "";
     var e = p2._recv[v.id];
-    if (e && e.byMonth[month]) return "received";
+    if (p2RecvCount(v, month) >= p2ExpectCount(v)) return "received"; // 月N件のベンダーは N件そろって受領
     if (!e || !e.last) return "waiting";   // 受領実績ゼロは未着にしない（静かに・要件 §6）
     var cur = p2CurMonth();
     if (month < cur) return "overdue";
@@ -522,18 +532,26 @@
     if (!body) return;
     if (!p2.checkOpen){ body.hidden = true; return; }
     body.hidden = false;
+    var sugg = p2CheckSuggestions();
     if (!rows.length){
-      body.innerHTML = p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "";
+      body.innerHTML = p2SuggestHtml(sugg) + (p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "");
+      p2WireSuggestions(body, sugg);
       return;
     }
-    body.innerHTML =
-      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th></tr></thead><tbody>' +
+    body.innerHTML = p2SuggestHtml(sugg) +
+      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th><th></th></tr></thead><tbody>' +
       rows.map(function(r){
         var e = p2._recv[r.v.id];
         var rec = (e && e.byMonth[month]) || null;
-        var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領</span>'
-          : r.st === "overdue" ? '<span class="pay2-flag">未着</span>'
-          : '<span class="pay2-muted">待機</span>';
+        var need = p2ExpectCount(r.v), got = p2RecvCount(r.v, month);
+        var frac = need > 1 ? " " + got + "/" + need : "";
+        var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領' + frac + "</span>"
+          : r.st === "overdue" ? '<span class="pay2-flag">' + (got ? "一部未着" : "未着") + frac + "</span>"
+          : '<span class="pay2-muted">待機' + frac + "</span>";
+        var act = r.st !== "overdue" ? "" :
+          '<button type="button" class="pay2-mini-btn" data-find="' + escapeHtml(r.v.id) + '">メールを探す</button>' +
+          '<button type="button" class="pay2-mini-btn" data-remind="' + escapeHtml(r.v.id) + '"' +
+            (p2VendorEmails(r.v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促の下書き</button>";
         return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
           '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
           '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
@@ -542,6 +560,7 @@
           '<td class="center">' + escapeHtml((e && e.last) || "—") + "</td>" +
           "<td>" + stHtml + "</td>" +
           '<td class="num">' + (rec && rec.amountIncl != null ? p2Money(rec.amountIncl) : "") + "</td>" +
+          '<td class="pay2-check-act">' + act + "</td>" +
           "</tr>";
       }).join("") + "</tbody></table>";
     body.querySelectorAll("tbody tr").forEach(function(tr){
@@ -555,6 +574,121 @@
         if (v) p2OpenVendor(v);
       });
     });
+    body.querySelectorAll("[data-find]").forEach(function(b){
+      b.addEventListener("click", function(ev){ ev.stopPropagation(); p2FindMail(b.getAttribute("data-find")); });
+    });
+    body.querySelectorAll("[data-remind]").forEach(function(b){
+      b.addEventListener("click", function(ev){ ev.stopPropagation(); p2RemindDraft(b.getAttribute("data-remind"), month, b); });
+    });
+    p2WireSuggestions(body, sugg);
+  }
+
+  /* ---- 毎月一覧の保守（漏れ防止計画 P3・2026/09/13）----
+     受領実績から ベンダーの周期・月あたりの件数 の見直しを提案する（適用は1クリック。
+     「今は変えない」はこの端末の localStorage に覚えて出さない）。
+       毎月にする     … スポット設定なのに 前々月・前月・当月すべてで受領
+       スポットにする … 毎月設定で受領実績はあるのに 前月・前々月とも受領なし（停止・解約？）
+       月N件にする    … 毎月設定で 前々月・前月とも同じ N件（≥2）受領しているのに件数設定が少ない
+     未着の行には「メールを探す」（SYSLEA の Gmail 検索を開く）と「催促の下書き」（Gmail の下書きに保存・送信はしない）。 */
+  var P2_SUGG_HIDE_KEY = "cp_p2_sugg_hide";
+  function p2SuggHidden(){
+    try { return JSON.parse(localStorage.getItem(P2_SUGG_HIDE_KEY) || "{}") || {}; } catch(e){ return {}; }
+  }
+  function p2MonthAdd(m, k){
+    var y = +m.slice(0, 4), mm = +m.slice(5, 7) + k;
+    while (mm < 1){ mm += 12; y--; }
+    while (mm > 12){ mm -= 12; y++; }
+    return y + "-" + ("0" + mm).slice(-2);
+  }
+  function p2CheckSuggestions(){
+    var m0 = p2CurMonth(), m1 = p2MonthAdd(m0, -1), m2 = p2MonthAdd(m0, -2);
+    var hide = p2SuggHidden();
+    var out = [];
+    p2.vendors.forEach(function(v){
+      if (v.excluded) return;
+      var e = p2._recv[v.id];
+      if (!e) return;
+      var c = function(m){ return (e.count && e.count[m]) || 0; };
+      var cm = p2CadenceOf(v);
+      var s = null;
+      if (cm === 0 && c(m0) && c(m1) && c(m2)){
+        s = { type: "monthly", label: "毎月にする", done: "毎月にしました", why: +m2.slice(5) + "〜" + +m0.slice(5) + "月に毎月受領", patch: { cadenceMonths: 1 } };
+      } else if (cm === 1 && e.last && e.last < m2){
+        s = { type: "spot", label: "スポットにする", done: "スポットにしました", why: "最終受領 " + e.last + "・前月も前々月も受領なし（停止・解約？）", patch: { cadenceMonths: 0 } };
+      } else if (cm >= 1 && c(m1) >= 2 && c(m1) === c(m2) && p2ExpectCount(v) < c(m1)){
+        s = { type: "count", label: "月" + c(m1) + "件にする", done: "月" + c(m1) + "件にしました", why: +m2.slice(5) + "月・" + +m1.slice(5) + "月とも " + c(m1) + "件受領", patch: { expectCount: c(m1) } };
+      }
+      if (s && !hide[v.id + ":" + s.type + ":" + JSON.stringify(s.patch)]){ s.v = v; out.push(s); }
+    });
+    return out;
+  }
+  function p2SuggestHtml(list){
+    if (!list.length) return "";
+    return '<div class="pay2-sugg"><div class="pay2-sugg-head">ベンダー設定の見直し（受領実績から）</div>' +
+      list.map(function(s, i){
+        return '<div class="pay2-sugg-row">' +
+          '<span class="pay2-sugg-name">' + escapeHtml(s.v.name || "") + "</span>" +
+          '<span class="pay2-muted">' + escapeHtml(s.why) + "</span>" +
+          '<button type="button" class="pay2-mini-btn pay2-mini-primary" data-sugg-apply="' + i + '">' + escapeHtml(s.label) + "</button>" +
+          '<button type="button" class="pay2-mini-btn" data-sugg-hide="' + i + '">今は変えない</button>' +
+          "</div>";
+      }).join("") + "</div>";
+  }
+  function p2WireSuggestions(body, list){
+    body.querySelectorAll("[data-sugg-apply]").forEach(function(b){
+      b.addEventListener("click", function(){
+        var s = list[+b.getAttribute("data-sugg-apply")];
+        if (!s) return;
+        b.disabled = true;
+        apiFetch("/api/payables/vendors/" + encodeURIComponent(s.v.id), { method: "PUT", body: JSON.stringify(Object.assign({}, s.v, s.patch)) })
+          .then(function(res){
+            var saved = res && res.vendor;
+            if (saved) p2.vendors = p2.vendors.map(function(x){ return x.id === s.v.id ? saved : x; });
+            p2RenderAll();
+            p2Status("「" + (s.v.name || "") + "」を" + s.done);
+          })
+          .catch(function(err){ b.disabled = false; p2Status(apiErrorMessage(err, "ベンダー"), "err"); });
+      });
+    });
+    body.querySelectorAll("[data-sugg-hide]").forEach(function(b){
+      b.addEventListener("click", function(){
+        var s = list[+b.getAttribute("data-sugg-hide")];
+        if (!s) return;
+        var h = p2SuggHidden();
+        h[s.v.id + ":" + s.type + ":" + JSON.stringify(s.patch)] = Date.now();
+        try { localStorage.setItem(P2_SUGG_HIDE_KEY, JSON.stringify(h)); } catch(e){}
+        p2RenderCheck();
+      });
+    });
+  }
+  function p2FindMail(vid){
+    var v = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+    if (!v) return;
+    var emails = p2VendorEmails(v);
+    var q = (emails.length ? "from:(" + emails.join(" OR ") + ")" : '"' + String(v.name || "").replace(/"/g, "") + '"') + " newer_than:60d";
+    window.open("https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#search/" + encodeURIComponent(q), "_blank", "noopener");
+  }
+  function p2RemindDraft(vid, month, btn){
+    var v = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+    if (!v) return;
+    var to = p2VendorEmails(v)[0];
+    if (!to) return;
+    var mm = +String(month).slice(5, 7);
+    var person = v.category === "業務委託" && !/株式会社|合同会社|有限会社|法人|事務所/.test(v.name || "");
+    var head = person ? (v.name + " 様") : (v.name + " 御中\n" + (v.contact ? v.contact + " 様" : "ご担当者様"));
+    var subject = "【株式会社SYSLEA】" + mm + "月お支払い分のご請求書につきまして";
+    var text = head + "\n\nいつもお世話になっております。株式会社SYSLEA 経理担当です。\n\n" +
+      mm + "月お支払い分のご請求書を、まだこちらで確認できておりませんでしたのでご連絡いたしました。\n" +
+      "お手数ですが、payment@syslea.io 宛にご送付いただけますでしょうか。\n" +
+      "すでにお送りいただいている場合は、行き違いにつきご容赦ください。\n\nよろしくお願いいたします。\n";
+    if (!window.confirm(to + " 宛の催促メールを SYSLEA の Gmail の下書きに保存します（送信はしません）。よろしいですか？")) return;
+    btn.disabled = true;
+    apiFetch(acctPath("/api/google/gmail/drafts", "syslea"), { method: "POST", body: JSON.stringify({ to: to, subject: subject, body: text }) })
+      .then(function(){
+        btn.textContent = "下書き済み";
+        p2Status("「" + (v.name || "") + "」宛の催促メールを Gmail の下書きに保存しました（送信はしていません）");
+      })
+      .catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "下書き"), "err"); });
   }
 
   /* ---- 受領チェックに出ていない仕分け（差出人がベンダー未一致）の手当て ----
@@ -935,6 +1069,7 @@
         '<span class="pay2-cad-unit" id="p2v-cadence-unit"' + (nOn ? "" : " hidden") + ">ヶ月ごと</span>" +
       "</div></div>" +
       p2Field("p2v-expectDay", "想定到着日（1〜28・未着判定に使用）", "number", d.expectDay == null ? 25 : d.expectDay) +
+      p2Field("p2v-expectCount", "月あたりの件数（同じ月に届く請求書の数・既定1）", "number", d.expectCount == null ? 1 : d.expectCount) +
       '<div class="pay2-fld wide"><label>いつもの振込先（口座変更検知に使用）</label></div>' +
       p2PayToFields("p2v-", d) +
       '<div class="pay2-fld wide"><label>メモ</label><textarea id="p2v-note" rows="2">' + escapeHtml(d.note || "") + "</textarea></div>" +
@@ -969,6 +1104,7 @@
       paymentTerms: p2El("p2v-paymentTerms").value.trim(),
       cadenceMonths: cadenceMonths,
       expectDay: expectDay,
+      expectCount: Math.max(1, Math.min(10, parseInt(p2El("p2v-expectCount").value, 10) || 1)),
       note: p2El("p2v-note").value.trim(),
       excluded: p2El("p2v-excluded").checked
     };
