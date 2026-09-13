@@ -27,10 +27,10 @@
   var PAY2_SHEET_URL = "https://docs.google.com/spreadsheets/d/" + PAY2_SHEET_ID + "/edit";
 
   var p2 = {
-    payables: [], vendors: [], receipts: [], receiptsUnattributed: 0, unlinked: [], unlinkedExcluded: [], tab: "detail",
+    payables: [], vendors: [], receipts: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
-    checkOpen: false, checkOverdueOnly: false, unlinkedOpen: false, _recv: {},
+    checkOpen: false, checkOverdueOnly: false, _recv: {},
     wired: false, editId: null, vendId: null
   };
 
@@ -63,7 +63,6 @@
   }
   function p2CountStatus(){
     var msg = p2.payables.length + " 件の請求書 ／ ベンダー " + p2.vendors.length + " 社";
-    if (p2.receiptsUnattributed) msg += " ／ 仕分け済みで未紐づけ " + p2.receiptsUnattributed + " 件（差出人がベンダー未登録＝受領チェックに出ません）";
     p2Status(msg);
   }
   function p2Money(n){
@@ -190,10 +189,6 @@
       });
       p2El("pay2-check-month").addEventListener("change", p2RenderCheck);
       p2El("pay2-check-overdue").addEventListener("change", function(){ p2.checkOverdueOnly = this.checked; p2RenderCheck(); });
-      p2El("pay2-unlinked-toggle").addEventListener("click", function(){
-        p2.unlinkedOpen = !p2.unlinkedOpen;
-        p2RenderUnlinked();
-      });
       // ボタン
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
@@ -239,9 +234,6 @@
       p2.payables = (res && res.payables) || [];
       p2.vendors = (res && res.vendors) || [];
       p2.receipts = (res && res.receipts) || [];
-      p2.receiptsUnattributed = (res && res.receiptsUnattributed) || 0;
-      p2.unlinked = (res && res.receiptsUnattributedList) || [];
-      p2.unlinkedExcluded = (res && res.receiptsExcludedList) || [];
       p2RenderAll();
       p2El("pay2-summary").hidden = (p2.tab !== "detail");
       p2CountStatus();
@@ -263,7 +255,7 @@
     p2El("pay2-summary").hidden = !isDetail;
     var chk = p2El("pay2-check");
     if (chk) chk.hidden = !isDetail;
-    if (isDetail){ p2RenderCheck(); p2RenderUnlinked(); p2RenderDetail(); } else { p2RenderVendors(); p2RenderUnlinked(); }
+    if (isDetail){ p2RenderCheck(); p2RenderDetail(); } else { p2RenderVendors(); }
     p2StmtRender();
   }
 
@@ -279,7 +271,6 @@
       return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + k + "</option>";
     }).join("");
     p2RenderCheck();
-    p2RenderUnlinked();
     p2StmtRender();
     if (p2.tab === "vendor") p2RenderVendors(); else p2RenderDetail();
   }
@@ -983,88 +974,6 @@
     return rows;
   }
 
-  /* ---- 受領チェックに出ていない仕分け（差出人がベンダー未一致）の手当て ----
-     payments/{threadId} に vendorId（＋任意で支払月）をセット＝ベンダーに紐づけ、
-     または notPayable=true＝請求書ではないので受領チェックから外す（「戻す」で復帰）。 */
-  function p2RenderUnlinked(){
-    var wrap = p2El("pay2-unlinked");
-    if (!wrap) return;
-    var list = p2.unlinked || [];
-    var exList = p2.unlinkedExcluded || [];
-    wrap.hidden = (p2.tab !== "detail") || (!list.length && !exList.length);
-    var sum = p2El("pay2-unlinked-sum");
-    if (sum) sum.textContent = (list.length || exList.length)
-      ? (list.length + " 件（差出人からベンダーを特定できず受領実績に出ていません。紐づけ／対象外にできます）"
-         + (exList.length ? " ／ 対象外 " + exList.length + " 件" : ""))
-      : "";
-    var tgl = p2El("pay2-unlinked-toggle");
-    if (tgl) tgl.setAttribute("aria-expanded", p2.unlinkedOpen ? "true" : "false");
-    var dl = p2El("pay2-unlinked-vendorlist");
-    if (dl) dl.innerHTML = p2.vendors.map(function(v){ return '<option value="' + escapeHtml(v.name || "") + '">'; }).join("");
-    var body = p2El("pay2-unlinked-body");
-    if (!body) return;
-    if (!p2.unlinkedOpen || (!list.length && !exList.length)){ body.hidden = true; return; }
-    body.hidden = false;
-
-    var html = "";
-    if (list.length){
-      html +=
-        '<table class="pay2-table"><thead><tr><th>件名 / 差出人</th><th>支払月</th><th>ベンダー</th><th></th></tr></thead><tbody>' +
-        list.map(function(u){
-          return '<tr data-thread="' + escapeHtml(u.threadId) + '">' +
-            '<td><div class="strong">' + escapeHtml(String(u.subject || "(件名なし)").slice(0, 60)) + "</div>" +
-              '<div class="pay2-muted">' + escapeHtml(String(u.from || "").slice(0, 44)) + "</div></td>" +
-            '<td><input type="month" class="pay2-sel pay2-ul-month" value="' + escapeHtml(u.periodMonth || "") + '"></td>' +
-            '<td><input class="pay2-q pay2-ul-vendor" list="pay2-unlinked-vendorlist" placeholder="ベンダー名" autocomplete="off"></td>' +
-            '<td class="nowrap"><button type="button" class="pay2-tool-btn pay2-ul-go">紐づけ</button> ' +
-              '<button type="button" class="pay2-tool-btn pay2-ul-skip">対象外</button></td>' +
-            "</tr>";
-        }).join("") + "</tbody></table>";
-    }
-    if (exList.length){
-      html += '<div class="pay2-muted" style="padding:10px 4px 4px">対象外にしたメール（請求書ではない）</div>' +
-        '<table class="pay2-table"><tbody>' +
-        exList.map(function(u){
-          return '<tr data-thread="' + escapeHtml(u.threadId) + '" class="pay2-row-excluded">' +
-            '<td><div class="strong">' + escapeHtml(String(u.subject || "(件名なし)").slice(0, 60)) + "</div>" +
-              '<div class="pay2-muted">' + escapeHtml(String(u.from || "").slice(0, 44)) + "</div></td>" +
-            '<td class="nowrap"><button type="button" class="pay2-tool-btn pay2-ul-restore">戻す</button></td>' +
-            "</tr>";
-        }).join("") + "</tbody></table>";
-    }
-    body.innerHTML = html;
-
-    body.querySelectorAll(".pay2-ul-go").forEach(function(btn){
-      btn.addEventListener("click", function(){
-        var tr = btn.closest("tr");
-        var name = tr.querySelector(".pay2-ul-vendor").value.trim();
-        var month = tr.querySelector(".pay2-ul-month").value;
-        var v = p2VendorByName(name);
-        if (!v){ p2Status("「" + name + "」に一致するベンダーがありません。先にベンダーマスタで登録してください。", "err"); return; }
-        p2PostLink(tr.getAttribute("data-thread"), { vendorId: v.id, linkMonth: month || "" }, btn, "紐づけ");
-      });
-    });
-    body.querySelectorAll(".pay2-ul-skip").forEach(function(btn){
-      btn.addEventListener("click", function(){
-        p2PostLink(btn.closest("tr").getAttribute("data-thread"), { notPayable: true }, btn, "対象外");
-      });
-    });
-    body.querySelectorAll(".pay2-ul-restore").forEach(function(btn){
-      btn.addEventListener("click", function(){
-        p2PostLink(btn.closest("tr").getAttribute("data-thread"), { notPayable: false }, btn, "戻す");
-      });
-    });
-  }
-  function p2PostLink(threadId, payload, btn, label){
-    if (btn){ btn.disabled = true; btn.textContent = "…"; }
-    apiFetch("/api/payables/link", { method: "POST", body: JSON.stringify(Object.assign({ threadId: threadId }, payload)) })
-      .then(function(){ p2Load(); })
-      .catch(function(err){
-        p2Status(apiErrorMessage(err, label || "紐づけ"), "err");
-        if (btn){ btn.disabled = false; btn.textContent = label || "紐づけ"; }
-      });
-  }
-
   /* ---- 明細モーダル ---- */
   function p2Field(id, label, type, val, wide){
     return '<div class="pay2-fld' + (wide ? " wide" : "") + '">' +
@@ -1659,9 +1568,6 @@
         p2.payables = (r2 && r2.payables) || p2.payables;
         p2.vendors = (r2 && r2.vendors) || p2.vendors;
         p2.receipts = (r2 && r2.receipts) || p2.receipts;
-        p2.receiptsUnattributed = (r2 && r2.receiptsUnattributed) || 0;
-        p2.unlinked = (r2 && r2.receiptsUnattributedList) || p2.unlinked;
-        p2.unlinkedExcluded = (r2 && r2.receiptsExcludedList) || p2.unlinkedExcluded;
         p2RenderAll();
       });
     }).catch(function(err){

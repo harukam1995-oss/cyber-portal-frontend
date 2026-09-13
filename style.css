@@ -609,108 +609,8 @@
   .mail-attach-btn:disabled{ opacity:.5; cursor:default; }
   .mail-attach-err{ margin-top:6px; font-size:11.5px; color: var(--err); }
 
-  /* 支払い仕分け(SYSLEA 01.payment) */
-  .mail-sort-btn{
-    font-family: var(--font-body); font-size:12.5px; letter-spacing:.03em;
-    padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap;
-    background: linear-gradient(135deg, rgba(255,143,63,.16), rgba(255,143,63,.14));
-    color: var(--text); border:1px solid var(--cyan-dim);
-    transition:border-color .15s, box-shadow .15s;
-  }
-  .mail-sort-btn:hover:not(:disabled){ border-color: var(--cyan); box-shadow:0 0 12px rgba(255,143,63,.25); }
-  .mail-sort-btn:disabled{ opacity:.5; cursor:default; }
-
   /* display:flex 指定が [hidden] を打ち消すため、明示的に打ち消し返す(このファイルの他所と同じ対応) */
   .mail-list[hidden]{ display:none; }
-  .mail-sort-panel{ padding:4px 2px 8px; overflow-y:auto; }
-  .mail-sort-panel[hidden]{ display:none; }
-  .pay-sort-head{
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    padding:8px 4px 12px; border-bottom:1px solid var(--hairline); margin-bottom:10px;
-  }
-  .pay-sort-head strong{ font-size:14px; color: var(--text); }
-  .pay-sort-sub{ font-size:11.5px; color: var(--text-faint); }
-  .pay-sort-head-actions{ margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
-  .pay-sort-progress{ padding:24px 6px; font-size:13px; color: var(--text-dim); text-align:center; }
-  .pay-sort-bulk, .pay-sort-learn, .pay-sort-close{
-    font-family: var(--font-body); font-size:11.5px; padding:5px 11px; border-radius:5px; cursor:pointer;
-    background: var(--panel-solid); color: var(--text-dim); border:1px solid var(--panel-border);
-    transition:border-color .15s, color .15s;
-  }
-  .pay-sort-bulk:hover{ border-color: var(--ok); color: var(--ok); }
-  .pay-sort-learn:hover{ border-color: var(--cyan); color: var(--cyan); }
-  .pay-sort-close:hover{ border-color: var(--text-dim); color: var(--text); }
-
-  .pay-sort-list{ display:flex; flex-direction:column; gap:8px; }
-  .pay-sort-row{
-    padding:10px 12px; border:1px solid var(--panel-border); border-radius:8px;
-    background: rgba(13,8,36,.5);
-  }
-  .pay-sort-row.is-applied{ opacity:.55; }
-  .pay-sort-row-top{ display:flex; align-items:baseline; gap:10px; }
-  .pay-sort-who{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; }
-  .pay-sort-from{ font-size:12px; color: var(--text); }
-  .pay-sort-subj{ font-size:12px; color: var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .pay-sort-why{ font-size:11px; color: var(--text-faint); margin:6px 0 8px; line-height:1.5; }
-  .pay-sort-done{ font-size:12px; color: var(--ok); white-space:nowrap; }
-
-  .pay-badge{
-    font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;
-    border:1px solid currentColor;
-  }
-  .pay-badge.is-furikomi{ color: var(--accent); background: rgba(255,143,63,.10); }
-  .pay-badge.is-upsider{ color: var(--ok); background: rgba(94,201,138,.10); }
-  .pay-badge.is-furikae{ color: var(--warn); background: rgba(216,194,74,.10); }
-  .pay-badge.is-other{ color: var(--text-faint); background: rgba(255,255,255,.05); }
-
-  .pay-sort-ctrl{ display:flex; gap:6px; align-items:center; }
-  .pay-sort-select{
-    font-family: var(--font-body); font-size:12px; padding:5px 8px; border-radius:5px;
-    background: var(--panel-solid); color: var(--text); border:1px solid var(--panel-border);
-  }
-  .pay-sort-select option{ background: var(--panel-solid); color: var(--text); }
-  .pay-sort-apply, .pay-sort-openmail{
-    font-family: var(--font-body); font-size:12px; padding:5px 12px; border-radius:5px; cursor:pointer;
-    background: var(--panel-solid); color: var(--text-dim); border:1px solid var(--panel-border);
-    transition:border-color .15s, color .15s;
-  }
-  .pay-sort-apply:hover:not(:disabled){ border-color: var(--ok); color: var(--ok); }
-  .pay-sort-openmail:hover{ border-color: var(--cyan); color: var(--cyan); }
-  .pay-sort-apply:disabled{ opacity:.5; cursor:default; }
-
-  .pay-cached-tag{
-    font-size:10px; padding:2px 7px; border-radius:999px; white-space:nowrap;
-    color: var(--text-faint); border:1px solid var(--panel-border); background: rgba(120,110,150,.10);
-  }
-
-  /* 支払い履歴 */
-  .pay-hist-chips{ display:flex; gap:6px; flex-wrap:wrap; padding:2px 4px 10px; }
-  .pay-hist-chip{
-    font-family: var(--font-body); font-size:11.5px; padding:4px 12px; border-radius:999px; cursor:pointer;
-    background: var(--panel-solid); color: var(--text-dim); border:1px solid var(--panel-border);
-  }
-  .pay-hist-chip.is-on{ border-color: var(--cyan); color: var(--cyan); }
-  .pay-hist-body{ display:flex; flex-direction:column; gap:14px; }
-  .pay-hist-group{ border:1px solid var(--panel-border); border-radius:8px; overflow:hidden; }
-  .pay-hist-month{
-    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
-    padding:8px 12px; background: rgba(13,8,36,.6); border-bottom:1px solid var(--hairline);
-  }
-  .pay-hist-mk{ font-size:13px; color: var(--text); font-family: var(--font-mono); }
-  .pay-hist-tally{ font-size:11px; color: var(--text-faint); text-align:right; }
-  .pay-hist-row{
-    display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center;
-    padding:7px 12px; border-bottom:1px solid var(--hairline); font-size:12px;
-  }
-  .pay-hist-row:last-child{ border-bottom:none; }
-  .pay-hist-subj{ color: var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-  .pay-hist-amt{ color: var(--text); font-family: var(--font-mono); white-space:nowrap; }
-  .pay-hist-src{ color: var(--text-faint); font-size:10.5px; white-space:nowrap; }
-  .pay-hist-more{ display:block; color: var(--text-faint); font-size:11px; font-style:italic; }
-  @media (max-width:760px){
-    .pay-hist-row{ grid-template-columns:auto 1fr; grid-auto-rows:min-content; }
-    .pay-hist-amt, .pay-hist-src{ grid-column:2; text-align:right; }
-  }
 
   /* ================= 請求書管理（SYSLEA 支払台帳） ================= */
   .pay2-sel{
@@ -2190,7 +2090,6 @@
   /* --- モーダル/ポップオーバーの影はドロップシャドウのみ(グロー成分を除去) --- */
   .notif-panel{ box-shadow: 0 14px 40px rgba(0,0,0,.6) !important; }
   .modal-panel, .event-modal-panel{ box-shadow: 0 16px 44px rgba(0,0,0,.6) !important; }
-  .mail-sort-btn:hover:not(:disabled){ box-shadow: none !important; }
 
   /* --- フォーカスリングの色をシアン固定値からアンバーへ(リング自体は残す) --- */
   .note-body-editable:focus,
