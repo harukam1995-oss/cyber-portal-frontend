@@ -3513,3 +3513,11 @@
 .pay2-mini-primary{ border-color: var(--accent-dim); color: var(--accent); }
 .pay2-check-act{ white-space:nowrap; }
 .pay2-check-act .pay2-mini-btn + .pay2-mini-btn{ margin-left:4px; }
+/* 請求書管理：カード明細（UPSIDER）の突き合わせ（漏れ防止計画 P4・2026/09/13） */
+.pay2-file-btn{ display:inline-flex; align-items:center; }
+.pay2-stmt-sec{ margin:0 0 12px; }
+.pay2-stmt-title{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:4px 0 6px; font-size:11.5px; color: var(--text-dim); }
+.pay2-stmt-empty{ padding:0 0 4px; }
+.pay2-stmt-more > summary{ padding:2px 0 6px; font-size:11.5px; color: var(--text-dim); cursor:pointer; }
+.pay2-stmt-more > summary:hover{ color: var(--accent); }
+#pay2-stmt-body .pay2-table tbody tr:not([data-pid]){ cursor:default; }
