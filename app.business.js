@@ -665,7 +665,7 @@
     var newBtn = document.getElementById("contracts-page-new");
     if (newBtn) newBtn.addEventListener("click", function(){
       openContractModal();
-      if (contractsLoadOk && contractMD) contractMD.addNew();
+      if (contractsLoadOk && contractMaster) contractMaster.addNew();
     });
   }
 
@@ -685,7 +685,7 @@
      枠(一覧・並べ替え・新規・削除・保存の流れ)は app.js の makeMasterDetail。ここは契約書固有の中身だけ。
      デプロイ直後に古い app.js と新しいこのファイルが一瞬組み合わさると makeMasterDetail が無いので、
      そのときは管理モーダルだけ使えなくして再読み込みを促す(カードや一覧は動かす)。 */
-  var contractMD = CP.makeMasterDetail ? CP.makeMasterDetail({
+  var contractMaster = CP.makeMasterDetail ? CP.makeMasterDetail({
     prefix: "contract",
     titles: ["契約書トラッカーの管理", "契約書の設定"],
     emptyHtml: '<div class="habit-edit-empty">契約書がありません。「＋ 新規作成」から追加してください。</div>',
@@ -734,7 +734,7 @@
     afterSave: function(){ loadContracts(); }
   }) : null;
   function openContractModal(targetId){
-    if (!contractMD){
+    if (!contractMaster){
       contractSetStatus("新しい版に更新されています。ページを再読み込みしてください。", true);
       return;
     }
@@ -743,7 +743,7 @@
       loadContracts();
       return;
     }
-    contractMD.open(contractsState, targetId);
+    contractMaster.open(contractsState, targetId);
   }
   function contractNewRow(){
     return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", autoAdvancedAt: 0, autoAdvancedTo: "", source: "manual" };
@@ -791,7 +791,7 @@
         r.requestedBy = (r.requestedBy === nm) ? "" : nm;
         r.source = "manual";
         requestedBy.value = r.requestedBy;
-        contractMD.render();
+        contractMaster.render();
       });
       reqChips.appendChild(chip);
     });
@@ -898,7 +898,7 @@
     // 検索・依頼者フィルタはカードから外した（全件ページ側のツールバーで行う）。
     // contractsQuery / contractsRequester の状態自体は両画面で共用のまま残っている。
 
-    if (contractMD) contractMD.wire();
+    if (contractMaster) contractMaster.wire();
   }
 
   /* ================= ビジネス: プロジェクトボード =================
@@ -2349,6 +2349,6 @@
   // Esc で閉じる(app.js の Esc スタックへ登録。閉じる関数はこの IIFE の中にしか無い)。
   if (CP.registerEscModal){
     CP.registerEscModal("pb-modal", pbModalBack);
-    if (contractMD) CP.registerEscModal("contract-modal", contractMD.back);
+    if (contractMaster) CP.registerEscModal("contract-modal", contractMaster.back);
   }
 })();
