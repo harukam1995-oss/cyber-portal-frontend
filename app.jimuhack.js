@@ -72,7 +72,9 @@
       // Bing Webmaster Tools の期間まとめ（キーワード / ページ / デバイス / 国。月を指定しないで取り込んだもの）
       bingSnapshot: null,
       // 概要の改善候補を「あとで」に回した期限（{id: "YYYY-MM-DD"}）
-      todoSnooze: {}
+      todoSnooze: {},
+      // 概要の改善候補を「改善済み」にした記録（{id: {date, title, note, before}}）
+      todoDone: {}
     };
   }
 
@@ -1028,6 +1030,7 @@
   // 土日の読者は平日の約16%（2026/05〜09 の曜日別平均）なので、途中の月の見込みは曜日の重みで伸ばす
   var WEEKEND_WEIGHT = 0.16;
   var lastItems = [];
+  var lastVisible = [];   // 概要に出している候補（「あとで」「改善済み」で隠したものを除く）
 
   function addDaysKey(key, n){ return new Date(Date.parse(key + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10); }
   function monthDays(m){ return new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(); }
@@ -1052,6 +1055,12 @@
     var until = (S.state.todoSnooze || {})[id];
     return !!until && until >= todayKey();
   }
+  // 「改善済み」にした候補は隠す。ただし改善した日より後に始まるデータ（since）でまだ候補に出ていれば、一覧に戻す。
+  // since が無いもの（Bing の期間まとめ＝改善前の期間を含む）は改善後と比べられないので、隠したまま。
+  var EFFECT_DAYS = 28;
+  function doneOf(id){ return (S.state.todoDone || {})[id] || null; }
+  function doneAgain(x){ var d = doneOf(x.id); return !!d && !!x.since && x.since > d.date; }
+  function doneWaiting(x){ return !!doneOf(x.id) && !doneAgain(x); }
 
   // PV：揃っている最新月（途中の月は比較に使わない）と、いちばん新しい月が途中ならその見込み
   function pvStatus(){
@@ -1111,7 +1120,7 @@
       items.push({ id: "overdue", lv: "err", impact: 1e9, title: "事務ハックのタスクが " + over + " 件 期限切れ", sub: "計画タブで期限を見直す", act: "tab", arg: "plan", btn: "計画" });
     }
     // 表示が多いのに、そのデータ全体の CTR の半分未満しかクリックされていないページ
-    function weakPages(rows, eng, minI, factor, where, act, arg){
+    function weakPages(rows, eng, minI, factor, where, act, arg, since){
       var tc = sum(rows, function(r){ return r.c; }), ti = sum(rows, function(r){ return r.i; }), bench = ti ? tc / ti * 100 : 0;
       rows.filter(function(r){ return r.i >= minI && r.t < bench / 2; }).forEach(function(r){
         var post = postByPath(r.page), name = post ? shortTitle(post.title) : r.page, label = engineLabel(eng);
@@ -1120,6 +1129,7 @@
           title: "「" + name + "」の " + label + " のクリック率が低い（" + fmtPct(r.t, 2) + "）",
           sub: label + " ・ " + where + " ・ 表示 " + fmtN(r.i) + " ・ クリック " + fmtN(r.c) + " ・ 平均 " + r.p.toFixed(1) + " 位",
           act: act, arg: arg, btn: "ページで見る",
+          since: since, slug: post ? post.slug : "", before: label + " CTR " + fmtPct(r.t, 2) + "・" + r.p.toFixed(1) + "位",
           task: {
             type: "リライト", text: "リライト：" + (post ? post.title : r.page), url: post ? post.link : "",
             remarks: label + "（" + where + "）：表示 " + r.i + "・クリック " + r.c + "・CTR " + fmtPct(r.t, 2) + "（全体 " + fmtPct(bench, 2) + "）・平均 " +
@@ -1129,7 +1139,7 @@
       });
     }
     // 10位以内なのにクリック0（まとめて1件）
-    function chanceItem(rows, eng, factor, where, act){
+    function chanceItem(rows, eng, factor, where, act, since){
       var tc = sum(rows, function(r){ return r.c; }), ti = sum(rows, function(r){ return r.i; }), bench = ti ? tc / ti * 100 : 0;
       var ch = rows.filter(isChance);
       if (!ch.length) return;
@@ -1138,29 +1148,31 @@
         id: eng + "-chance:" + where, lv: "accent", impact: sum(ch, function(r){ return r.i; }) * bench / 100 * factor,
         title: label + " で10位以内なのにクリック0の" + (eng === "bing" ? "キーワード" : "クエリ") + " " + ch.length + " 件",
         sub: label + " ・ " + where + " ・ 最多「" + top.q + "」表示 " + fmtN(top.i) + " ・ " + top.p.toFixed(1) + " 位",
-        act: act, arg: "chance", btn: "見る"
+        act: act, arg: "chance", btn: "見る", since: since
       });
     }
     var snapWhere = function(part){ var s = S.state.bingSnapshot; return s && s[part] ? "〜" + dayLabel(s[part].exported) + " 書き出しの期間まとめ" : "期間まとめ"; };
     var bpg = bingLatestRows("pages", S.bingp);
     if (bpg){
       weakPages(bpg.rows, "bing", 1000, bpg.month === "snap" ? 30 / bingSnapDays() : 1,
-        bpg.month === "snap" ? snapWhere("pages") : jpMonth(bpg.month), "goto-bing-pages", bpg.month);
+        bpg.month === "snap" ? snapWhere("pages") : jpMonth(bpg.month), "goto-bing-pages", bpg.month,
+        bpg.month === "snap" ? null : bpg.month + "-01");
     }
     var lms = Object.keys(S.landing).sort(), gl = null;
     for (var i = lms.length - 1; i >= 0; i--){ if (lms[i] < curMonth() && !partialEnd("landing", lms[i])){ gl = lms[i]; break; } }
     if (!gl) gl = lms[lms.length - 1] || null;
     if (gl){
       var gpe = partialEnd("landing", gl);
-      weakPages(S.landing[gl], "google", 500, gpe ? monthDays(gl) / gpe : 1, jpMonth(gl), "goto-pages", gl);
+      weakPages(S.landing[gl], "google", 500, gpe ? monthDays(gl) / gpe : 1, jpMonth(gl), "goto-pages", gl, gl + "-01");
     }
     var gq = googleStatus();
     if (gq && S.queries[gq.m]){
       var qpe = partialEnd("queries", gq.m);
-      chanceItem(S.queries[gq.m], "google", qpe ? monthDays(gq.m) / qpe : 1, jpMonth(gq.m), "goto-queries");
+      chanceItem(S.queries[gq.m], "google", qpe ? monthDays(gq.m) / qpe : 1, jpMonth(gq.m), "goto-queries", gq.m + "-01");
     }
     var bk = bingLatestRows("keywords", S.bingq);
-    if (bk) chanceItem(bk.rows, "bing", bk.month === "snap" ? 30 / bingSnapDays() : 1, bk.month === "snap" ? snapWhere("keywords") : jpMonth(bk.month), "goto-bing-queries");
+    if (bk) chanceItem(bk.rows, "bing", bk.month === "snap" ? 30 / bingSnapDays() : 1, bk.month === "snap" ? snapWhere("keywords") : jpMonth(bk.month), "goto-bing-queries",
+      bk.month === "snap" ? null : bk.month + "-01");
     return items.sort(function(a, b){ return b.impact - a.impact; });
   }
 
@@ -1285,7 +1297,8 @@
         '<div class="jh-answer-line jh-faint">' + esc(first.sub) + '</div>' +
         (first.impact < 1e9 ? '<div class="jh-next-impact">取りこぼし 月 約 ' + fmtN(roundImpact(first.impact)) + ' クリック</div>' : '') +
         '<div class="jh-actions">' + (first.task ? btn("タスク化", "todo-task", first.id, "is-primary") : "") +
-        (first.act ? btn(first.btn, first.act, first.arg) : "") + btn("あとで", "todo-snooze", first.id, "is-ghost") + '</div>';
+        (first.act ? btn(first.btn, first.act, first.arg) : "") +
+        (first.id !== "overdue" ? btn("改善済み", "todo-done-open", first.id, "is-ghost") : "") + btn("あとで", "todo-snooze", first.id, "is-ghost") + '</div>';
     } else {
       html += '<div class="jh-answer-line">いま優先して直すものはありません。</div>';
     }
@@ -1304,21 +1317,56 @@
   }
 
   function todoRow(x, i){
+    var again = doneAgain(x) ? doneOf(x.id) : null;
+    var form = S.doneEdit === x.id
+      ? '<div class="jh-form jh-todo-doneform">' +
+        '<input type="text" class="jh-in jh-grow" maxlength="200" placeholder="何を変えたか（例：タイトルと説明文を検索語に合わせた）" data-keep="jh-done-note" data-enter="todo-done-save" data-arg="' + esc(x.id) + '">' +
+        btn("記録", "todo-done-save", x.id, "is-primary") + btn("やめる", "todo-done-cancel", null, "is-ghost") + '</div>'
+      : "";
     return '<div class="jh-todo-row lv-' + x.lv + (i === 0 ? ' is-first' : '') + '">' +
       '<span class="jh-rank-no">' + (i + 1) + '</span>' +
       '<div class="jh-todo-main"><div class="jh-todo-title">' + esc(x.title) + '</div>' +
-      '<div class="jh-todo-sub">' + (x.impact < 1e9 ? '<span class="jh-todo-impact">月 約 ' + fmtN(roundImpact(x.impact)) + ' クリック</span> ・ ' : '') + esc(x.sub) + '</div></div>' +
+      '<div class="jh-todo-sub">' + (again ? '<span class="is-warn">' + esc(dayLabel(again.date)) + ' に改善済み ・ 改善後のデータでもまだ低い</span> ・ ' : '') +
+      (x.impact < 1e9 ? '<span class="jh-todo-impact">月 約 ' + fmtN(roundImpact(x.impact)) + ' クリック</span> ・ ' : '') + esc(x.sub) + '</div>' + form + '</div>' +
       '<div class="jh-todo-acts">' + (x.task ? btn("タスク化", "todo-task", x.id) : "") + (x.act ? btn(x.btn, x.act, x.arg) : "") +
+      (x.id !== "overdue" ? btn("改善済み", "todo-done-open", x.id, "is-ghost") : "") +
       btn("あとで", "todo-snooze", x.id, "is-ghost") + '</div></div>';
   }
-  function weekCard(items, snoozedN){
-    var top = items.slice(0, 3), rest = items.slice(3), chron = chronicIssues();
+  // 改善済みにした候補（新しい順）。状態＝改善後のデータ待ち／改善後もまだ低い（一覧に戻している）／候補から外れた
+  function doneRows(all){
+    var map = S.state.todoDone || {}, byId = {};
+    all.forEach(function(x){ byId[x.id] = x; });
+    return Object.keys(map).sort(function(a, b){ return String(map[b].date).localeCompare(String(map[a].date)); }).map(function(id){
+      var d = map[id] || {}, x = byId[id], day = d.date || todayKey(), warn = false, st;
+      if (x && doneAgain(x)){
+        warn = true;
+        st = "改善後のデータでもまだ低い（上の一覧に戻しています）";
+      } else if (x){
+        st = "改善後のデータ待ち ・ " + dayLabel(addDaysKey(day, EFFECT_DAYS)) + " ごろ以降のデータで確認" +
+          (x.since ? "" : "（Bing は月を指定して取り込むと、改善前と分けて比べられます）");
+      } else {
+        st = "いまの候補から外れています";
+      }
+      return '<div class="jh-todo-row is-done' + (warn ? ' lv-warn' : '') + '">' +
+        '<span class="jh-rank-no">✓</span>' +
+        '<div class="jh-todo-main"><div class="jh-todo-title">' + esc(d.title || id) + '</div>' +
+        '<div class="jh-todo-sub">' + esc(dayLabel(day) + " 改善" + (d.note ? "：" + d.note : "") + (d.before ? " ・ 改善前 " + d.before : "")) +
+        '<br><span class="' + (warn ? "is-warn" : "") + '">' + esc(st) + '</span></div></div>' +
+        '<div class="jh-todo-acts">' + btn("戻す", "todo-undone", id, "is-ghost") + '</div></div>';
+    }).join("");
+  }
+  function weekCard(items, snoozedN, all){
+    var top = items.slice(0, 3), rest = items.slice(3), chron = chronicIssues(), doneN = Object.keys(S.state.todoDone || {}).length;
     var body = top.length
       ? '<div class="jh-todo">' + top.map(todoRow).join("") + '</div>'
       : '<div class="sched-empty">いま自動で出せる改善候補はありません。</div>';
     if (rest.length){
       body += '<button type="button" class="jh-more-toggle" data-act="toggle-more">' + (S.showMore ? "ほかの気づきを閉じる" : "ほかの気づき " + rest.length + " 件") + '</button>';
       if (S.showMore) body += '<div class="jh-todo">' + rest.map(function(x, i){ return todoRow(x, i + 3); }).join("") + '</div>';
+    }
+    if (doneN){
+      body += '<button type="button" class="jh-more-toggle" data-act="toggle-done">' + (S.showDone ? "改善済みを閉じる" : "改善済み " + doneN + " 件") + '</button>';
+      if (S.showDone) body += '<div class="jh-todo">' + doneRows(all || items) + '</div>';
     }
     if (chron.length){
       body += '<div class="jh-chronic"><span class="jh-sublabel" style="margin:0">ずっと残っている課題</span>' + chron.map(function(c){
@@ -1343,6 +1391,43 @@
     render();
   };
   ACTIONS["todo-unsnooze"] = function(){ S.state.todoSnooze = {}; saveState(); render(); };
+  // 改善済み：行の下に「何を変えたか」の入力欄を開き、記録すると一覧から外して改善ログにも残す
+  ACTIONS["todo-done-open"] = function(id){
+    S.doneEdit = id;
+    if (lastVisible.map(function(x){ return x.id; }).indexOf(id) >= 3) S.showMore = true; // 「ほかの気づき」の中なら開いて見せる
+    render();
+    var el = keepEl("jh-done-note");
+    if (el){ el.value = ""; el.focus(); }
+  };
+  ACTIONS["todo-done-cancel"] = function(){ S.doneEdit = null; render(); };
+  ACTIONS["todo-done-save"] = function(id){
+    var x = lastItems.filter(function(it){ return it.id === id; })[0];
+    if (!x) return;
+    var el = keepEl("jh-done-note"), note = el ? el.value.trim() : "", t = todayKey();
+    var done = Object.assign({}, S.state.todoDone || {});
+    done[id] = { date: t, title: x.title, note: note, before: x.before || "" };
+    S.state.todoDone = done;
+    // 記事の候補は改善ログにも残す（あとで検索の推移と見比べる）
+    if (x.slug){
+      S.state.changes = S.state.changes.concat([{ id: uid(), date: t, slug: x.slug, what: note || "今週の3つから改善", before: x.before || "", after: "" }]);
+    }
+    if ((S.state.todoSnooze || {})[id]){
+      var sn = Object.assign({}, S.state.todoSnooze);
+      delete sn[id];
+      S.state.todoSnooze = sn;
+    }
+    S.doneEdit = null;
+    saveState();
+    render();
+  };
+  ACTIONS["todo-undone"] = function(id){
+    var done = Object.assign({}, S.state.todoDone || {});
+    delete done[id];
+    S.state.todoDone = done;
+    saveState();
+    render();
+  };
+  ACTIONS["toggle-done"] = function(){ S.showDone = !S.showDone; render(); };
 
   var GOALS = [
     { k: "pv", label: "月間PV（途中の月は見込み）", unit: "PV", cur: function(){ var st = pvStatus(); return !st ? 0 : st.partial && st.partial.pace ? st.partial.pace : (st.v || 0); } },
@@ -1482,13 +1567,15 @@
     var all = overviewItems(), snoozedN = 0;
     lastItems = all;
     var items = all.filter(function(x){
+      if (doneWaiting(x)) return false;
       if (snoozed(x.id)){ snoozedN++; return false; }
       return true;
     });
+    lastVisible = items;
     var html = '<div class="jh-answers">' + answerGrow() + answerSource() + answerNext(items[0]) + '</div>';
     if (S.goalEdit) html += goalsCard();
     html += dataStrip();
-    html += '<div class="jh-grid2">' + weekCard(items, snoozedN) + trendCard() + '</div>';
+    html += '<div class="jh-grid2">' + weekCard(items, snoozedN, all) + trendCard() + '</div>';
     if (S.showSources) html += sourcesCard();
     return html;
   }
