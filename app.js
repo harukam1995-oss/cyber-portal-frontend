@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 157;
+  var BUILD_V = 158;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -7370,6 +7370,8 @@
     mailAttachBytes: mailAttachBytes,
     // 請求書管理の「催促メールを作成」が、宛先・件名・本文（と返信先のスレッド）を入れた作成モーダルを開く。
     openComposePreset: openComposePreset,
+    // 請求書管理の明細 CSV 取り込み（UTF-8 で読めなければ Shift_JIS）。
+    csvReadFile: csvReadFile,
     // 契約書のアラート判定は HOME の INBOX でも使うので本体側に置き、ここから渡す。
     CONTRACT_STATUSES: CONTRACT_STATUSES,
     contractStatusIdx: contractStatusIdx,

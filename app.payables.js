@@ -34,6 +34,10 @@
   };
 
   function p2El(id){ return document.getElementById(id); }
+  function p2ById(list, id){
+    for (var i = 0; i < list.length; i++){ if (list[i].id === id) return list[i]; }
+    return undefined;
+  }
   // 差出人アドレスの正規化（"Name <a@b.com>" なら <> の中身、以降 小文字）
   function p2EmailKey(v){
     var s = String(v == null ? "" : v).trim();
@@ -290,7 +294,6 @@
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
       p2StmtWire();
-      p2El("pay2-backfill-btn").addEventListener("click", p2BackfillEmails);
       p2El("pay2-csv-btn").addEventListener("click", function(){ p2Csv("syslea_payables"); });
       p2El("pay2-sheet-btn").addEventListener("click", p2SheetSync);
       p2El("pay2-sheetpull-btn").addEventListener("click", p2SheetPull);
@@ -309,12 +312,12 @@
       p2El("pay2-edit-close").addEventListener("click", p2CloseEdit);
       p2El("pay2-edit-cancel").addEventListener("click", p2CloseEdit);
       p2El("pay2-edit-form").addEventListener("submit", function(e){ e.preventDefault(); p2SaveEdit(); });
-      p2El("pay2-edit-del").addEventListener("click", p2DeleteEdit);
+      p2El("pay2-edit-del").addEventListener("click", function(){ p2DeleteDoc("payable"); });
       // ベンダーモーダル
       p2El("pay2-vendor-close").addEventListener("click", p2CloseVendor);
       p2El("pay2-vendor-cancel").addEventListener("click", p2CloseVendor);
       p2El("pay2-vendor-form").addEventListener("submit", function(e){ e.preventDefault(); p2SaveVendor(); });
-      p2El("pay2-vendor-del").addEventListener("click", p2DeleteVendor);
+      p2El("pay2-vendor-del").addEventListener("click", function(){ p2DeleteDoc("vendor"); });
       // 未処理キュー（旧 取り込みモーダル）
       p2El("pay2-import-close").addEventListener("click", p2CloseImport);
       p2El("pay2-import-cancel").addEventListener("click", p2CloseImport);
@@ -499,7 +502,7 @@
       cb.addEventListener("click", function(e){ e.stopPropagation(); });
       cb.addEventListener("change", function(){
         var id = cb.getAttribute("data-id");
-        var r = p2.payables.filter(function(x){ return x.id === id; })[0];
+        var r = p2ById(p2.payables, id);
         if (!r) return;
         if (cb.checked && r.payToMismatch && !r.payToChecked){
           if (!window.confirm("この請求書は振込先がベンダー登録と違います（⚠口座変更）。確認済みですか？\nOK で「口座を確認した」＋「支払済」にします。")){
@@ -513,13 +516,13 @@
     });
     table.querySelectorAll("tbody tr").forEach(function(tr){
       tr.addEventListener("click", function(){
-        var rec = p2.payables.filter(function(x){ return x.id === tr.getAttribute("data-id"); })[0];
+        var rec = p2ById(p2.payables, tr.getAttribute("data-id"));
         if (rec) p2OpenEdit(rec);
       });
     });
   }
   function p2TogglePaid(id, paid, alsoPayToChecked){
-    var row = p2.payables.filter(function(x){ return x.id === id; })[0];
+    var row = p2ById(p2.payables, id);
     if (!row) return;
     var body = Object.assign({}, row, { paid: paid });
     if (alsoPayToChecked) body.payToChecked = true;
@@ -599,7 +602,7 @@
     table.innerHTML = head + body;
     table.querySelectorAll("tbody tr").forEach(function(tr){
       tr.addEventListener("click", function(){
-        var v = p2.vendors.filter(function(x){ return x.id === tr.getAttribute("data-id"); })[0];
+        var v = p2ById(p2.vendors, tr.getAttribute("data-id"));
         if (v) p2OpenVendor(v);
       });
     });
@@ -654,10 +657,10 @@
         var hit = ev.target && ev.target.closest ? ev.target.closest("[data-pid]") : null;
         var pid = hit ? hit.getAttribute("data-pid") : "";
         if (pid){
-          var rec = p2.payables.filter(function(x){ return x.id === pid; })[0];
+          var rec = p2ById(p2.payables, pid);
           if (rec){ p2OpenEdit(rec); return; }
         }
-        var v = p2.vendors.filter(function(x){ return x.id === tr.getAttribute("data-vid"); })[0];
+        var v = p2ById(p2.vendors, tr.getAttribute("data-vid"));
         if (v) p2OpenVendor(v);
       });
     });
@@ -823,14 +826,14 @@
     });
   }
   function p2FindMail(vid){
-    var v = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+    var v = p2ById(p2.vendors, vid);
     if (!v) return;
     var emails = p2VendorEmails(v);
     var q = (emails.length ? "from:(" + emails.join(" OR ") + ")" : '"' + String(v.name || "").replace(/"/g, "") + '"') + " newer_than:60d";
     window.open("https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(SYSLEA_MAIL_ADDR) + "#search/" + encodeURIComponent(q), "_blank", "noopener");
   }
   function p2RemindDraft(vid, month, btn){
-    var v = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+    var v = p2ById(p2.vendors, vid);
     if (!v) return;
     var to = p2VendorEmails(v)[0];
     if (!to) return;
@@ -941,7 +944,7 @@
     if (body.hidden) return;
     body.querySelectorAll("tr[data-pid]").forEach(function(tr){
       tr.addEventListener("click", function(){
-        var rec = p2.payables.filter(function(x){ return x.id === tr.getAttribute("data-pid"); })[0];
+        var rec = p2ById(p2.payables, tr.getAttribute("data-pid"));
         if (rec) p2OpenEdit(rec);
       });
     });
@@ -964,6 +967,25 @@
   function p2StmtActs(r){
     return '<td class="pay2-check-act"><button type="button" class="pay2-mini-btn pay2-mini-primary" data-stmt-add="' + escapeHtml(r.id) + '">台帳に追加</button>' +
       '<button type="button" class="pay2-mini-btn" data-stmt-none="' + escapeHtml(r.id) + '">対象外</button></td>';
+  }
+  // 「台帳なし」の表（ベンダー候補＋台帳に追加・対象外）。UPSIDER・GMO 共通
+  function p2StmtNoLedgerTable(rows, cells){
+    return p2StmtTable(cells.head.concat(["ベンダー候補", ""]), rows.map(function(r){
+      return "<tr>" + cells.row(r) + "<td>" + escapeHtml(r.guess ? r.guess.vendorName || "" : "—") + "</td>" + p2StmtActs(r) + "</tr>";
+    }));
+  }
+  // 「台帳にあるのに明細なし／引落なし」の表。UPSIDER・GMO 共通
+  function p2StmtLedgerTable(up){
+    return p2StmtTable(["受領日", "ベンダー", "税込", "備考"], up.map(function(p){
+      return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + '</td><td class="strong">' + escapeHtml(p.vendorName || "") +
+        '</td><td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td><td>" + escapeHtml(p.note || "") + "</td></tr>";
+    }));
+  }
+  // 折りたたみの「その他」。UPSIDER・GMO 共通
+  function p2StmtOtherHtml(title, rows, cells){
+    return '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>' + title + " " + rows.length + " 件</summary>" +
+      (rows.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cells.head) + "<tbody>" + rows.map(function(r){ return "<tr>" + cells.row(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
+      "</details></div>";
   }
   function p2StmtMatchedHtml(matched, pend, cells){
     var h = '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">台帳と一致 ' + matched.length + " 件" +
@@ -1007,19 +1029,10 @@
       }
     };
     var h = "";
-    h += p2StmtSec("台帳なし（照合キーのあるベンダーの決済） " + known.length + " 件 — メールで請求書・領収書が来ていない可能性",
-      p2StmtTable(cells.head.concat(["ベンダー候補", ""]), known.map(function(r){
-        return "<tr>" + cells.row(r) + "<td>" + escapeHtml(r.guess.vendorName || "") + "</td>" + p2StmtActs(r) + "</tr>";
-      })));
-    h += p2StmtSec("台帳にあるのに明細なし（UPSIDER 行） " + up.length + " 件 — 支払方式違い・前後の月の決済・別カードの可能性",
-      p2StmtTable(["受領日", "ベンダー", "税込", "備考"], up.map(function(p){
-        return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + '</td><td class="strong">' + escapeHtml(p.vendorName || "") +
-          '</td><td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td><td>" + escapeHtml(p.note || "") + "</td></tr>";
-      })));
+    h += p2StmtSec("台帳なし（照合キーのあるベンダーの決済） " + known.length + " 件 — メールで請求書・領収書が来ていない可能性", p2StmtNoLedgerTable(known, cells));
+    h += p2StmtSec("台帳にあるのに明細なし（UPSIDER 行） " + up.length + " 件 — 支払方式違い・前後の月の決済・別カードの可能性", p2StmtLedgerTable(up));
     h += p2StmtMatchedHtml(matched, pend, cells);
-    h += '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>その他の決済（照合キーのないベンダー・対象外にしたもの） ' + other.length + " 件</summary>" +
-      (other.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cells.head) + "<tbody>" + other.map(function(r){ return "<tr>" + cells.row(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
-      "</details></div>";
+    h += p2StmtOtherHtml("その他の決済（照合キーのないベンダー・対象外にしたもの）", other, cells);
     body.innerHTML = h;
   }
   function p2StmtRenderGmo(d, sum, body){
@@ -1058,22 +1071,13 @@
           return "<tr><td>" + escapeHtml(r.date.slice(5)) + '</td><td class="strong">' + escapeHtml(r.merchant || "") + '</td><td class="num">' + p2Money(r.amountIn) + "</td></tr>";
         })));
     }
-    h += p2StmtSec("台帳なしの出金（口座振替・個別振込） " + none.length + " 件 — 請求書が台帳に無い支払い（payment@ 以外に届いた請求の可能性）",
-      p2StmtTable(cells.head.concat(["ベンダー候補", ""]), none.map(function(r){
-        return "<tr>" + cells.row(r) + "<td>" + escapeHtml(r.guess ? r.guess.vendorName : "—") + "</td>" + p2StmtActs(r) + "</tr>";
-      })));
-    h += p2StmtSec("台帳にあるのに引落なし（口座振替・前月〜当月受領） " + up.length + " 件",
-      p2StmtTable(["受領日", "ベンダー", "税込", "備考"], up.map(function(p){
-        return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + '</td><td class="strong">' + escapeHtml(p.vendorName || "") +
-          '</td><td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td><td>" + escapeHtml(p.note || "") + "</td></tr>";
-      })));
+    h += p2StmtSec("台帳なしの出金（口座振替・個別振込） " + none.length + " 件 — 請求書が台帳に無い支払い（payment@ 以外に届いた請求の可能性）", p2StmtNoLedgerTable(none, cells));
+    h += p2StmtSec("台帳にあるのに引落なし（口座振替・前月〜当月受領） " + up.length + " 件", p2StmtLedgerTable(up));
     h += p2StmtSec("総合振込 " + bulkRows.length + " 件 " + p2Money(bulk.total || 0) + " — 内訳は銀行明細に出ないため個別には突き合わせていません（15日の給与分を含む）",
       '<p class="pay2-muted pay2-stmt-empty">台帳の銀行振込（前月〜当月受領・個別振込と未照合）: ' + (bulk.ledgerRows || 0) + " 件（税込入力済みの合計 " + p2Money(bulk.ledgerAmountSum || 0) + " ／ 税込未入力 " + (bulk.ledgerNoAmount || 0) + " 件）</p>" +
       p2StmtTable(["日付", "金額"], bulkRows.map(function(r){ return "<tr><td>" + escapeHtml(r.date.slice(5)) + '</td><td class="num">' + p2Money(r.amountOut) + "</td></tr>"; })));
     h += p2StmtMatchedHtml(matched, pend, cells);
-    h += '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>その他の出金（振込手数料・ペイジー・借入返済・ATM・対象外にしたもの） ' + other.length + " 件</summary>" +
-      (other.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cells.head) + "<tbody>" + other.map(function(r){ return "<tr>" + cells.row(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
-      "</details></div>";
+    h += p2StmtOtherHtml("その他の出金（振込手数料・ペイジー・借入返済・ATM・対象外にしたもの）", other, cells);
     body.innerHTML = h;
   }
   function p2StmtRowById(id){
@@ -1239,10 +1243,7 @@
     });
   }
   function p2StmtReadCsv(file){
-    return file.arrayBuffer().then(function(buf){
-      var text;
-      try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
-      catch(e){ text = new TextDecoder("shift_jis").decode(buf); }
+    return CP.csvReadFile(file).then(function(text){ // UTF-8 で読めなければ Shift_JIS（本体の CSV 取り込みと同じ）
       return p2StmtRowsFromGrid(p2StmtParseCsv(text.replace(/^﻿/, "")));
     });
   }
@@ -1341,10 +1342,7 @@
       "</div>" +
       "</div>";
     p2El("pay2-edit-body").innerHTML = body;
-    p2El("pay2-edit-error").hidden = true;
-    p2El("pay2-edit-modal").hidden = false;
-    p2El("pay2-edit-form").scrollTop = 0;
-    document.body.style.overflow = "hidden";
+    p2OpenModal("pay2-edit");
 
     function recalc(){
       var ex = parseFloat(p2El("p2f-amountExcl").value);
@@ -1419,7 +1417,7 @@
       if (upd) upd.addEventListener("click", function(){ p2SavePayToToVendor(v.id); });
     }
     function p2SavePayToToVendor(vid){
-      var vv = p2.vendors.filter(function(x){ return x.id === vid; })[0];
+      var vv = p2ById(p2.vendors, vid);
       if (!vv) return;
       var body = Object.assign({}, vv, p2PayToValues("p2f-"));
       p2Status("ベンダーの口座を更新中…");
@@ -1446,7 +1444,7 @@
       if (file) p2ExtractFromFile(file);
     });
   }
-  function p2CloseEdit(){ p2El("pay2-edit-modal").hidden = true; document.body.style.overflow = ""; }
+  function p2CloseEdit(){ p2CloseModal("pay2-edit"); }
 
   function p2NumOrNull(id){
     var v = p2El(id).value;
@@ -1456,7 +1454,7 @@
   }
   function p2EditValues(){
     // 確認済・済フォルダ移動・SYSLEA照合は画面から外した（2026/09/14・運用で使っていない）。PUT は全項目を送る前提なので既存値を保つ
-    var cur = (p2.editId && p2.payables.filter(function(x){ return x.id === p2.editId; })[0]) || {};
+    var cur = (p2.editId && p2ById(p2.payables, p2.editId)) || {};
     var name = p2El("p2f-vendorName").value.trim();
     var email = p2El("p2f-fromEmail").value.trim();
     // 該当ベンダーはメールアドレス一致を優先し、無ければ名前一致
@@ -1494,39 +1492,53 @@
   }
   function p2SaveEdit(){
     var vals = p2EditValues();
-    if (!vals.vendorName && !vals.invoiceNo){
-      var e = p2El("pay2-edit-error");
-      e.hidden = false; e.textContent = "ベンダー名か請求書番号のどちらかは入力してください。";
-      return;
-    }
-    var btn = p2El("pay2-edit-save");
+    if (!vals.vendorName && !vals.invoiceNo) return p2FormErr("pay2-edit", "ベンダー名か請求書番号のどちらかは入力してください。");
+    p2SaveDoc("payable", vals);
+  }
+
+  /* ---- 明細・ベンダーのモーダル共通（開く・閉じる・保存・削除・エラー表示） ---- */
+  var P2_KINDS = {
+    payable: { path: "/api/payables/payables", list: "payables", idKey: "editId", res: "payable", modal: "pay2-edit", addFront: true, delMsg: "この請求書を台帳から削除します。よろしいですか？" },
+    vendor: { path: "/api/payables/vendors", list: "vendors", idKey: "vendId", res: "vendor", modal: "pay2-vendor", addFront: false, delMsg: "このベンダーを削除します。よろしいですか？" }
+  };
+  function p2FormErr(modal, msg){
+    var e = p2El(modal + "-error");
+    e.hidden = !msg;
+    e.textContent = msg || "";
+  }
+  function p2OpenModal(modal){
+    p2FormErr(modal, "");
+    p2El(modal + "-modal").hidden = false;
+    p2El(modal + "-form").scrollTop = 0;
+    document.body.style.overflow = "hidden";
+  }
+  function p2CloseModal(modal){ p2El(modal + "-modal").hidden = true; document.body.style.overflow = ""; }
+  function p2SaveDoc(kind, vals){
+    var k = P2_KINDS[kind], id = p2[k.idKey];
+    var btn = p2El(k.modal + "-save");
     btn.disabled = true; btn.textContent = "保存中…";
-    var path = p2.editId ? "/api/payables/payables/" + encodeURIComponent(p2.editId) : "/api/payables/payables";
-    apiFetch(path, { method: p2.editId ? "PUT" : "POST", body: JSON.stringify(vals) }).then(function(res){
-      var saved = res && res.payable;
-      if (p2.editId){
-        p2.payables = p2.payables.map(function(x){ return x.id === p2.editId ? saved : x; });
-      } else {
-        p2.payables.unshift(saved);
-      }
-      p2CloseEdit();
+    apiFetch(k.path + (id ? "/" + encodeURIComponent(id) : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(vals) }).then(function(res){
+      var saved = res && res[k.res];
+      if (id) p2[k.list] = p2[k.list].map(function(x){ return x.id === id ? saved : x; });
+      else if (k.addFront) p2[k.list].unshift(saved);
+      else p2[k.list].push(saved);
+      p2CloseModal(k.modal);
       p2RenderAll();
       p2CountStatus();
     }).catch(function(err){
-      var e2 = p2El("pay2-edit-error");
-      e2.hidden = false; e2.textContent = apiErrorMessage(err, "請求書管理");
+      p2FormErr(k.modal, apiErrorMessage(err, "請求書管理"));
     }).finally(function(){ btn.disabled = false; btn.textContent = "保存"; });
   }
-  function p2DeleteEdit(){
-    if (!p2.editId || !window.confirm("この請求書を台帳から削除します。よろしいですか？")) return;
-    apiFetch("/api/payables/payables/" + encodeURIComponent(p2.editId), { method: "DELETE" }).then(function(){
-      p2.payables = p2.payables.filter(function(x){ return x.id !== p2.editId; });
-      p2CloseEdit();
+  function p2DeleteDoc(kind){
+    var k = P2_KINDS[kind], id = p2[k.idKey];
+    if (!id || !window.confirm(k.delMsg)) return;
+    apiFetch(k.path + "/" + encodeURIComponent(id), { method: "DELETE" }).then(function(){
+      p2[k.list] = p2[k.list].filter(function(x){ return x.id !== id; });
+      p2CloseModal(k.modal);
       p2RenderAll();
       p2CountStatus();
     }).catch(function(err){
-      var e = p2El("pay2-edit-error");
-      e.hidden = false; e.textContent = apiErrorMessage(err, "請求書管理");
+      p2FormErr(k.modal, apiErrorMessage(err, "請求書管理"));
     });
   }
 
@@ -1574,12 +1586,9 @@
       p2El("p2v-cadence-n").hidden = !on;
       p2El("p2v-cadence-unit").hidden = !on;
     });
-    p2El("pay2-vendor-error").hidden = true;
-    p2El("pay2-vendor-modal").hidden = false;
-    p2El("pay2-vendor-form").scrollTop = 0;
-    document.body.style.overflow = "hidden";
+    p2OpenModal("pay2-vendor");
   }
-  function p2CloseVendor(){ p2El("pay2-vendor-modal").hidden = true; document.body.style.overflow = ""; }
+  function p2CloseVendor(){ p2CloseModal("pay2-vendor"); }
   function p2SaveVendor(){
     var cad = p2El("p2v-cadence").value;
     var cadN = Math.max(2, Math.min(60, parseInt(p2El("p2v-cadence-n").value, 10) || 3));
@@ -1601,40 +1610,8 @@
       excluded: p2El("p2v-excluded").checked
     };
     Object.assign(vals, p2PayToValues("p2v-"));
-    if (!vals.name){
-      var e = p2El("pay2-vendor-error");
-      e.hidden = false; e.textContent = "ベンダー名は必須です。";
-      return;
-    }
-    var btn = p2El("pay2-vendor-save");
-    btn.disabled = true; btn.textContent = "保存中…";
-    var path = p2.vendId ? "/api/payables/vendors/" + encodeURIComponent(p2.vendId) : "/api/payables/vendors";
-    apiFetch(path, { method: p2.vendId ? "PUT" : "POST", body: JSON.stringify(vals) }).then(function(res){
-      var saved = res && res.vendor;
-      if (p2.vendId){
-        p2.vendors = p2.vendors.map(function(x){ return x.id === p2.vendId ? saved : x; });
-      } else {
-        p2.vendors.push(saved);
-      }
-      p2CloseVendor();
-      p2RenderAll();
-      p2CountStatus();
-    }).catch(function(err){
-      var e2 = p2El("pay2-vendor-error");
-      e2.hidden = false; e2.textContent = apiErrorMessage(err, "請求書管理");
-    }).finally(function(){ btn.disabled = false; btn.textContent = "保存"; });
-  }
-  function p2DeleteVendor(){
-    if (!p2.vendId || !window.confirm("このベンダーを削除します。よろしいですか？")) return;
-    apiFetch("/api/payables/vendors/" + encodeURIComponent(p2.vendId), { method: "DELETE" }).then(function(){
-      p2.vendors = p2.vendors.filter(function(x){ return x.id !== p2.vendId; });
-      p2CloseVendor();
-      p2RenderAll();
-      p2CountStatus();
-    }).catch(function(err){
-      var e = p2El("pay2-vendor-error");
-      e.hidden = false; e.textContent = apiErrorMessage(err, "請求書管理");
-    });
+    if (!vals.name) return p2FormErr("pay2-vendor", "ベンダー名は必須です。");
+    p2SaveDoc("vendor", vals);
   }
 
   /* ---- 未処理キュー（漏れ防止計画 P1・2026/09/13）----
@@ -1890,42 +1867,6 @@
       .then(function(){ jb.disabled = false; p2QueueSum(); });
   }
 
-  /* ---- 01.payment メールを走査してメールアドレスを補完 ----
-     ①既存台帳行の空 fromEmail を補完 ②分類済み行のベンダー emails に追記
-     ③台帳に無くても 差出人の表示名/ドメインがベンダー名に一致すれば emails に追記
-     （1社に絞れたものだけ。フリーメール・曖昧は除外＝要目視）。冪等。 */
-  function p2BackfillEmails(){
-    if (!window.confirm("SYSLEA の 01.payment メールを全走査して、差出人メールアドレスをベンダーマスタ／既存の請求書行に追記します。\n\nベンダー名・エイリアス・ドメインで自動照合します（1社に絞れたものだけ・フリーメール／人名は対象外）。結果は必ずベンダーマスタの「メールアドレス」列を目視で確認してください。\n\n実行しますか？")) return;
-    var btn = p2El("pay2-backfill-btn");
-    btn.disabled = true; btn.textContent = "補完中…";
-    p2Status("01.payment を走査中…（メール数によっては数十秒かかります）");
-    apiFetch("/api/payables/backfill-emails", { method: "POST", body: "{}" }).then(function(res){
-      res = res || {};
-      var parts = [];
-      if (res.emailsAdded) parts.push("ベンダー " + res.vendorsUpdated + " 社に " + res.emailsAdded + " アドレス追記");
-      if (res.prunedEmails) parts.push("自社ドメイン " + res.prunedEmails + " 件を除去");
-      if (res.filledPayables) parts.push("台帳 " + res.filledPayables + " 行に補完");
-      if (!parts.length) parts.push("追記対象なし");
-      var tail = [];
-      if (res.ambiguousSenders) tail.push("複数社に一致 " + res.ambiguousSenders);
-      if (res.unmatchedSenders) tail.push("未一致 " + res.unmatchedSenders);
-      if (res.freeMailSkipped) tail.push("フリーメール/自社除外 " + res.freeMailSkipped);
-      p2Status(
-        "アドレス補完: " + parts.join(" ／ ") +
-        "（差出人 " + (res.uniqueSenders || 0) + " 種 / 走査 " + (res.scannedMails || 0) + " 通" +
-        (tail.length ? " ・ " + tail.join(" / ") : "") + "）。ベンダーマスタの「メールアドレス」列を目視確認してください。"
-      );
-      return apiFetch("/api/payables").then(function(r2){
-        p2.payables = (r2 && r2.payables) || p2.payables;
-        p2.vendors = (r2 && r2.vendors) || p2.vendors;
-        p2.receipts = (r2 && r2.receipts) || p2.receipts;
-        p2RenderAll();
-      });
-    }).catch(function(err){
-      p2Status(apiErrorMessage(err, "アドレス補完"), "err");
-    }).finally(function(){ btn.disabled = false; btn.textContent = "✉ アドレス補完"; });
-  }
-
   /* ---- Google スプレッドシートへ書き出し ---- */
   function p2SheetSync(){
     var btns = [p2El("pay2-sheet-btn"), p2El("pay2-vendor-sheet-btn")];
@@ -2006,7 +1947,7 @@
     return ({
       "p2f-vendorName": "ベンダー", "p2f-invoiceNo": "請求書番号", "p2f-invoiceDate": "請求日",
       "p2f-dueDate": "支払期日", "p2f-amountExcl": "税抜", "p2f-tax": "消費税",
-      "p2f-amountIncl": "税込", "p2f-regNo": "登録番号", "p2f-payTo": "振込先"
+      "p2f-amountIncl": "税込", "p2f-regNo": "登録番号"
     })[id] || id;
   }
 
