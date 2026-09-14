@@ -247,7 +247,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.73</span>
+      <span>v2.33.74</span>
     </div>
   </footer>
 </div>
@@ -1011,7 +1011,7 @@
     </div>
     <div class="cal-toolbar-right" id="pay2-detail-tools">
       <input type="search" id="pay2-q" class="pay2-q" placeholder="ベンダー・番号・メール・備考で検索" autocomplete="off" maxlength="80">
-      <select id="pay2-month" class="pay2-sel" aria-label="対象月で絞り込み"><option value="">全期間</option></select>
+      <select id="pay2-month" class="pay2-sel" aria-label="受領月で絞り込み"><option value="">受領月（すべて）</option></select>
       <select id="pay2-method" class="pay2-sel" aria-label="支払方式で絞り込み">
         <option value="">方式（すべて）</option>
         <option value="銀行振込">銀行振込</option>
@@ -1021,7 +1021,7 @@
       </select>
       <label class="pay2-check-inline" title="未払いを支払期日順で表示・期限切れ赤・行内で支払済チェック"><input type="checkbox" id="pay2-queue"> 支払キュー</label>
       <label class="pay2-check-inline"><input type="checkbox" id="pay2-unpaid"> 未払いのみ</label>
-      <label class="pay2-check-inline" title="金額または支払期日が未入力＝まだ支払える状態でない行"><input type="checkbox" id="pay2-need-input"> 要入力のみ</label>
+      <label class="pay2-check-inline" title="直近60日に受け取った未払いのうち、金額か支払期日が未入力＝まだ支払える状態でない行"><input type="checkbox" id="pay2-need-input"> 要入力のみ</label>
       <label class="pay2-check-inline"><input type="checkbox" id="pay2-show-excluded"> 対象外も表示</label>
       <button type="button" class="pay2-tool-btn" id="pay2-import-btn" title="01.payment と台帳を突き合わせ、台帳に無いメール（入口外の請求書らしいメールを含む）を処理">✉ 未処理キュー</button>
       <button type="button" class="pay2-tool-btn" id="pay2-backfill-btn" title="01.payment メールを走査し、既存行の空きメールアドレスを補完">✉ アドレス補完</button>
@@ -1061,12 +1061,16 @@
 
   <section class="panel cal-status-bar" id="pay2-status">接続確認中…</section>
 
+  <!-- 今月やること（台帳とベンダーマスタから数える。押すとその一覧へ） -->
+  <section class="panel kpi-band pay2-kpis" id="pay2-kpis" hidden aria-label="今月やること"></section>
+
   <section class="panel cal-body-panel">
     <div class="pay2-summary" id="pay2-summary" hidden></div>
     <div class="pay2-check" id="pay2-check" hidden>
       <div class="pay2-check-head">
-        <button type="button" id="pay2-check-toggle" class="pay2-check-toggle" aria-expanded="false">📅 支払月の受領チェック</button>
-        <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="受領チェックの支払月">
+        <button type="button" id="pay2-check-toggle" class="pay2-check-toggle" aria-expanded="true">📅 未着チェック（支払月）</button>
+        <span class="pay2-check-view" id="pay2-check-view" role="group" aria-label="表示の切り替え"><button type="button" class="ui-chip is-on" data-view="matrix">月別</button><button type="button" class="ui-chip" data-view="list">一覧</button></span>
+        <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="受領チェックの支払月" title="月別の表は、この支払月までの6か月">
         <label class="pay2-check-inline"><input type="checkbox" id="pay2-check-overdue"> 未着のみ</label>
         <span class="pay2-check-sum" id="pay2-check-sum"></span>
       </div>

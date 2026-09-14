@@ -20,7 +20,6 @@
      v1: 手入力フォーム ＋ 01.payment メールからの下書き取り込み。 */
   var PAY_METHODS = ["銀行振込", "UPSIDER", "口座振替", "その他"];
   var PAY_QUALIFIED = ["適格", "非適格", "不明"];
-  var PAY_RECONCILED = ["未", "一致", "不一致"];
   var SYSLEA_MAIL_ADDR = "haruka.masumitsu@syslea.io";
   // 書き出し先スプレッドシート（本人の「SYSLEA支払管理」。SYSLEA 側のものではない）
   var PAY2_SHEET_ID = "1ri3pOCzWgh_PVpRqIWYJotlqCvBWgWUCYU43vWPwEYU";
@@ -28,9 +27,9 @@
 
   var p2 = {
     payables: [], vendors: [], receipts: [], tab: "detail",
-    fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false,
+    fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false, fMismatch: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
-    checkOpen: false, checkOverdueOnly: false, _recv: {},
+    checkOpen: true, checkOverdueOnly: false, checkView: "matrix", _recv: {},
     wired: false, editId: null, vendId: null
   };
 
@@ -126,7 +125,8 @@
     var idx = {};
     (p2.receipts || []).forEach(function(r){
       if (!r || !r.vendorId || !r.month) return;
-      var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", byMonth: {}, count: {} });
+      var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", first: "", byMonth: {}, count: {} });
+      if (!e.first || r.month < e.first) e.first = r.month;
       if (!e.byMonth[r.month] || r.source === "payable") e.byMonth[r.month] = r; // 同月は手入力行を優先
       e.count[r.month] = (e.count[r.month] || 0) + 1; // 同じ支払月に届いた請求書の数（月N件のベンダー用）
       if (r.month > e.last) e.last = r.month;
@@ -137,8 +137,9 @@
   function p2ExpectedInMonth(v, month){
     var cm = p2CadenceOf(v);
     if (cm < 1) return false;
-    if (cm === 1) return true;
     var e = p2._recv[v.id];
+    if (e && e.first && month < e.first) return false; // 最初に受け取った支払月より前は数えない（途中から取引の始まったベンダーの過去月を未着にしない）
+    if (cm === 1) return true;
     var anchor = e && e.last;
     if (!anchor) return false;              // 位相不明は判定保留（誤検知させない）
     return month > anchor && p2MonthsDiff(anchor, month) % cm === 0;
@@ -167,6 +168,88 @@
     return "";
   }
 
+  // 直近 P2_RECENT_DAYS 日に受け取った未払いで、金額か支払期日が空＝まだ払える状態でない行。
+  // 過去の未払い（総合振込で払ったが支払済にしていない行）まで数えると件数が大きすぎて役に立たないので直近に限る。
+  var P2_RECENT_DAYS = 60;
+  function p2NeedsInput(r){
+    if (r.paid || r.excluded) return false;
+    if (r.amountIncl != null && r.dueDate) return false;
+    return String(r.receivedDate || "") >= jstDateKey(new Date(Date.now() - P2_RECENT_DAYS * 864e5));
+  }
+  function p2IsOverdue(r, today){ return !r.paid && !r.excluded && !!r.dueDate && r.dueDate < today; }
+  function p2PayToAlert(r){ return !!(r.payToMismatch && !r.payToChecked && !r.excluded && !r.paid); }
+  function p2Badge(text, tone){ return '<span class="ui-badge pay2-st-' + tone + '">' + escapeHtml(text) + "</span>"; }
+
+  /* ---- 今月やること（ページ上部の KPI 帯・2026/09/14）----
+     開いた瞬間に「来ていない・払っていない・確かめていない」が分かるように、読み込み済みの台帳とベンダーマスタから数える（API は増やさない）。
+     押すとその一覧へ飛ぶ。未処理メールは Gmail との突き合わせが重いので、押してキューを開く。 */
+  function p2RenderKpis(){
+    var band = p2El("pay2-kpis");
+    if (!band) return;
+    var today = jstDateKey(new Date());
+    var soon = jstDateKey(new Date(Date.now() + 7 * 864e5));
+    var cur = p2CurMonth(), prev = p2MonthAdd(cur, -1);
+    var late = 0, lateCur = 0, latePrev = 0;
+    p2.vendors.forEach(function(v){
+      if (v.excluded) return;
+      var a = p2VendorMonthState(v, cur) === "overdue", b = p2VendorMonthState(v, prev) === "overdue";
+      if (a || b) late++;
+      if (a) lateCur++;
+      if (b) latePrev++;
+    });
+    var od = { n: 0, sum: 0 }, sn = { n: 0, sum: 0 }, mis = 0, need = 0;
+    p2.payables.forEach(function(r){
+      var amt = r.amountIncl != null ? Number(r.amountIncl) : 0;
+      if (p2IsOverdue(r, today)){ od.n++; od.sum += amt; }
+      else if (!r.paid && !r.excluded && r.dueDate && r.dueDate <= soon){ sn.n++; sn.sum += amt; }
+      if (p2PayToAlert(r)) mis++;
+      if (p2NeedsInput(r)) need++;
+    });
+    var money = function(o){ return o.n ? (o.sum ? p2Money(o.sum) : "金額未入力") : "—"; };
+    var tile = function(key, label, value, sub, tone){
+      return '<button type="button" class="kpi pay2-kpi" data-kpi="' + key + '">' +
+        '<span class="kpi-label">' + label + "</span>" +
+        '<span class="kpi-value' + (tone ? " " + tone : "") + '">' + value + "</span>" +
+        '<span class="kpi-sub">' + sub + "</span></button>";
+    };
+    band.innerHTML =
+      tile("queue", "未処理メール", "—", "押して突き合わせ", "") +
+      tile("late", "未着", late + "社", "今月 " + lateCur + " ／ 先月 " + latePrev, late ? "is-neg" : "") +
+      tile("overdue", "支払期限切れ", od.n + "件", money(od), od.n ? "is-neg" : "") +
+      tile("soon", "7日以内に支払", sn.n + "件", money(sn), sn.n ? "is-warn" : "") +
+      tile("mismatch", "口座変更（未確認）", mis + "件", "振込の前に確認", mis ? "is-neg" : "") +
+      tile("need", "金額・期日が未入力", need + "件", "直近" + P2_RECENT_DAYS + "日・未払い", need ? "is-warn" : "");
+    band.hidden = false;
+  }
+  function p2KpiClick(e){
+    var b = e.target && e.target.closest ? e.target.closest("[data-kpi]") : null;
+    if (!b) return;
+    var k = b.getAttribute("data-kpi");
+    if (k === "queue"){ p2OpenImport(); return; }
+    if (k === "late"){
+      Object.assign(p2, { checkOpen: true, checkOverdueOnly: true, checkView: "matrix" });
+      p2El("pay2-check-month").value = p2CurMonth();
+      p2El("pay2-check-overdue").checked = true;
+      if (p2.tab !== "detail") p2SwitchTab("detail"); else p2RenderCheck();
+      p2El("pay2-check").scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    p2JumpDetail({ fQueue: k === "overdue" || k === "soon", fMismatch: k === "mismatch", fNeedInput: k === "need" });
+  }
+  // 明細の絞り込みをいったん既定に戻してから opts を当て、表まで送る（帯の件数と表の件数をそろえる）
+  function p2JumpDetail(opts){
+    Object.assign(p2, { fMonth: "", fMethod: "", fQ: "", fUnpaid: false, fNeedInput: false, fQueue: false, fExcluded: false, fMismatch: false }, opts);
+    p2El("pay2-month").value = p2.fMonth;
+    p2El("pay2-method").value = p2.fMethod;
+    p2El("pay2-q").value = p2.fQ;
+    p2El("pay2-queue").checked = p2.fQueue;
+    p2El("pay2-unpaid").checked = p2.fUnpaid;
+    p2El("pay2-need-input").checked = p2.fNeedInput;
+    p2El("pay2-show-excluded").checked = p2.fExcluded;
+    if (p2.tab !== "detail") p2SwitchTab("detail"); else p2RenderDetail();
+    p2El("pay2-detail-wrap").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function initPayables(){
     if (!p2.wired){
       p2.wired = true;
@@ -189,6 +272,15 @@
       });
       p2El("pay2-check-month").addEventListener("change", p2RenderCheck);
       p2El("pay2-check-overdue").addEventListener("change", function(){ p2.checkOverdueOnly = this.checked; p2RenderCheck(); });
+      p2El("pay2-check-view").addEventListener("click", function(e){
+        var b = e.target && e.target.closest ? e.target.closest("[data-view]") : null;
+        if (!b) return;
+        p2.checkView = b.getAttribute("data-view") === "list" ? "list" : "matrix";
+        p2.checkOpen = true;
+        p2RenderCheck();
+      });
+      // 今月やること（帯）
+      p2El("pay2-kpis").addEventListener("click", p2KpiClick);
       // ボタン
       p2El("pay2-new-btn").addEventListener("click", function(){ p2OpenEdit(null); });
       p2El("pay2-import-btn").addEventListener("click", p2OpenImport);
@@ -269,9 +361,10 @@
     var keys = Object.keys(months).sort().reverse();
     var sel = p2El("pay2-month");
     var cur = p2.fMonth;
-    sel.innerHTML = '<option value="">全期間</option>' + keys.map(function(k){
+    sel.innerHTML = '<option value="">受領月（すべて）</option>' + keys.map(function(k){
       return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + k + "</option>";
     }).join("");
+    p2RenderKpis();
     p2RenderCheck();
     p2StmtRender();
     if (p2.tab === "vendor") p2RenderVendors(); else p2RenderDetail();
@@ -285,7 +378,8 @@
       if (p2.fMethod && r.method !== p2.fMethod) return false;
       if (p2.fUnpaid && r.paid) return false;
       if (p2.fQueue && (r.paid || r.excluded)) return false;
-      if (p2.fNeedInput && !(r.amountIncl == null || !r.dueDate)) return false;
+      if (p2.fNeedInput && !p2NeedsInput(r)) return false;
+      if (p2.fMismatch && !p2PayToAlert(r)) return false;
       if (q){
         var hay = [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo].join(" ").toLowerCase();
         if (hay.indexOf(q) === -1) return false;
@@ -297,7 +391,7 @@
   function p2RenderDetail(){
     var today = jstDateKey(new Date());
     var soon = jstDateKey(new Date(Date.now() + 7 * 864e5));
-    var isOverdue = function(r){ return !r.paid && r.dueDate && r.dueDate < today; };
+    var isOverdue = function(r){ return p2IsOverdue(r, today); };
     var filtered = p2Filtered();
     var rows = filtered.slice();
     if (p2.fQueue){
@@ -326,19 +420,22 @@
         ' ／ <span class="warn">⚠ 期限切れ ' + odN + " 件 " + p2Money(odSum) + "</span>" +
         " ／ 7日以内 " + soonN + " 件 " + p2Money(soonSum);
     } else {
-      var sumIncl = 0, unpaidN = 0, unpaidSum = 0, needCheck = 0, exclN = 0;
+      var sumIncl = 0, unpaidN = 0, unpaidSum = 0, exclN = 0;
       filtered.forEach(function(r){
         if (r.excluded){ exclN++; return; }
         if (r.amountIncl != null) sumIncl += Number(r.amountIncl);
         if (!r.paid){ unpaidN++; if (r.amountIncl != null) unpaidSum += Number(r.amountIncl); }
-        if (!r.checked) needCheck++;
       });
+      // 「未確認」は運用で使っていない（ほぼ全行に付いて警告が埋もれていた）ので出さない。今月やることは上の帯に出す。
       s.innerHTML =
         "対象 <b>" + (rows.length - exclN) + "</b> 件" +
         (exclN ? ' <span class="pay2-sum-muted">（対象外 ' + exclN + " 件）</span>" : "") +
         " ／ 税込合計 <b>" + p2Money(sumIncl) + "</b>" +
-        ' ／ <span class="warn">未払い ' + unpaidN + " 件 " + p2Money(unpaidSum) + "</span>" +
-        ' ／ <span class="warn">未確認 ' + needCheck + " 件</span>";
+        ' ／ <span class="pay2-sum-muted">未払い ' + unpaidN + " 件 " + p2Money(unpaidSum) + "</span>";
+    }
+    if (p2.fMismatch){
+      s.insertAdjacentHTML("afterbegin", '<button type="button" class="ui-chip is-on" id="pay2-fmismatch-clear" title="この絞り込みを外す">口座変更（未確認）のみ ✕</button>');
+      p2El("pay2-fmismatch-clear").addEventListener("click", function(){ p2.fMismatch = false; p2RenderDetail(); });
     }
 
     var table = p2El("pay2-detail-table");
@@ -357,17 +454,17 @@
         .map(function(h){ return "<th>" + h + "</th>"; }).join("") +
       "</tr></thead>";
     var body = "<tbody>" + rows.map(function(r){
+      // 状態は意味色のバッジだけ（赤＝払う前に止まる、黄＝入力・確認が要る）
       var st = [];
-      if (r.excluded) st.push('<span class="pay2-flag">対象外</span>');
-      if (!r.checked && !r.excluded) st.push('<span class="pay2-flag">未確認</span>');
-      if (r.reconciled === "不一致") st.push('<span class="pay2-flag">照合NG</span>');
-      if (r.payToMismatch && !r.payToChecked && !r.excluded) st.push('<span class="pay2-flag">⚠口座変更</span>');
-      var af = p2AmountFlag(r);
-      if (af && !r.excluded) st.push(af);
+      if (r.excluded) st.push(p2Badge("対象外", "mute"));
+      if (p2PayToAlert(r)) st.push(p2Badge("口座変更", "err"));
+      if (r.reconciled === "不一致") st.push(p2Badge("照合NG", "warn"));
+      if (p2AmountFlag(r) && !r.excluded) st.push(p2Badge("税額不一致", "warn"));
+      if (p2NeedsInput(r)) st.push(p2Badge(r.amountIncl == null ? (r.dueDate ? "金額未入力" : "金額・期日未入力") : "期日未入力", "warn"));
       var cls = r.excluded ? "pay2-row-excluded" : isOverdue(r) ? "pay2-row-overdue" : r.paid ? "pay2-row-paid" : "";
       return '<tr data-id="' + escapeHtml(r.id) + '" class="' + cls + '">' +
         '<td class="center"><input type="checkbox" class="p2-paid-cb" data-id="' + escapeHtml(r.id) + '"' + (r.paid ? " checked" : "") + '></td>' +
-        "<td>" + escapeHtml(r.dueDate || "—") + (isOverdue(r) ? ' <span class="pay2-flag">期限切れ</span>' : "") + "</td>" +
+        "<td>" + escapeHtml(r.dueDate || "—") + (isOverdue(r) ? " " + p2Badge("期限切れ", "err") : "") + "</td>" +
         '<td class="strong">' + escapeHtml(r.vendorName || "—") + "</td>" +
         "<td>" + escapeHtml(r.invoiceNo || "") + "</td>" +
         '<td class="num">' + (r.amountIncl != null ? p2Money(r.amountIncl) : "") + "</td>" +
@@ -526,42 +623,17 @@
 
     var body = p2El("pay2-check-body");
     if (!body) return;
+    var vw = p2El("pay2-check-view");
+    if (vw) vw.querySelectorAll("[data-view]").forEach(function(b){ b.classList.toggle("is-on", b.getAttribute("data-view") === p2.checkView); });
     if (!p2.checkOpen){ body.hidden = true; return; }
     body.hidden = false;
     var sugg = p2CheckSuggestions();
-    if (!rows.length){
-      body.innerHTML = p2SuggestHtml(sugg) + (p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "");
-      p2WireSuggestions(body, sugg);
-      return;
-    }
-    body.innerHTML = p2SuggestHtml(sugg) +
-      '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th><th></th></tr></thead><tbody>' +
-      rows.map(function(r){
-        var e = p2._recv[r.v.id];
-        var rec = (e && e.byMonth[month]) || null;
-        var need = p2ExpectCount(r.v), got = p2RecvCount(r.v, month);
-        var frac = need > 1 ? " " + got + "/" + need : "";
-        var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領' + frac + "</span>"
-          : r.st === "overdue" ? '<span class="pay2-flag">' + (got ? "一部未着" : "未着") + frac + "</span>"
-          : '<span class="pay2-muted">待機' + frac + "</span>";
-        var act = r.st !== "overdue" ? "" :
-          '<button type="button" class="pay2-mini-btn" data-find="' + escapeHtml(r.v.id) + '">メールを探す</button>' +
-          '<button type="button" class="pay2-mini-btn" data-remind="' + escapeHtml(r.v.id) + '"' +
-            (p2VendorEmails(r.v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促の下書き</button>";
-        return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
-          '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
-          '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
-          "<td>" + escapeHtml(String(r.v.paymentTerms || "").slice(0, 18)) + "</td>" +
-          '<td class="center">' + escapeHtml(String(p2ExpectDay(r.v)) + "日") + "</td>" +
-          '<td class="center">' + escapeHtml((e && e.last) || "—") + "</td>" +
-          "<td>" + stHtml + "</td>" +
-          '<td class="num">' + (rec && rec.amountIncl != null ? p2Money(rec.amountIncl) : "") + "</td>" +
-          '<td class="pay2-check-act">' + act + "</td>" +
-          "</tr>";
-      }).join("") + "</tbody></table>";
+    body.innerHTML = p2SuggestHtml(sugg) + (p2.checkView === "list" ? p2CheckListHtml(allRows, rows, month) : p2CheckMatrixHtml(month));
     body.querySelectorAll("tbody tr").forEach(function(tr){
-      tr.addEventListener("click", function(){
-        var pid = tr.getAttribute("data-pid");
+      tr.addEventListener("click", function(ev){
+        // 月別の表はマス（td）に、一覧は行（tr）に台帳行の id を持たせてある
+        var hit = ev.target && ev.target.closest ? ev.target.closest("[data-pid]") : null;
+        var pid = hit ? hit.getAttribute("data-pid") : "";
         if (pid){
           var rec = p2.payables.filter(function(x){ return x.id === pid; })[0];
           if (rec){ p2OpenEdit(rec); return; }
@@ -574,9 +646,83 @@
       b.addEventListener("click", function(ev){ ev.stopPropagation(); p2FindMail(b.getAttribute("data-find")); });
     });
     body.querySelectorAll("[data-remind]").forEach(function(b){
-      b.addEventListener("click", function(ev){ ev.stopPropagation(); p2RemindDraft(b.getAttribute("data-remind"), month, b); });
+      b.addEventListener("click", function(ev){ ev.stopPropagation(); p2RemindDraft(b.getAttribute("data-remind"), b.getAttribute("data-month") || month, b); });
     });
     p2WireSuggestions(body, sugg);
+  }
+  function p2CheckActs(v, month){
+    return '<button type="button" class="pay2-mini-btn" data-find="' + escapeHtml(v.id) + '">メールを探す</button>' +
+      '<button type="button" class="pay2-mini-btn" data-remind="' + escapeHtml(v.id) + '" data-month="' + escapeHtml(month) + '"' +
+        (p2VendorEmails(v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促の下書き</button>";
+  }
+  // 一覧（選んだ支払月だけ・従来の表）
+  function p2CheckListHtml(allRows, rows, month){
+    if (!rows.length) return p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "";
+    return '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th><th></th></tr></thead><tbody>' +
+      rows.map(function(r){
+        var e = p2._recv[r.v.id];
+        var rec = (e && e.byMonth[month]) || null;
+        var need = p2ExpectCount(r.v), got = p2RecvCount(r.v, month);
+        var frac = need > 1 ? " " + got + "/" + need : "";
+        var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領' + frac + "</span>"
+          : r.st === "overdue" ? p2Badge((got ? "一部未着" : "未着") + frac, "err")
+          : '<span class="pay2-muted">待機' + frac + "</span>";
+        return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
+          '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
+          '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
+          "<td>" + escapeHtml(String(r.v.paymentTerms || "").slice(0, 18)) + "</td>" +
+          '<td class="center">' + escapeHtml(String(p2ExpectDay(r.v)) + "日") + "</td>" +
+          '<td class="center">' + escapeHtml((e && e.last) || "—") + "</td>" +
+          "<td>" + stHtml + "</td>" +
+          '<td class="num">' + (rec && rec.amountIncl != null ? p2Money(rec.amountIncl) : "") + "</td>" +
+          '<td class="pay2-check-act">' + (r.st === "overdue" ? p2CheckActs(r.v, month) : "") + "</td>" +
+          "</tr>";
+      }).join("") + "</tbody></table>";
+  }
+  /* 月別（2026/09/14）: 行＝定期ベンダー、列＝選んだ支払月までの直近6か月。抜けた月が一目で分かるように。
+     マス＝ ✓（受領。月N件は 2/2）／未着（赤。一部だけなら「一部 1/2」）／待機（想定到着日の前）／―（その月は来ない・取引の前）。
+     未着のある行が上（右の月ほど上）。✓・一部のマスを押すとその台帳行、ほかはベンダーの編集。 */
+  var P2_MX_MONTHS = 6;
+  function p2MxCell(v, m){
+    var e = p2._recv[v.id];
+    var got = p2RecvCount(v, m), need = p2ExpectCount(v);
+    var st = p2VendorMonthState(v, m);
+    var frac = need > 1 ? got + "/" + need : "";
+    var pid = (e && e.byMonth[m] && e.byMonth[m].payableId) || "";
+    if (st === "received" || (!st && got)) return { k: "ok", pid: pid, html: '<span class="pay2-mx-ok">✓' + (frac ? " " + frac : "") + "</span>" };
+    if (st === "overdue") return { k: "late", pid: pid, html: p2Badge(got ? "一部 " + frac : "未着", "err") };
+    if (st === "waiting") return { k: "wait", pid: pid, html: '<span class="pay2-mx-dim">待機' + (frac ? " " + frac : "") + "</span>" };
+    return { k: "none", pid: "", html: '<span class="pay2-mx-dim">―</span>' };
+  }
+  function p2CheckMatrixHtml(month){
+    var months = [];
+    for (var i = P2_MX_MONTHS - 1; i >= 0; i--) months.push(p2MonthAdd(month, -i));
+    var cur = p2CurMonth();
+    var rows = p2.vendors
+      .filter(function(v){ return !v.excluded && p2CadenceOf(v) >= 1; })
+      .map(function(v){
+        var cells = months.map(function(m){ return p2MxCell(v, m); });
+        var lateIdx = -1;
+        cells.forEach(function(c, j){ if (c.k === "late") lateIdx = j; });
+        return { v: v, cells: cells, lateIdx: lateIdx };
+      });
+    if (p2.checkOverdueOnly) rows = rows.filter(function(r){ return r.lateIdx !== -1; });
+    rows.sort(function(a, b){ return (b.lateIdx - a.lateIdx) || String(a.v.name || "").localeCompare(String(b.v.name || ""), "ja"); });
+    if (!rows.length) return '<p class="pay2-empty">' + (p2.checkOverdueOnly ? "この6か月に未着はありません。" : "定期ベンダー（毎月・Nヶ月ごと）が登録されていません。") + "</p>";
+    var head = "<thead><tr><th>ベンダー</th><th>周期</th>" + months.map(function(m){
+      return '<th class="pay2-mx-m' + (m === cur ? " is-cur" : "") + '" title="' + m + '">' + Number(m.slice(5)) + "月</th>";
+    }).join("") + "<th>最終受領</th><th></th></tr></thead>";
+    return '<div class="pay2-tablewrap"><table class="pay2-table pay2-mx">' + head + "<tbody>" + rows.map(function(r){
+      var e = p2._recv[r.v.id];
+      return '<tr data-vid="' + escapeHtml(r.v.id) + '">' +
+        '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
+        '<td class="center">' + escapeHtml(p2CadenceLabel(p2CadenceOf(r.v))) + "</td>" +
+        r.cells.map(function(c, j){
+          return '<td class="pay2-mx-c"' + (c.pid ? ' data-pid="' + escapeHtml(c.pid) + '"' : "") + ' title="' + months[j] + '">' + c.html + "</td>";
+        }).join("") +
+        '<td class="center">' + escapeHtml((e && e.last) || "—") + "</td>" +
+        '<td class="pay2-check-act">' + (r.lateIdx !== -1 ? p2CheckActs(r.v, months[r.lateIdx]) : "") + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
   }
 
   /* ---- 毎月一覧の保守（漏れ防止計画 P3・2026/09/13）----
@@ -1148,13 +1294,10 @@
       '<div class="pay2-fld wide"><label>振込先</label></div>' +
       p2PayToFields("p2f-", r) +
       '<div class="pay2-fld wide" id="p2f-payto-check"></div>' +
-      p2SelectField("p2f-reconciled", "SYSLEA照合", PAY_RECONCILED, r.reconciled || "未") +
       p2Field("p2f-sourceLink", "原本リンク", "text", r.sourceLink, true) +
       '<div class="pay2-fld wide"><label>備考</label><textarea id="p2f-note" rows="2">' + escapeHtml(r.note || "") + "</textarea></div>" +
       '<div class="pay2-fld-checks">' +
-        '<label><input type="checkbox" id="p2f-checked"' + (r.checked ? " checked" : "") + "> 確認済</label>" +
         '<label><input type="checkbox" id="p2f-paid"' + (r.paid ? " checked" : "") + "> 支払済</label>" +
-        '<label><input type="checkbox" id="p2f-filed"' + (r.filed ? " checked" : "") + "> 済フォルダ移動</label>" +
         '<label><input type="checkbox" id="p2f-payToChecked"' + (r.payToChecked ? " checked" : "") + "> 口座を確認した</label>" +
         '<label><input type="checkbox" id="p2f-excluded"' + (r.excluded ? " checked" : "") + "> 支払対象外（請求書ではない）</label>" +
       "</div>" +
@@ -1274,6 +1417,8 @@
     return isFinite(n) ? n : null;
   }
   function p2EditValues(){
+    // 確認済・済フォルダ移動・SYSLEA照合は画面から外した（2026/09/14・運用で使っていない）。PUT は全項目を送る前提なので既存値を保つ
+    var cur = (p2.editId && p2.payables.filter(function(x){ return x.id === p2.editId; })[0]) || {};
     var name = p2El("p2f-vendorName").value.trim();
     var email = p2El("p2f-fromEmail").value.trim();
     // 該当ベンダーはメールアドレス一致を優先し、無ければ名前一致
@@ -1295,12 +1440,12 @@
       regNo: p2El("p2f-regNo").value.trim(),
       qualified: p2El("p2f-qualified").value,
       method: p2El("p2f-method").value,
-      reconciled: p2El("p2f-reconciled").value,
+      reconciled: cur.reconciled || "未",
       sourceLink: p2El("p2f-sourceLink").value.trim(),
       note: p2El("p2f-note").value.trim(),
-      checked: p2El("p2f-checked").checked,
+      checked: !!cur.checked,
       paid: p2El("p2f-paid").checked,
-      filed: p2El("p2f-filed").checked,
+      filed: !!cur.filed,
       payToChecked: p2El("p2f-payToChecked") ? p2El("p2f-payToChecked").checked : false
     };
     var pt = p2PayToValues("p2f-");
