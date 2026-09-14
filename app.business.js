@@ -1831,9 +1831,17 @@
         }
       });
     }
+    if (!eventTrackersLoadOk){
+      if (errEl){ errEl.textContent = "読み込みに失敗しています。再読み込みしてからやり直してください。"; errEl.hidden = false; }
+      return;
+    }
     if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
     try {
-      await apiFetch("/api/event-trackers/templates", { method: "PUT", body: JSON.stringify({ templates: cleaned }) });
+      await apiFetch("/api/event-trackers/templates", {
+        method: "PUT",
+        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" }, // 空の全置換は全部消したときだけ
+        body: JSON.stringify({ templates: cleaned })
+      });
       closePbModal();
       loadEventTrackers();
     } catch (err){

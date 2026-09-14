@@ -1734,7 +1734,7 @@
       "p2f-vendorName": f.vendorName, "p2f-invoiceNo": f.invoiceNo,
       "p2f-invoiceDate": f.invoiceDate, "p2f-dueDate": f.dueDate,
       "p2f-amountExcl": f.amountExcl, "p2f-tax": f.tax, "p2f-amountIncl": f.amountIncl,
-      "p2f-regNo": f.regNo, "p2f-payTo": f.payTo
+      "p2f-regNo": f.regNo
     };
     var filled = 0;
     var conflicts = [];
@@ -1764,6 +1764,9 @@
     var warns = (res && res.warnings) || [];
     var html = "<b>AI抽出：信頼度 " + confLabel + "</b>（空欄 " + filled + " 項目に反映）";
     if (conflicts.length) html += "<br>既存値と相違: " + conflicts.map(escapeHtml).join(" ／ ");
+    // 振込先は抽出が1行の文字列で返る。フォームは銀行名/支店/種別/番号/名義の5項目なので自動では入れず、
+    // 見える所に出す（以前は存在しない p2f-payTo に入れようとして黙って捨てていた）。
+    if (f.payTo) html += "<br>振込先（抽出）: " + escapeHtml(f.payTo) + " ← 口座の欄に入れてください";
     if (warns.length) html += "<br>⚠ " + warns.map(escapeHtml).join("<br>⚠ ");
     html += '<br><span class="pay2-extract-hint">金額・日付・登録番号は必ず原本と突き合わせて確認してください。</span>';
     p2ExtractMsg(html, false, true);

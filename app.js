@@ -809,11 +809,12 @@
       loadHarukaMail();
       loadMailLabels();
     }
-    if (name === "tasks" && !tasksInitialized){
+    // 読み込みに失敗していたら、開き直したときに読み直す（以前は初回だけで、空のまま戻らなかった）
+    if (name === "tasks" && (!tasksInitialized || (tasksLoadDone && !tasksLoadOk))){
       tasksInitialized = true;
       initTasks();
     }
-    if (name === "notes" && !notesInitialized){
+    if (name === "notes" && (!notesInitialized || (notesLoadDone && !notesLoadOk))){
       notesInitialized = true;
       initNotes();
     }
@@ -1319,6 +1320,7 @@
   var habitDays = [];       // 表示中の週の7つの dateKey
   var habitLogTimers = {};  // "habitId|date" -> debounce timeout
   var habitTrackerWired = false;
+  var habitsLoadOk = false; // 一度でも読めたか（読めていないのに管理モーダルで保存すると全置換で習慣とログが消える）
   var habitPopHabitId = null, habitPopDate = null;
 
   function habitMdLabel(key){ return mdLabel(key); }
@@ -1348,13 +1350,15 @@
     try {
       var res = await apiFetch("/api/habits?week=" + encodeURIComponent(habitWeekKey));
       habitsState = (res.habits || []).slice();
+      habitsLoadOk = true;
       habitLog = res.log || {};
       habitDays = (res.days && res.days.length === 7) ? res.days : buildWeekDays(habitWeekKey);
       if (res.weekStart) habitWeekKey = res.weekStart;
       renderHabits();
       setHabitStatus("");
     } catch (err){
-      habitsState = []; habitLog = {};
+      if (!habitsLoadOk) habitsState = []; // 読めていた定義は残す（空にすると次の保存で全消し）
+      habitLog = {};
       renderHabits();
       setHabitStatus(apiErrorMessage(err, "習慣トラッカー"), true);
     } finally {
@@ -1586,7 +1590,9 @@
         color: HABIT_COLOR_KEYS.indexOf(r.color) !== -1 ? r.color : null
       } };
     },
-    save: function(rows){ return apiFetch("/api/habits/bulk", { method: "PUT", body: JSON.stringify({ habits: rows }) }); },
+    canEdit: function(){ return habitsLoadOk; },
+    // 空の全置換は「全部消した」ときだけ許可（バックは X-Allow-Empty が無いと 409＝読み込み失敗中の全消し防止）
+    save: function(rows){ return apiFetch("/api/habits/bulk", { method: "PUT", headers: rows.length ? {} : { "X-Allow-Empty": "1" }, body: JSON.stringify({ habits: rows }) }); },
     afterSave: function(){ loadHabits(); }
   });
   function openHabitModal(){ habitMD.open(habitsState); }
@@ -1731,6 +1737,7 @@
   var planSaveTimer = null;
   var planSaveFlush = null;     // 保留中の保存を今すぐ送る関数(別の日を読み込む前に呼ぶ)
   var planLoadSeq = 0;          // 前日/翌日の連打で古い応答が表示を巻き戻さないための番号
+  var planTemplatesLoadOk = false; // テンプレを一度でも読めたか（読めていないのに管理モーダルで保存すると全置換で消える）
   var planWired = false;
   var planApplyResolve = null;
 
@@ -1775,12 +1782,14 @@
       if (seq !== planLoadSeq) return;
       planItems = (res.items || []).slice();
       planTemplates = res.templates || [];
+      planTemplatesLoadOk = true;
       if (res.date) planDateKey = res.date;
       renderPlan();
       planSetStatus("");
     } catch (err){
       if (seq !== planLoadSeq) return;
-      planItems = []; planTemplates = [];
+      planItems = [];
+      if (!planTemplatesLoadOk) planTemplates = []; // 読めていたテンプレは残す（空にすると次の保存で全消し）
       renderPlan();
       planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true);
     } finally {
@@ -1988,7 +1997,9 @@
       }).filter(function(it){ return it.text; });
       return { row: { id: r.id, name: nm.slice(0, 40), items: items, cadence: cadence, days: days } };
     },
-    save: function(rows){ return apiFetch("/api/plan/templates", { method: "PUT", body: JSON.stringify({ templates: rows }) }); },
+    canEdit: function(){ return planTemplatesLoadOk; },
+    // 空の全置換は「全部消した」ときだけ許可（バックは X-Allow-Empty が無いと 409＝読み込み失敗中の全消し防止）
+    save: function(rows){ return apiFetch("/api/plan/templates", { method: "PUT", headers: rows.length ? {} : { "X-Allow-Empty": "1" }, body: JSON.stringify({ templates: rows }) }); },
     afterSave: function(){ loadPlan(); }
   });
   function openPlanModal(){ planMD.open(planTemplates); }
@@ -2912,7 +2923,8 @@
     evAllday.checked = false;
     toggleAllDayInputs();
     var startMin = minutesFromMidnight != null ? minutesFromMidnight : 9 * 60;
-    var endMin = Math.min(1440, startMin + 60);
+    // 23時台に作ると終了が "24:00" になり、time 入力が受け付けず保存できなかったので 23:59 で止める
+    var endMin = Math.min(23 * 60 + 59, startMin + 60);
     evStartDate.value = dayKey;
     evEndDate.value = dayKey;
     evStartTime.value = minutesToHHMM(startMin);
@@ -4588,8 +4600,8 @@
     del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     del.addEventListener("click", async function(e){
       e.stopPropagation();
-      if (!(await askConfirm('「' + task.text + '」を削除しますか?'))) return;
-      tasksState = tasksState.filter(function(t){ return t.id !== task.id; });
+      if (!(await askConfirm('「' + task.text + '」を削除しますか?' + taskKidsNote(task.id)))) return;
+      removeTaskById(task.id);
       renderTasks();
       scheduleTasksSave();
     });
@@ -4955,7 +4967,15 @@
   function taskEmptyState(){
     var wrap = document.createElement("div");
     wrap.className = "task-empty empty-state";
-    var searching = taskSearchQuery.trim() || taskTagFilter || taskProjectFilter || taskView !== "all";
+    // 読み込みに失敗しているのに「タスクはありません」と出すと、0件だと思って追加してしまう。
+    if (tasksLoadDone && !tasksLoadOk){
+      wrap.innerHTML = '<div class="empty-title">タスクを読み込めませんでした</div>' +
+        '<div class="empty-sub">通信状態を確認して、もう一度読み込んでください。</div>' +
+        '<button type="button" class="ev-btn">再読み込み</button>';
+      wrap.querySelector("button").addEventListener("click", function(){ ensureTasksLoaded(); });
+      return wrap;
+    }
+    var searching =taskSearchQuery.trim() || taskTagFilter || taskProjectFilter || taskView !== "all";
     wrap.innerHTML =
       '<svg class="empty-art" viewBox="0 0 96 72" fill="none" stroke-width="1.5" aria-hidden="true">' +
         '<rect class="ink" x="18" y="10" width="60" height="54" rx="2"/>' +
@@ -4966,6 +4986,16 @@
       '<div class="empty-title">' + (searching ? "該当するタスクはありません" : (taskStatusTab === "done" ? "完了したタスクはまだありません" : "未完了のタスクはありません")) + '</div>' +
       '<div class="empty-sub">' + (searching ? "検索やサイドバーの絞り込みを外すと全件に戻ります。" : "右上の「+ 新規タスク」から追加できます。") + '</div>';
     return wrap;
+  }
+
+  // 1件削除。子タスクの parentId も外す（残すと「親: (不明)」のまま親候補にも出ない迷子になっていた）。
+  function removeTaskById(id){
+    tasksState = tasksState.filter(function(t){ return t.id !== id; });
+    tasksState.forEach(function(t){ if (t.parentId === id) t.parentId = null; });
+  }
+  function taskKidsNote(id){
+    var n = tasksState.filter(function(t){ return t.parentId === id; }).length;
+    return n ? "（子タスク " + n + " 件は親なしのタスクとして残ります）" : "";
   }
 
   // 完了チェックの共通処理。タスク行のチェックボタンと、事務ハック画面の計画リスト(__CP 経由)で共用。
@@ -5337,8 +5367,8 @@
   taskDeleteBtn.addEventListener("click", async function(){
     if (!editingTaskId) return;
     var target = tasksState.find(function(t){ return t.id === editingTaskId; });
-    if (!(await askConfirm('「' + ((target && target.text) || "このタスク") + '」を削除しますか?'))) return;
-    tasksState = tasksState.filter(function(t){ return t.id !== editingTaskId; });
+    if (!(await askConfirm('「' + ((target && target.text) || "このタスク") + '」を削除しますか?' + taskKidsNote(editingTaskId)))) return;
+    removeTaskById(editingTaskId);
     closeTaskModal();
     renderTasks();
     scheduleTasksSave();
@@ -5536,6 +5566,10 @@
       // ピン留めはカード側でも先頭に出す（メモページと同じ優先順位）
       .sort(function(a, b){ return ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || ((b.updatedAt || 0) - (a.updatedAt || 0)); })
       .slice(0, 5);
+    if (notesLoadDone && !notesLoadOk){
+      list.innerHTML = '<li class="sched-empty">メモを読み込めませんでした。</li>';
+      return;
+    }
     if (!items.length){
       list.innerHTML = '<li class="sched-empty">' + (TASK_TAG_LABEL[tag] || tag) + ' のメモはまだありません。</li>';
       return;
@@ -5564,6 +5598,10 @@
       .slice()
       .sort(function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); })
       .slice(0, 5);
+    if (tasksLoadDone && !tasksLoadOk){
+      list.innerHTML = '<li class="sched-empty">タスクを読み込めませんでした。</li>';
+      return;
+    }
     if (!items.length){
       list.innerHTML = '<li class="sched-empty">' + (TASK_TAG_LABEL[tag] || tag) + ' の未完了タスクはありません。</li>';
       return;
@@ -5732,7 +5770,14 @@
   function noteEmptyState(){
     var wrap = document.createElement("div");
     wrap.className = "notes-empty empty-state";
-    var filtering = noteSearchQuery.trim() || noteTagFilter || noteFilterTag !== "all";
+    if (notesLoadDone && !notesLoadOk){
+      wrap.innerHTML = '<div class="empty-title">メモを読み込めませんでした</div>' +
+        '<div class="empty-sub">通信状態を確認して、もう一度読み込んでください。</div>' +
+        '<button type="button" class="ev-btn">再読み込み</button>';
+      wrap.querySelector("button").addEventListener("click", function(){ ensureNotesLoaded(); });
+      return wrap;
+    }
+    var filtering =noteSearchQuery.trim() || noteTagFilter || noteFilterTag !== "all";
     wrap.innerHTML =
       '<svg class="empty-art" viewBox="0 0 96 72" fill="none" stroke-width="1.5" aria-hidden="true">' +
         '<path class="ink" d="M22 8h34l18 18v38a2 2 0 0 1-2 2H22a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"/>' +
