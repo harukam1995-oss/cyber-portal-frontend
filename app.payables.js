@@ -29,7 +29,7 @@
     payables: [], vendors: [], receipts: [], tab: p2SavedTab(),
     fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false, fMismatch: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
-    checkOpen: true, checkOverdueOnly: true, checkView: "matrix", _recv: {}, qsum: null,
+    checkOpen: true, checkOverdueOnly: true, checkView: "matrix", checkQ: "", checkCat: "", checkMethod: "", checkCad: "", _recv: {}, qsum: null,
     wired: false, editId: null, vendId: null
   };
 
@@ -236,8 +236,9 @@
     var k = b.getAttribute("data-kpi");
     if (k === "queue"){ p2OpenImport(); return; }
     if (k === "late"){
-      Object.assign(p2, { checkOpen: true, checkOverdueOnly: true, checkView: "matrix" });
+      Object.assign(p2, { checkOpen: true, checkOverdueOnly: true, checkView: "matrix", checkQ: "", checkCat: "", checkMethod: "", checkCad: "" });
       p2El("pay2-check-month").value = p2CurMonth();
+      P2_CHECK_FILTER_IDS.forEach(function(id){ p2El(id).value = ""; });
       p2SwitchTab("check");
       p2El("pay2-check").scrollIntoView({ behavior: "smooth", block: "start" });
       return;
@@ -287,6 +288,16 @@
         p2.checkView = b.getAttribute("data-view") === "list" ? "list" : "matrix";
         p2RenderCheck();
       });
+      // 未着チェックの検索・絞り込み（区分・方式・周期）
+      P2_CHECK_FILTER_IDS.forEach(function(id){
+        p2El(id).addEventListener(id === "pay2-check-q" ? "input" : "change", function(){
+          p2.checkQ = p2El("pay2-check-q").value;
+          p2.checkCat = p2El("pay2-check-fcat").value;
+          p2.checkMethod = p2El("pay2-check-fm").value;
+          p2.checkCad = p2El("pay2-check-fcad").value;
+          p2RenderCheck();
+        });
+      });
       // 今月やること（帯）
       p2El("pay2-kpis").addEventListener("click", p2KpiClick);
       // ボタン
@@ -323,6 +334,8 @@
       p2El("pay2-queue-reload").addEventListener("click", function(){ p2QueueLoad(true); });
       p2El("pay2-queue-dismiss-junk").addEventListener("click", p2QueueDismissJunk);
       p2El("pay2-import-list").addEventListener("click", p2QueueClick);
+      p2El("pay2-import-list").addEventListener("input", p2QueueFormInput);
+      p2El("pay2-import-list").addEventListener("change", p2QueueFormInput);
     }
     p2Load();
   }
@@ -652,10 +665,10 @@
     var mEl = p2El("pay2-check-month");
     if (mEl && !mEl.value) mEl.value = p2CurMonth();
     var month = (mEl && mEl.value) || p2CurMonth();
-    var mxRows = p2CheckMatrixRows(month);
+    var mxRows = p2CheckMatrixRows(month, true);
 
     var allRows = p2.vendors
-      .filter(function(v){ return !v.excluded && p2ExpectedInMonth(v, month); })
+      .filter(function(v){ return !v.excluded && p2ExpectedInMonth(v, month) && p2CheckMatch(v); })
       .map(function(v){ return { v: v, st: p2VendorMonthState(v, month) }; });
     var rc = 0, oc = 0, wc = 0;
     allRows.forEach(function(r){ if (r.st === "received") rc++; else if (r.st === "overdue") oc++; else wc++; });
@@ -669,7 +682,7 @@
       sum.innerHTML = allRows.length
         ? ("対象 <b>" + allRows.length + "</b> 社 ／ <span class=\"ok\">受領 " + rc + "</span>" +
            " ／ <span class=\"warn\">未着 " + oc + "</span> ／ 待機 " + wc)
-        : "この支払月に払う予定の定期ベンダーはありません。";
+        : (p2CheckFiltering() ? "条件に合うベンダーはありません。" : "この支払月に払う予定の定期ベンダーはありません。");
     }
 
     var body = p2El("pay2-check-body");
@@ -717,7 +730,8 @@
   }
   // 一覧（選んだ支払月だけ・従来の表）
   function p2CheckListHtml(allRows, rows, month){
-    if (!rows.length) return p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>' : "";
+    if (!rows.length) return p2.checkOverdueOnly && allRows.length ? '<p class="pay2-empty">未着はありません。</p>'
+      : p2CheckFiltering() ? '<p class="pay2-empty">条件に合うベンダーはありません。</p>' : "";
     return '<table class="pay2-table"><thead><tr><th>ベンダー</th><th>周期</th><th>支払サイト</th><th>想定</th><th>最終受領</th><th>状態</th><th>金額</th><th></th></tr></thead><tbody>' +
       rows.map(function(r){
         var e = p2._recv[r.v.id];
@@ -760,10 +774,11 @@
     return months;
   }
   // 定期ベンダーごとの6か月分のマス（lateIdx＝未着のある一番右の月・無ければ -1）
-  function p2CheckMatrixRows(month){
+  // useFilter＝検索・絞り込みを当てる（タブの件数は絞り込みに関係なく全体で数える）
+  function p2CheckMatrixRows(month, useFilter){
     var months = p2CheckMonths(month);
     return p2.vendors
-      .filter(function(v){ return !v.excluded && p2CadenceOf(v) >= 1; })
+      .filter(function(v){ return !v.excluded && p2CadenceOf(v) >= 1 && (!useFilter || p2CheckMatch(v)); })
       .map(function(v){
         var cells = months.map(function(m){ return p2MxCell(v, m); });
         var lateIdx = -1;
@@ -777,7 +792,9 @@
     var rows = allRows.slice();
     if (p2.checkOverdueOnly) rows = rows.filter(function(r){ return r.lateIdx !== -1; });
     rows.sort(function(a, b){ return (b.lateIdx - a.lateIdx) || String(a.v.name || "").localeCompare(String(b.v.name || ""), "ja"); });
-    if (!rows.length) return '<p class="pay2-empty">' + (p2.checkOverdueOnly ? "この6か月に未着はありません。" : "定期ベンダー（毎月・Nヶ月ごと）が登録されていません。") + "</p>";
+    if (!rows.length) return '<p class="pay2-empty">' + (!allRows.length && p2CheckFiltering() ? "条件に合うベンダーはありません。"
+      : p2.checkOverdueOnly ? "この6か月に未着はありません" + (p2CheckFiltering() ? "（絞り込み中）" : "") + "。"
+      : "定期ベンダー（毎月・Nヶ月ごと）が登録されていません。") + "</p>";
     var head = "<thead><tr><th>ベンダー</th><th>周期</th>" + months.map(function(m){
       return '<th class="pay2-mx-m' + (m === cur ? " is-cur" : "") + '" title="' + m + '">' + Number(m.slice(5)) + "月</th>";
     }).join("") + "<th>最終受領</th><th></th></tr></thead>";
@@ -810,6 +827,59 @@
     while (mm < 1){ mm += 12; y--; }
     while (mm > 12){ mm -= 12; y++; }
     return y + "-" + ("0" + mm).slice(-2);
+  }
+  // 未着チェックの検索・絞り込み。検索は空白区切りの AND（社名・別名・担当者・メール・支払サイト・メモ）
+  var P2_CHECK_FILTER_IDS = ["pay2-check-q", "pay2-check-fcat", "pay2-check-fm", "pay2-check-fcad"];
+  function p2CheckFiltering(){
+    return !!(String(p2.checkQ || "").trim() || p2.checkCat || p2.checkMethod || p2.checkCad);
+  }
+  function p2CheckMatch(v){
+    if (p2.checkCat && (v.category || "その他") !== p2.checkCat) return false;
+    if (p2.checkMethod && (v.defaultMethod || "その他") !== p2.checkMethod) return false;
+    if (p2.checkCad){
+      var c = p2CadenceOf(v);
+      if (p2.checkCad === "n" ? (c < 2 || c === 12) : c !== Number(p2.checkCad)) return false;
+    }
+    var q = String(p2.checkQ || "").normalize("NFKC").trim().toLowerCase();
+    if (!q) return true;
+    var hay = [v.name, v.aliases, v.contact, v.emails, v.paymentTerms, v.note].join(" ").normalize("NFKC").toLowerCase();
+    return q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
+  }
+
+  /* ---- 支払サイト → 支払期日（2026/09/14）----
+     「何月分」＝締めの月として、ベンダーの支払サイト（自由記入）から期日を出す。
+       月末締め翌月末       … 6月分 → 7/31
+       月末締め20日         … 6月分 → 7/20（「当月」「翌々月」と書いていなければ翌月）
+       月末締め翌々月10日   … 6月分 → 8/10
+       請求書発行後30日 など … 請求日＋30日（請求日が無ければ出さない）
+     読めない書き方は null。土日祝の前倒し・後ろ倒しはしない。 */
+  // 「請求書発行後30日」「請求日から14日以内」のように請求日から数える書き方なら日数、それ以外は null
+  function p2TermsDays(terms){
+    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "");
+    if (s.indexOf("締") !== -1) return null;
+    var m = s.match(/(?:後|から)(\d{1,3})日|(\d{1,3})日(?:後|以内)/);
+    return m ? Number(m[1] || m[2]) : null;
+  }
+  function p2DueFromTerms(terms, periodMonth, invoiceDate){
+    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "");
+    if (!s) return null;
+    var days = p2TermsDays(s);
+    if (days != null){
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate || "")) return null;
+      return new Date(Date.UTC(+invoiceDate.slice(0, 4), +invoiceDate.slice(5, 7) - 1, +invoiceDate.slice(8, 10) + days)).toISOString().slice(0, 10);
+    }
+    if (!/^\d{4}-\d{2}$/.test(periodMonth || "")) return null;
+    var pay = s.replace(/^.*締め?/, "");   // 締めの後ろ＝払う日
+    var ym = p2MonthAdd(periodMonth, /翌々月/.test(pay) ? 2 : /当月|同月/.test(pay) ? 0 : 1);
+    var last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+    if (pay.indexOf("末") !== -1) return ym + "-" + last;
+    var d = pay.match(/(\d{1,2})日/);
+    return d ? ym + "-" + ("0" + Math.min(Number(d[1]), last)).slice(-2) : null;
+  }
+  // "2026-07-31" → "7/31（金）"。土日は「銀行休業日」を添える
+  function p2DueLabel(key){
+    var wd = new Date(key + "T00:00:00Z").getUTCDay();
+    return Number(key.slice(5, 7)) + "/" + Number(key.slice(8, 10)) + "（" + "日月火水木金土".charAt(wd) + "）" + (wd === 0 || wd === 6 ? " ※銀行休業日" : "");
   }
   function p2CheckSuggestions(){
     var m0 = p2CurMonth(), m1 = p2MonthAdd(m0, -1), m2 = p2MonthAdd(m0, -2);
@@ -1365,6 +1435,7 @@
         escapeHtml(p2Mkey(r.periodMonth) || p2Mkey(r.invoiceDate) || p2Mkey(r.receivedDate)) + '"></div>' +
       p2Field("p2f-dueDate", "支払期日", "date", r.dueDate) +
       p2Field("p2f-scheduledDate", "支払予定日", "date", r.scheduledDate) +
+      '<div class="pay2-fld wide pay2-payto-note" id="p2f-due-auto" hidden></div>' +
       p2Field("p2f-amountExcl", "税抜", "number", r.amountExcl) +
       p2Field("p2f-tax", "消費税", "number", r.tax) +
       p2Field("p2f-amountIncl", "税込", "number", r.amountIncl) +
@@ -1426,6 +1497,31 @@
       note.textContent = shown ? "「" + (v.name || "") + "」に登録の振込先を反映しました（保存で台帳に入ります）。請求書の記載と違えば書き換えてください。" : "";
       p2RenderPayToCheck();
     }
+    // 支払期日＝ベンダーの支払サイト＋何月分（口座と同じく 空欄 か 自動で入れたままの欄だけ書き換える）。
+    // fill=false は説明を出すだけ（支払済の行を開いたとき・期日を手で変えたとき）。UPSIDER はカードの決済日なので入れない。
+    function p2ApplyVendorDue(v, fill){
+      var terms = v ? String(v.paymentTerms || "").trim() : "";
+      var upsider = p2El("p2f-method").value === "UPSIDER";
+      var pm = p2El("p2f-periodMonth").value, inv = p2El("p2f-invoiceDate").value;
+      var byInvoice = p2TermsDays(terms) != null;
+      var due = terms && !upsider ? p2DueFromTerms(terms, pm, inv) : null;
+      if (fill) p2SetAuto("dueDate", due || "");
+      var cur = p2El("p2f-dueDate").value, msg = "";
+      if (v && !upsider){
+        if (!terms) msg = "「" + escapeHtml(v.name || "") + "」は支払サイトが未登録です（ベンダーに登録すると支払期日が自動で入ります）。";
+        else if (!due) msg = "支払サイト「" + escapeHtml(terms) + "」からは支払期日を出せません" + (byInvoice ? "（請求日を入れてください）。" : "（書き方の例：月末締め翌月末／月末締め20日）。");
+        else {
+          msg = "支払サイト「" + escapeHtml(terms) + "」・" + (byInvoice ? "請求日 " + escapeHtml(p2DueLabel(inv)) : Number(pm.slice(5)) + "月分") + " → " + escapeHtml(p2DueLabel(due)) +
+            (cur && cur !== due ? " " + p2Badge("入力中の期日と違います", "warn") : "");
+          // 締めより前に発行された請求書＝「何月分」がずれている可能性（6月分なら 7月発行・6月末ごろ発行のはず）
+          var closeLim = new Date(Date.UTC(+pm.slice(0, 4), +pm.slice(5, 7), -5)).toISOString().slice(0, 10);
+          if (!byInvoice && inv && inv < closeLim) msg += "<br>" + p2Badge("何月分を確認", "warn") + " 請求日 " + escapeHtml(p2DueLabel(inv)) + " が " + Number(pm.slice(5)) + "月分の締めより前です。";
+        }
+      }
+      var box = p2El("p2f-due-auto");
+      box.hidden = !msg;
+      box.innerHTML = msg;
+    }
     function fillFromVendor(v){
       if (v){
         if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
@@ -1433,6 +1529,7 @@
         if (v.defaultMethod && (m.value === "その他" || m.value === autoFill.method)){ m.value = v.defaultMethod; autoFill.method = v.defaultMethod; }
       }
       p2ApplyVendorPayTo(v);
+      p2ApplyVendorDue(v, true);
     }
     // 保存時の vendorId と同じ決め方（メールアドレス一致 → 名前一致）でベンダーを引く。
     // datalist で選んだ瞬間は input しか来ない（change はフォーカスが外れてから）ので両方で拾う。
@@ -1444,7 +1541,14 @@
     p2El("p2f-method").addEventListener("change", function(){
       if (this.value !== autoFill.method) delete autoFill.method;   // 手で選んだ方式はベンダーを変えても保つ
       p2ApplyVendorPayTo(p2CurVendor());
+      p2ApplyVendorDue(p2CurVendor(), true);
     });
+    ["p2f-periodMonth", "p2f-invoiceDate"].forEach(function(id){
+      ["input", "change"].forEach(function(ev){
+        p2El(id).addEventListener(ev, function(){ p2ApplyVendorDue(p2CurVendor(), true); });
+      });
+    });
+    p2El("p2f-dueDate").addEventListener("change", function(){ p2ApplyVendorDue(p2CurVendor(), false); });
 
     // 口座チェック（目標4）: 入力中の口座 vs ベンダー登録の口座を比べて表示。
     function p2CurVendor(){
@@ -1497,6 +1601,7 @@
     });
     // 開いた時点でベンダーが分かっていて口座が空なら反映（支払済の行は当時の口座と違うかもしれないので入れない）
     if (r.paid) p2RenderPayToCheck(); else p2ApplyVendorPayTo(p2CurVendor());
+    p2ApplyVendorDue(p2CurVendor(), !r.paid);
 
     // PDF/本文からの AI 抽出
     var extMailBtn = p2El("p2f-extract-mail");
@@ -1624,7 +1729,8 @@
       p2Field("p2v-aliases", "別名・表記ゆれ（, 区切り・任意）", "text", d.aliases, true) +
       p2SelectField("p2v-defaultMethod", "支払方法", PAY_METHODS, d.defaultMethod || "その他") +
       p2SelectField("p2v-category", "区分", PAY_CATEGORIES, d.category || "その他") +
-      p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末）", "text", d.paymentTerms, true) +
+      p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末／月末締め20日）", "text", d.paymentTerms, true) +
+      '<div class="pay2-fld wide pay2-payto-note" id="p2v-terms-hint"></div>' +
       '<div class="pay2-fld"><label>周期</label><div class="pay2-cad-row">' +
         '<select id="p2v-cadence">' +
           '<option value="monthly"' + (cadSel === "monthly" ? " selected" : "") + ">毎月</option>" +
@@ -1645,6 +1751,18 @@
         '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（このベンダー宛メールは取り込み時に対象外扱い）</label>" +
       "</div>" +
       "</div>";
+    // 支払サイトをどう読んだかを見せる（台帳・未処理キューの支払期日はここから自動で入る）
+    function termsHint(){
+      var terms = p2El("p2v-paymentTerms").value.trim();
+      var pm = p2MonthAdd(p2CurMonth(), -1), inv = p2CurMonth() + "-01";
+      var byInvoice = p2TermsDays(terms) != null;
+      var due = p2DueFromTerms(terms, pm, inv);
+      p2El("p2v-terms-hint").innerHTML = !terms ? "未登録だと、台帳の支払期日は自動で入りません。"
+        : !due ? p2Badge("読み取れません", "warn") + " 書き方の例：月末締め翌月末／月末締め20日／月末締め翌々月10日／請求書発行後30日"
+        : "読み取り：" + (byInvoice ? "請求日 " + p2DueLabel(inv) : Number(pm.slice(5)) + "月分") + " → " + p2DueLabel(due) + "（台帳・未処理キューの支払期日に自動で入ります）";
+    }
+    p2El("p2v-paymentTerms").addEventListener("input", termsHint);
+    termsHint();
     var cadEl = p2El("p2v-cadence");
     cadEl.addEventListener("change", function(){
       var on = this.value === "everyN";
@@ -1760,6 +1878,7 @@
       html += p2QueueCard(it, i);
     });
     listEl.innerHTML = html;
+    listEl.querySelectorAll(".pay2-q-item").forEach(p2QueueAutoDue);
     p2QueueSum();
   }
   function p2QueueCard(it, i){
@@ -1809,6 +1928,25 @@
     if (it.source === "sweep" || it.source === "thread") h += btn("dismiss", "無視");
     h += '</div><div class="pay2-q-msg" role="status"></div></div>';
     return h;
+  }
+  // キューのカード: 支払期日をベンダーの支払サイト＋何月分から入れる（空欄か、自動で入れた値のままのときだけ）
+  function p2QueueAutoDue(card){
+    var dueEl = card.querySelector(".pay2-q-due");
+    var vEl = card.querySelector(".pay2-q-vendor"), mEl = card.querySelector(".pay2-q-method"), pmEl = card.querySelector(".pay2-q-month");
+    if (!dueEl || !vEl || !mEl || !pmEl) return;
+    var v = p2VendorByName(vEl.value);
+    var due = v && v.paymentTerms && mEl.value !== "UPSIDER" ? p2DueFromTerms(v.paymentTerms, pmEl.value, "") : null;
+    var auto = dueEl.getAttribute("data-auto") || "";
+    if (dueEl.value && dueEl.value !== auto) return;
+    dueEl.value = due || "";
+    dueEl.setAttribute("data-auto", due || "");
+    dueEl.title = due ? "支払期日（支払サイト「" + v.paymentTerms + "」から自動）" : "支払期日（任意）";
+  }
+  function p2QueueFormInput(e){
+    var t = e.target;
+    if (!t || !t.matches || !t.matches(".pay2-q-vendor, .pay2-q-method, .pay2-q-month")) return;
+    var card = t.closest(".pay2-q-item");
+    if (card) p2QueueAutoDue(card);
   }
   function p2QueueClick(e){
     var t = e.target;

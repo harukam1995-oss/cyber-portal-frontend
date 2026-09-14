@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.79</span>
+      <span>v2.33.80</span>
     </div>
   </footer>
 </div>
@@ -1077,6 +1077,10 @@
       <div class="pay2-check-head">
         <span class="pay2-sec-title">支払月</span>
         <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="未着チェックの支払月" title="月別の表は、この支払月までの6か月">
+        <input type="search" id="pay2-check-q" class="pay2-q" placeholder="ベンダー・メール・支払サイトで検索" autocomplete="off" maxlength="80" aria-label="未着チェックの検索">
+        <select id="pay2-check-fcat" class="pay2-sel" aria-label="区分で絞り込み"><option value="">区分（すべて）</option><option value="業務委託">業務委託</option><option value="SaaS">SaaS</option><option value="その他">その他</option></select>
+        <select id="pay2-check-fm" class="pay2-sel" aria-label="支払方法で絞り込み"><option value="">方式（すべて）</option><option value="銀行振込">銀行振込</option><option value="UPSIDER">UPSIDER</option><option value="口座振替">口座振替</option><option value="その他">その他</option></select>
+        <select id="pay2-check-fcad" class="pay2-sel" aria-label="周期で絞り込み"><option value="">周期（すべて）</option><option value="1">毎月</option><option value="n">Nヶ月ごと</option><option value="12">毎年</option></select>
         <span class="pay2-check-view" id="pay2-check-filter" role="group" aria-label="絞り込み"><button type="button" class="ui-chip is-on" data-f="need">要対応</button><button type="button" class="ui-chip" data-f="all">すべて</button></span>
         <span class="pay2-check-view" id="pay2-check-view" role="group" aria-label="表示の切り替え"><button type="button" class="ui-chip is-on" data-view="matrix">月別</button><button type="button" class="ui-chip" data-view="list">一覧</button></span>
         <span class="pay2-check-sum" id="pay2-check-sum"></span>
