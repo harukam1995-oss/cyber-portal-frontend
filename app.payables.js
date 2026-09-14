@@ -687,22 +687,30 @@
       .catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "下書き"), "err"); });
   }
 
-  /* ---- カード明細（UPSIDER）の突き合わせ（漏れ防止計画 P4・2026/09/13）----
-     UPSIDER の利用明細（CSV / xlsx。列: 取引日・利用先・決済ID・出金金額・通貨・カード保有者名・証憑枚数 …）を取り込み、
-     GET /api/payables/statements が台帳の UPSIDER 行とベンダーの照合キー×日付±5日で突き合わせる。
-       台帳なし（照合キーのあるベンダー）… メールで請求書・領収書が来ていない決済 →「台帳に追加」／「対象外」
-       台帳にあるのに明細なし … 支払方式違い・翌月計上・別カードの可能性
-       台帳と一致 … 「円建て金額と支払済を反映」（台帳の税込が空欄のときだけ金額を入れる）
-     xlsx は SheetJS を開いたときだけ cdnjs から読み込む。 */
+  /* ---- 明細の突き合わせ（UPSIDER カード明細／GMO あおぞら 入出金明細）（漏れ防止計画 P4・2026/09/13〜14）----
+     明細（CSV / xlsx）を取り込むと、GET /api/payables/statements?source= が台帳と突き合わせる。
+       UPSIDER      … カード決済 ⇄ 台帳の UPSIDER 行（ベンダー照合キー×日付±5日）
+       GMO あおぞら … 口座振替 ⇄ 台帳の口座振替行、個別振込 ⇄ 台帳の銀行振込行（照合キーはカナ。例: テクテク）。
+                      総合振込は明細に内訳が出ないので合計だけ。振込資金返却は要確認として出す。
+     取り込み元はファイルのヘッダで自動判別（「取引日・決済ID」＝UPSIDER／「日付・摘要・出金金額」＝GMO あおぞら）。
+     xlsx は SheetJS を取り込み時だけ cdnjs から読み込む。 */
   var P2S_XLSX_SRC = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
   var P2S_HEAD = { date: "取引日", merchant: "利用先", txId: "決済ID", amountOut: "出金金額", amountIn: "入金金額", currency: "通貨", fxAmount: "外貨の金額", cardName: "カード名", holder: "カード保有者名", receiptCount: "証憑枚数" };
-  var p2s = { open: false, month: "", data: null, loading: false, xlsx: null };
+  var P2S_GMO_HEAD = { date: "日付", desc: "摘要", amountIn: "入金金額", amountOut: "出金金額", balance: "残高", memo: "メモ" };
+  var P2S_CAT = { transfer: "個別振込", debit: "口座振替", bulk: "総合振込", returned: "振込資金返却", fee: "振込手数料", payeasy: "ペイジー", loan: "借入返済", atm: "ATM", remit: "海外送金" };
+  var p2s = { open: false, source: "upsider", month: "", data: null, loading: false, xlsx: null };
 
   function p2StmtWire(){
     p2El("pay2-stmt-toggle").addEventListener("click", function(){
       p2s.open = !p2s.open;
       p2StmtRender();
       if (p2s.open && !p2s.data) p2StmtLoad();
+    });
+    p2El("pay2-stmt-source").addEventListener("change", function(){
+      p2s.source = this.value === "gmo" ? "gmo" : "upsider";
+      p2s.month = "";
+      p2s.data = null;
+      p2StmtLoad();
     });
     p2El("pay2-stmt-month").addEventListener("change", function(){ p2s.month = this.value; p2StmtLoad(); });
     p2El("pay2-stmt-file").addEventListener("change", function(){
@@ -715,94 +723,38 @@
     if (p2s.loading) return;
     p2s.loading = true;
     p2El("pay2-stmt-sum").textContent = "読み込み中…";
-    apiFetch("/api/payables/statements" + (p2s.month ? "?month=" + encodeURIComponent(p2s.month) : "")).then(function(res){
+    apiFetch("/api/payables/statements?source=" + p2s.source + (p2s.month ? "&month=" + encodeURIComponent(p2s.month) : "")).then(function(res){
       p2s.data = res || {};
       p2s.month = (res && res.month) || "";
       p2StmtRender();
     }).catch(function(err){
-      p2El("pay2-stmt-sum").textContent = apiErrorMessage(err, "カード明細");
+      p2El("pay2-stmt-sum").textContent = apiErrorMessage(err, "明細");
     }).finally(function(){ p2s.loading = false; });
   }
+  function p2StmtTh(cols){ return "<thead><tr>" + cols.map(function(c){ return "<th>" + c + "</th>"; }).join("") + "</tr></thead>"; }
   function p2StmtRender(){
     var wrap = p2El("pay2-stmt");
     if (!wrap) return;
     wrap.hidden = (p2.tab !== "detail");
     p2El("pay2-stmt-toggle").setAttribute("aria-expanded", p2s.open ? "true" : "false");
+    p2El("pay2-stmt-source").value = p2s.source;
     var d = p2s.data, sel = p2El("pay2-stmt-month"), sum = p2El("pay2-stmt-sum"), body = p2El("pay2-stmt-body");
     var months = (d && d.months) || [];
     sel.innerHTML = months.length
       ? months.slice().reverse().map(function(m){ return '<option value="' + m + '"' + (m === p2s.month ? " selected" : "") + ">" + m + "</option>"; }).join("")
       : '<option value="">未取り込み</option>';
     if (!d){
-      sum.textContent = p2s.open ? "" : "UPSIDER の利用明細を取り込むと、台帳の UPSIDER 行と突き合わせます。";
+      sum.textContent = p2s.open ? "" : "UPSIDER の利用明細か GMO あおぞらの入出金明細を取り込むと、台帳と突き合わせます。";
       body.hidden = true;
       return;
     }
-    var rows = d.rows || [];
-    var charges = rows.filter(function(r){ return r.amountOut > 0; });
-    var matched = charges.filter(function(r){ return r.match; });
-    var known = charges.filter(function(r){ return !r.match && r.guess && r.manualPayableId !== "none"; });
-    var other = charges.filter(function(r){ return !r.match && (!r.guess || r.manualPayableId === "none"); });
-    var noReceipt = charges.filter(function(r){ return r.receiptCount === 0; });
-    var up = d.unmatchedPayables || [];
-    var pend = matched.filter(function(r){ return r.match.amountIncl == null || !r.match.paid; }).length;
-    var total = charges.reduce(function(a, r){ return a + r.amountOut; }, 0);
-    sum.innerHTML = rows.length
-      ? ("決済 <b>" + charges.length + "</b> 件 " + p2Money(total) +
-         ' ／ <span class="ok">台帳と一致 ' + matched.length + "</span>" +
-         ' ／ <span class="warn">台帳なし（登録ベンダー） ' + known.length + "</span>" +
-         " ／ 台帳にあるのに明細なし " + up.length + " ／ 証憑0枚 " + noReceipt.length)
-      : (months.length ? "この月の明細はありません。" : "まだ明細を取り込んでいません。");
-    if (!p2s.open){ body.hidden = true; return; }
-    body.hidden = false;
-    var th = function(cols){ return "<thead><tr>" + cols.map(function(c){ return "<th>" + c + "</th>"; }).join("") + "</tr></thead>"; };
-    var base = function(r){
-      return "<td>" + escapeHtml(r.date.slice(5)) + "</td>" +
-        '<td class="strong">' + escapeHtml(r.merchant || "") + "</td>" +
-        '<td class="num">' + p2Money(r.amountOut) + (r.currency && r.currency !== "JPY" ? ' <span class="pay2-muted">' + escapeHtml(r.currency) + "</span>" : "") + "</td>" +
-        "<td>" + escapeHtml(r.holder || "") + "</td>" +
-        '<td class="center">' + (r.receiptCount === 0 ? '<span class="pay2-flag">0</span>' : escapeHtml(r.receiptCount == null ? "" : String(r.receiptCount))) + "</td>";
-    };
-    var h = "";
-    h += '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">台帳なし（照合キーのあるベンダーの決済） ' + known.length + " 件 — メールで請求書・領収書が来ていない可能性</div>";
-    h += known.length
-      ? '<div class="pay2-tablewrap"><table class="pay2-table">' + th(["日付", "利用先", "金額(円)", "カード保有者", "証憑", "ベンダー候補", ""]) + "<tbody>" +
-        known.map(function(r){
-          return "<tr>" + base(r) + "<td>" + escapeHtml(r.guess.vendorName || "") + "</td>" +
-            '<td class="pay2-check-act"><button type="button" class="pay2-mini-btn pay2-mini-primary" data-stmt-add="' + escapeHtml(r.id) + '">台帳に追加</button>' +
-            '<button type="button" class="pay2-mini-btn" data-stmt-none="' + escapeHtml(r.id) + '">対象外</button></td></tr>';
-        }).join("") + "</tbody></table></div>"
-      : '<p class="pay2-muted pay2-stmt-empty">ありません。</p>';
-    h += "</div>";
-    h += '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">台帳にあるのに明細なし（UPSIDER 行） ' + up.length + " 件 — 支払方式違い・前後の月の決済・別カードの可能性</div>";
-    h += up.length
-      ? '<div class="pay2-tablewrap"><table class="pay2-table">' + th(["受領日", "ベンダー", "税込", "備考"]) + "<tbody>" +
-        up.map(function(p){
-          return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + "</td>" +
-            '<td class="strong">' + escapeHtml(p.vendorName || "") + "</td>" +
-            '<td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td>" +
-            "<td>" + escapeHtml(p.note || "") + "</td></tr>";
-        }).join("") + "</tbody></table></div>"
-      : '<p class="pay2-muted pay2-stmt-empty">ありません。</p>';
-    h += "</div>";
-    h += '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">台帳と一致 ' + matched.length + " 件" +
-      (pend ? '<button type="button" class="pay2-mini-btn pay2-mini-primary" id="pay2-stmt-apply">円建て金額と支払済を ' + pend + " 件に反映</button>" : "") + "</div>";
-    if (matched.length){
-      h += '<details class="pay2-stmt-more"><summary>一覧を表示</summary><div class="pay2-tablewrap"><table class="pay2-table">' +
-        th(["日付", "利用先", "金額(円)", "カード保有者", "証憑", "台帳", "台帳の税込", "支払済"]) + "<tbody>" +
-        matched.map(function(r){
-          return '<tr data-pid="' + escapeHtml(r.match.payableId) + '">' + base(r) +
-            "<td>" + escapeHtml((r.match.vendorName || "") + " " + String(r.match.receivedDate || "").slice(5)) + (r.match.how === "manual" ? ' <span class="pay2-muted">手動</span>' : "") + "</td>" +
-            '<td class="num">' + (r.match.amountIncl != null ? p2Money(r.match.amountIncl) : "—") + "</td>" +
-            '<td class="center">' + (r.match.paid ? "✓" : "") + "</td></tr>";
-        }).join("") + "</tbody></table></div></details>";
+    if (!(d.rows || []).length){
+      sum.textContent = months.length ? "この月の明細はありません。" : "まだ明細を取り込んでいません。";
+      body.hidden = true;
+      return;
     }
-    h += "</div>";
-    h += '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>その他の決済（照合キーのないベンダー・対象外にしたもの） ' + other.length + " 件</summary>" +
-      (other.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + th(["日付", "利用先", "金額(円)", "カード保有者", "証憑"]) + "<tbody>" +
-        other.map(function(r){ return "<tr>" + base(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
-      "</details></div>";
-    body.innerHTML = h;
+    if (p2s.source === "gmo") p2StmtRenderGmo(d, sum, body); else p2StmtRenderUpsider(d, sum, body);
+    if (body.hidden) return;
     body.querySelectorAll("tr[data-pid]").forEach(function(tr){
       tr.addEventListener("click", function(){
         var rec = p2.payables.filter(function(x){ return x.id === tr.getAttribute("data-pid"); })[0];
@@ -816,74 +768,208 @@
       b.addEventListener("click", function(){ p2StmtMatch(b.getAttribute("data-stmt-none"), "none", b); });
     });
     var ap = p2El("pay2-stmt-apply");
-    if (ap) ap.addEventListener("click", function(){ p2StmtApply(pend, ap); });
+    if (ap) ap.addEventListener("click", function(){ p2StmtApply(+ap.getAttribute("data-n"), ap); });
+  }
+  function p2StmtSec(title, inner){
+    return '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">' + title + "</div>" + inner + "</div>";
+  }
+  function p2StmtTable(cols, trs){
+    return trs.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cols) + "<tbody>" + trs.join("") + "</tbody></table></div>"
+      : '<p class="pay2-muted pay2-stmt-empty">ありません。</p>';
+  }
+  function p2StmtActs(r){
+    return '<td class="pay2-check-act"><button type="button" class="pay2-mini-btn pay2-mini-primary" data-stmt-add="' + escapeHtml(r.id) + '">台帳に追加</button>' +
+      '<button type="button" class="pay2-mini-btn" data-stmt-none="' + escapeHtml(r.id) + '">対象外</button></td>';
+  }
+  function p2StmtMatchedHtml(matched, pend, cells){
+    var h = '<div class="pay2-stmt-sec"><div class="pay2-stmt-title">台帳と一致 ' + matched.length + " 件" +
+      (pend ? '<button type="button" class="pay2-mini-btn pay2-mini-primary" id="pay2-stmt-apply" data-n="' + pend + '">金額（台帳が空欄のとき）と支払済を ' + pend + " 件に反映</button>" : "") + "</div>";
+    if (matched.length){
+      h += '<details class="pay2-stmt-more"><summary>一覧を表示</summary><div class="pay2-tablewrap"><table class="pay2-table">' +
+        p2StmtTh(cells.head.concat(["台帳", "台帳の税込", "支払済"])) + "<tbody>" +
+        matched.map(function(r){
+          return '<tr data-pid="' + escapeHtml(r.match.payableId) + '">' + cells.row(r) +
+            "<td>" + escapeHtml((r.match.vendorName || "") + " " + String(r.match.receivedDate || "").slice(5)) + (r.match.how === "manual" ? ' <span class="pay2-muted">手動</span>' : "") + "</td>" +
+            '<td class="num">' + (r.match.amountIncl != null ? p2Money(r.match.amountIncl) : "—") + "</td>" +
+            '<td class="center">' + (r.match.paid ? "✓" : "") + "</td></tr>";
+        }).join("") + "</tbody></table></div></details>";
+    }
+    return h + "</div>";
+  }
+  function p2StmtRenderUpsider(d, sum, body){
+    var rows = d.rows || [];
+    var charges = rows.filter(function(r){ return r.amountOut > 0; });
+    var matched = charges.filter(function(r){ return r.match; });
+    var known = charges.filter(function(r){ return !r.match && r.guess && r.manualPayableId !== "none"; });
+    var other = charges.filter(function(r){ return !r.match && (!r.guess || r.manualPayableId === "none"); });
+    var noReceipt = charges.filter(function(r){ return r.receiptCount === 0; });
+    var up = d.unmatchedPayables || [];
+    var pend = matched.filter(function(r){ return r.match.amountIncl == null || !r.match.paid; }).length;
+    var total = charges.reduce(function(a, r){ return a + r.amountOut; }, 0);
+    sum.innerHTML = "決済 <b>" + charges.length + "</b> 件 " + p2Money(total) +
+      ' ／ <span class="ok">台帳と一致 ' + matched.length + "</span>" +
+      ' ／ <span class="warn">台帳なし（登録ベンダー） ' + known.length + "</span>" +
+      " ／ 台帳にあるのに明細なし " + up.length + " ／ 証憑0枚 " + noReceipt.length;
+    if (!p2s.open){ body.hidden = true; return; }
+    body.hidden = false;
+    var cells = {
+      head: ["日付", "利用先", "金額(円)", "カード保有者", "証憑"],
+      row: function(r){
+        return "<td>" + escapeHtml(r.date.slice(5)) + "</td>" +
+          '<td class="strong">' + escapeHtml(r.merchant || "") + "</td>" +
+          '<td class="num">' + p2Money(r.amountOut) + (r.currency && r.currency !== "JPY" ? ' <span class="pay2-muted">' + escapeHtml(r.currency) + "</span>" : "") + "</td>" +
+          "<td>" + escapeHtml(r.holder || "") + "</td>" +
+          '<td class="center">' + (r.receiptCount === 0 ? '<span class="pay2-flag">0</span>' : escapeHtml(r.receiptCount == null ? "" : String(r.receiptCount))) + "</td>";
+      }
+    };
+    var h = "";
+    h += p2StmtSec("台帳なし（照合キーのあるベンダーの決済） " + known.length + " 件 — メールで請求書・領収書が来ていない可能性",
+      p2StmtTable(cells.head.concat(["ベンダー候補", ""]), known.map(function(r){
+        return "<tr>" + cells.row(r) + "<td>" + escapeHtml(r.guess.vendorName || "") + "</td>" + p2StmtActs(r) + "</tr>";
+      })));
+    h += p2StmtSec("台帳にあるのに明細なし（UPSIDER 行） " + up.length + " 件 — 支払方式違い・前後の月の決済・別カードの可能性",
+      p2StmtTable(["受領日", "ベンダー", "税込", "備考"], up.map(function(p){
+        return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + '</td><td class="strong">' + escapeHtml(p.vendorName || "") +
+          '</td><td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td><td>" + escapeHtml(p.note || "") + "</td></tr>";
+      })));
+    h += p2StmtMatchedHtml(matched, pend, cells);
+    h += '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>その他の決済（照合キーのないベンダー・対象外にしたもの） ' + other.length + " 件</summary>" +
+      (other.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cells.head) + "<tbody>" + other.map(function(r){ return "<tr>" + cells.row(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
+      "</details></div>";
+    body.innerHTML = h;
+  }
+  function p2StmtRenderGmo(d, sum, body){
+    var rows = d.rows || [];
+    var outs = rows.filter(function(r){ return r.amountOut > 0; });
+    var target = outs.filter(function(r){ return r.category === "debit" || r.category === "transfer"; });
+    var matched = target.filter(function(r){ return r.match; });
+    var none = target.filter(function(r){ return !r.match && r.manualPayableId !== "none"; });
+    var bulkRows = outs.filter(function(r){ return r.category === "bulk"; });
+    var returned = rows.filter(function(r){ return r.category === "returned"; });
+    var other = outs.filter(function(r){ return r.category !== "bulk" && ((r.category !== "debit" && r.category !== "transfer") || (!r.match && r.manualPayableId === "none")); });
+    var up = d.unmatchedPayables || [];
+    var bulk = d.bulk || {};
+    var pend = matched.filter(function(r){ return r.match.amountIncl == null || !r.match.paid; }).length;
+    var total = outs.reduce(function(a, r){ return a + r.amountOut; }, 0);
+    sum.innerHTML = "出金 <b>" + outs.length + "</b> 件 " + p2Money(total) +
+      ' ／ <span class="ok">台帳と一致 ' + matched.length + "</span>" +
+      ' ／ <span class="warn">台帳なし（口座振替・個別振込） ' + none.length + "</span>" +
+      " ／ 台帳にあるのに引落なし " + up.length + " ／ 総合振込 " + bulkRows.length + " 件" +
+      (returned.length ? ' ／ <span class="warn">振込資金返却 ' + returned.length + "</span>" : "");
+    if (!p2s.open){ body.hidden = true; return; }
+    body.hidden = false;
+    var cells = {
+      head: ["日付", "区分", "摘要", "金額"],
+      row: function(r){
+        return "<td>" + escapeHtml(r.date.slice(5)) + "</td>" +
+          "<td>" + escapeHtml(P2S_CAT[r.category] || r.category || "") + "</td>" +
+          '<td class="strong">' + escapeHtml(r.merchant || "") + "</td>" +
+          '<td class="num">' + p2Money(r.amountOut != null ? r.amountOut : r.amountIn) + "</td>";
+      }
+    };
+    var h = "";
+    if (returned.length){
+      h += p2StmtSec('<span class="pay2-flag">振込資金返却 ' + returned.length + " 件</span> — 振込が戻っています（口座・名義の誤りなど）。再振込したか確認",
+        p2StmtTable(["日付", "摘要", "戻った金額"], returned.map(function(r){
+          return "<tr><td>" + escapeHtml(r.date.slice(5)) + '</td><td class="strong">' + escapeHtml(r.merchant || "") + '</td><td class="num">' + p2Money(r.amountIn) + "</td></tr>";
+        })));
+    }
+    h += p2StmtSec("台帳なしの出金（口座振替・個別振込） " + none.length + " 件 — 請求書が台帳に無い支払い（payment@ 以外に届いた請求の可能性）",
+      p2StmtTable(cells.head.concat(["ベンダー候補", ""]), none.map(function(r){
+        return "<tr>" + cells.row(r) + "<td>" + escapeHtml(r.guess ? r.guess.vendorName : "—") + "</td>" + p2StmtActs(r) + "</tr>";
+      })));
+    h += p2StmtSec("台帳にあるのに引落なし（口座振替・前月〜当月受領） " + up.length + " 件",
+      p2StmtTable(["受領日", "ベンダー", "税込", "備考"], up.map(function(p){
+        return '<tr data-pid="' + escapeHtml(p.id) + '"><td>' + escapeHtml(String(p.receivedDate || "").slice(5)) + '</td><td class="strong">' + escapeHtml(p.vendorName || "") +
+          '</td><td class="num">' + (p.amountIncl != null ? p2Money(p.amountIncl) : "—") + "</td><td>" + escapeHtml(p.note || "") + "</td></tr>";
+      })));
+    h += p2StmtSec("総合振込 " + bulkRows.length + " 件 " + p2Money(bulk.total || 0) + " — 内訳は銀行明細に出ないため個別には突き合わせていません（15日の給与分を含む）",
+      '<p class="pay2-muted pay2-stmt-empty">台帳の銀行振込（前月〜当月受領・個別振込と未照合）: ' + (bulk.ledgerRows || 0) + " 件（税込入力済みの合計 " + p2Money(bulk.ledgerAmountSum || 0) + " ／ 税込未入力 " + (bulk.ledgerNoAmount || 0) + " 件）</p>" +
+      p2StmtTable(["日付", "金額"], bulkRows.map(function(r){ return "<tr><td>" + escapeHtml(r.date.slice(5)) + '</td><td class="num">' + p2Money(r.amountOut) + "</td></tr>"; })));
+    h += p2StmtMatchedHtml(matched, pend, cells);
+    h += '<div class="pay2-stmt-sec"><details class="pay2-stmt-more"><summary>その他の出金（振込手数料・ペイジー・借入返済・ATM・対象外にしたもの） ' + other.length + " 件</summary>" +
+      (other.length ? '<div class="pay2-tablewrap"><table class="pay2-table">' + p2StmtTh(cells.head) + "<tbody>" + other.map(function(r){ return "<tr>" + cells.row(r) + "</tr>"; }).join("") + "</tbody></table></div>" : "") +
+      "</details></div>";
+    body.innerHTML = h;
   }
   function p2StmtRowById(id){
     return ((p2s.data && p2s.data.rows) || []).filter(function(r){ return r.id === id; })[0] || null;
   }
   function p2StmtAdd(id, btn){
     var r = p2StmtRowById(id);
-    if (!r || !r.guess) return;
+    if (!r) return;
+    var gmo = p2s.source === "gmo";
+    var vendorName = r.guess ? r.guess.vendorName : "";
+    if (!vendorName){
+      vendorName = window.prompt("台帳に追加するベンダー名（ベンダーマスタと同じ名前にすると紐付きます）", gmo ? (r.payee || r.merchant || "") : (r.merchant || ""));
+      if (!vendorName) return;
+      vendorName = vendorName.trim();
+    }
+    var v = r.guess ? { id: r.guess.vendorId } : p2VendorByName(vendorName);
     btn.disabled = true;
     var doc = {
-      vendorId: r.guess.vendorId, vendorName: r.guess.vendorName, method: "UPSIDER", receivedDate: r.date,
-      periodMonth: r.month, amountIncl: r.amountOut, paid: true,
-      note: "カード明細から追加（" + (r.merchant || "") + "・メールなし）"
+      vendorId: v ? v.id : "", vendorName: vendorName,
+      method: gmo ? (r.category === "debit" ? "口座振替" : "銀行振込") : "UPSIDER",
+      receivedDate: r.date, periodMonth: r.month, amountIncl: r.amountOut, paid: true,
+      note: (gmo ? "銀行明細から追加（" : "カード明細から追加（") + (r.merchant || "") + "・メールなし）"
     };
     apiFetch("/api/payables/payables", { method: "POST", body: JSON.stringify(doc) }).then(function(res){
       var saved = res && res.payable;
       if (saved) p2.payables.unshift(saved);
       return saved ? apiFetch("/api/payables/statements/" + encodeURIComponent(id) + "/match", { method: "POST", body: JSON.stringify({ payableId: saved.id }) }) : null;
     }).then(function(){
-      p2Status("「" + (r.guess.vendorName || "") + "」の決済を台帳に追加しました（UPSIDER・支払済）");
+      p2Status("「" + vendorName + "」の" + (gmo ? "出金" : "決済") + "を台帳に追加しました（" + doc.method + "・支払済）");
       p2RenderAll();
       p2StmtLoad();
-    }).catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "カード明細"), "err"); });
+    }).catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "明細"), "err"); });
   }
   function p2StmtMatch(id, payableId, btn){
     if (btn) btn.disabled = true;
     apiFetch("/api/payables/statements/" + encodeURIComponent(id) + "/match", { method: "POST", body: JSON.stringify({ payableId: payableId }) })
       .then(function(){ p2StmtLoad(); })
-      .catch(function(err){ if (btn) btn.disabled = false; p2Status(apiErrorMessage(err, "カード明細"), "err"); });
+      .catch(function(err){ if (btn) btn.disabled = false; p2Status(apiErrorMessage(err, "明細"), "err"); });
   }
   function p2StmtApply(n, btn){
-    if (!window.confirm("台帳と一致した " + n + " 件に、明細の円建て金額（台帳の税込が空欄のときだけ）と「支払済」を反映します。よろしいですか？")) return;
+    if (!window.confirm("台帳と一致した " + n + " 件に、明細の金額（台帳の税込が空欄のときだけ）と「支払済」を反映します。よろしいですか？")) return;
     btn.disabled = true;
-    apiFetch("/api/payables/statements/apply", { method: "POST", body: JSON.stringify({ month: p2s.month }) }).then(function(res){
-      p2Status("カード明細を台帳に反映しました：金額 " + ((res && res.amounts) || 0) + " 件 ／ 支払済 " + ((res && res.paid) || 0) + " 件");
+    apiFetch("/api/payables/statements/apply", { method: "POST", body: JSON.stringify({ month: p2s.month, source: p2s.source }) }).then(function(res){
+      p2Status("明細を台帳に反映しました：金額 " + ((res && res.amounts) || 0) + " 件 ／ 支払済 " + ((res && res.paid) || 0) + " 件");
       p2Load();
       p2StmtLoad();
-    }).catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "カード明細"), "err"); });
+    }).catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "明細"), "err"); });
   }
   function p2StmtImport(file){
     var sum = p2El("pay2-stmt-sum");
     sum.textContent = "明細を読み込み中…";
     var reader = /\.xlsx?$/i.test(file.name) ? p2StmtReadXlsx(file) : p2StmtReadCsv(file);
-    reader.then(function(rows){
-      if (!rows.length) throw new Error("「取引日」「決済ID」の列がある行が見つかりませんでした（UPSIDER の利用明細か確認してください）。");
+    reader.then(function(parsed){
+      var rows = parsed.rows;
+      if (!parsed.source || !rows.length) throw new Error("UPSIDER の利用明細（取引日・決済ID）か GMO あおぞらの入出金明細（日付・摘要・出金金額）の列が見つかりませんでした。");
       var chunks = [];
       for (var i = 0; i < rows.length; i += 500) chunks.push(rows.slice(i, i + 500));
       var tot = { created: 0, updated: 0, skipped: 0, months: {} };
       sum.textContent = rows.length + " 行を取り込み中…";
       return chunks.reduce(function(p, ch){
         return p.then(function(){
-          return apiFetch("/api/payables/statements/import", { method: "POST", body: JSON.stringify({ source: "upsider", rows: ch }) }).then(function(r){
+          return apiFetch("/api/payables/statements/import", { method: "POST", body: JSON.stringify({ source: parsed.source, rows: ch }) }).then(function(r){
             tot.created += (r && r.created) || 0;
             tot.updated += (r && r.updated) || 0;
             tot.skipped += (r && r.skipped) || 0;
             ((r && r.months) || []).forEach(function(m){ tot.months[m] = 1; });
           });
         });
-      }, Promise.resolve()).then(function(){ return tot; });
+      }, Promise.resolve()).then(function(){ tot.source = parsed.source; return tot; });
     }).then(function(tot){
       var ms = Object.keys(tot.months).sort();
-      p2Status("カード明細を取り込みました：新規 " + tot.created + " ／ 更新 " + tot.updated + (tot.skipped ? " ／ 金額なし " + tot.skipped : "") + (ms.length ? "（" + ms[0] + " 〜 " + ms[ms.length - 1] + "）" : ""));
+      p2Status((tot.source === "gmo" ? "銀行明細（GMO あおぞら）" : "カード明細（UPSIDER）") + "を取り込みました：新規 " + tot.created + " ／ 更新 " + tot.updated +
+        (tot.skipped ? " ／ 取り込まない行 " + tot.skipped + "（入金など）" : "") + (ms.length ? "（" + ms[0] + " 〜 " + ms[ms.length - 1] + "）" : ""));
       p2s.open = true;
-      p2s.month = ms[ms.length - 1] || p2s.month;
+      p2s.source = tot.source;
+      p2s.month = ms[ms.length - 1] || "";
       p2s.data = null;
       p2StmtLoad();
     }).catch(function(err){
-      sum.textContent = (err && err.message && !err.code) ? err.message : apiErrorMessage(err, "カード明細");
+      sum.textContent = (err && err.message && !err.code) ? err.message : apiErrorMessage(err, "明細");
     });
   }
   function p2StmtNum(v, frac){
@@ -893,38 +979,56 @@
     return frac ? n : Math.round(n);
   }
   function p2StmtDate(v){
-    if (typeof v === "number" || /^\d{5}(\.\d+)?$/.test(String(v))){
+    var c = String(v == null ? "" : v).trim();
+    if (/^\d{8}$/.test(c)) return c.slice(0, 4) + "-" + c.slice(4, 6) + "-" + c.slice(6, 8);
+    if (typeof v === "number" || /^\d{5}(\.\d+)?$/.test(c)){
       var n = Number(v);
       return (n > 20000 && n < 80000) ? new Date(Math.round((n - 25569) * 864e5)).toISOString().slice(0, 10) : "";
     }
-    var m = String(v || "").match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/);
+    var m = c.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/);
     return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
   }
-  // シート／CSV の行配列（ヘッダ行を探してから読む。シートごとにヘッダを探し直す）
-  function p2StmtRowsFromGrid(grid){
-    var out = [], col = null;
+  // シート／CSV の行配列 → { source, rows }。ヘッダ行（UPSIDER か GMO あおぞら）を探してから読む。シートごとに探し直す。
+  function p2StmtRowsFromGrid(grid, acc){
+    acc = acc || { source: "", rows: [] };
+    var col = null, src = "";
     (grid || []).forEach(function(row){
       var cells = (row || []).map(function(c){ return c == null ? "" : String(c).trim(); });
-      var isHead = cells.indexOf(P2S_HEAD.date) !== -1 && cells.indexOf(P2S_HEAD.txId) !== -1;
-      if (isHead){
-        col = {};
+      if (cells.indexOf(P2S_HEAD.date) !== -1 && cells.indexOf(P2S_HEAD.txId) !== -1){
+        src = "upsider"; col = {};
         Object.keys(P2S_HEAD).forEach(function(k){ col[k] = cells.indexOf(P2S_HEAD[k]); });
         return;
       }
+      if (cells.indexOf(P2S_GMO_HEAD.date) !== -1 && cells.indexOf(P2S_GMO_HEAD.desc) !== -1 && cells.indexOf(P2S_GMO_HEAD.amountOut) !== -1){
+        src = "gmo"; col = {};
+        Object.keys(P2S_GMO_HEAD).forEach(function(k){ col[k] = cells.indexOf(P2S_GMO_HEAD[k]); });
+        return;
+      }
       if (!col) return;
+      if (acc.source && acc.source !== src) return; // 1ファイルに2種類は混ぜない
+      acc.source = src;
       var get = function(k){ return col[k] >= 0 ? row[col[k]] : ""; };
       var date = p2StmtDate(get("date"));
-      var txId = String(get("txId") == null ? "" : get("txId")).trim();
-      if (!date || !txId) return;
-      out.push({
-        date: date, merchant: String(get("merchant") || "").trim(), txId: txId,
-        amountOut: p2StmtNum(get("amountOut")), amountIn: p2StmtNum(get("amountIn")),
-        currency: String(get("currency") || "").trim(), fxAmount: p2StmtNum(get("fxAmount"), true),
-        cardName: String(get("cardName") || "").trim(), holder: String(get("holder") || "").trim(),
-        receiptCount: p2StmtNum(get("receiptCount"))
-      });
+      if (!date) return;
+      if (src === "gmo"){
+        acc.rows.push({
+          date: date, desc: String(get("desc") || "").trim(),
+          amountIn: p2StmtNum(get("amountIn")), amountOut: p2StmtNum(get("amountOut")),
+          balance: p2StmtNum(get("balance")), memo: String(get("memo") || "").trim()
+        });
+      } else {
+        var txId = String(get("txId") == null ? "" : get("txId")).trim();
+        if (!txId) return;
+        acc.rows.push({
+          date: date, merchant: String(get("merchant") || "").trim(), txId: txId,
+          amountOut: p2StmtNum(get("amountOut")), amountIn: p2StmtNum(get("amountIn")),
+          currency: String(get("currency") || "").trim(), fxAmount: p2StmtNum(get("fxAmount"), true),
+          cardName: String(get("cardName") || "").trim(), holder: String(get("holder") || "").trim(),
+          receiptCount: p2StmtNum(get("receiptCount"))
+        });
+      }
     });
-    return out;
+    return acc;
   }
   function p2StmtLoadXlsx(){
     if (window.XLSX) return Promise.resolve(window.XLSX);
@@ -943,11 +1047,11 @@
     return Promise.all([p2StmtLoadXlsx(), file.arrayBuffer()]).then(function(res){
       var X = res[0];
       var wb = X.read(res[1], { type: "array" });
-      var rows = [];
+      var acc = { source: "", rows: [] };
       wb.SheetNames.forEach(function(name){
-        rows = rows.concat(p2StmtRowsFromGrid(X.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })));
+        p2StmtRowsFromGrid(X.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" }), acc);
       });
-      return rows;
+      return acc;
     });
   }
   function p2StmtReadCsv(file){
