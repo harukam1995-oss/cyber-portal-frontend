@@ -1394,7 +1394,9 @@
   function p2PayToFields(pfx, d){
     d = d || {};
     return p2Field(pfx + "payToBank", "銀行名", "text", d.payToBank) +
+      p2Field(pfx + "payToBankCode", "銀行コード（4桁）", "text", d.payToBankCode) +
       p2Field(pfx + "payToBranch", "支店名", "text", d.payToBranch) +
+      p2Field(pfx + "payToBranchCode", "支店番号（3桁）", "text", d.payToBranchCode) +
       p2SelectField(pfx + "payToType", "種別", PAY_ACCT_TYPES, d.payToType || "") +
       p2Field(pfx + "payToNumber", "口座番号", "text", d.payToNumber) +
       p2Field(pfx + "payToName", "口座名義", "text", d.payToName, true) +
@@ -1403,18 +1405,33 @@
   function p2PayToValues(pfx){
     return {
       payToBank: p2El(pfx + "payToBank").value.trim(),
+      payToBankCode: p2DigitsOf(p2El(pfx + "payToBankCode").value),
       payToBranch: p2El(pfx + "payToBranch").value.trim(),
+      payToBranchCode: p2DigitsOf(p2El(pfx + "payToBranchCode").value),
       payToType: p2El(pfx + "payToType").value,
       payToNumber: p2El(pfx + "payToNumber").value.trim(),
       payToName: p2El(pfx + "payToName").value.trim(),
       remitName: p2El(pfx + "remitName").value.trim()
     };
   }
-  var P2_PAYTO_KEYS = ["payToBank", "payToBranch", "payToType", "payToNumber", "payToName", "remitName"];
+  var P2_PAYTO_KEYS = ["payToBank", "payToBankCode", "payToBranch", "payToBranchCode", "payToType", "payToNumber", "payToName", "remitName"];
+  // 銀行コード・支店番号: 全角・ハイフン・空白を除いた数字だけ
+  function p2DigitsOf(v){ return String(v == null ? "" : v).normalize("NFKC").replace(/\D+/g, ""); }
+  // 銀行コードは4桁・支店番号は3桁（空欄は可）。違えばエラー文、合っていれば ""
+  function p2PayToCodeErr(pfx){
+    var bank = p2DigitsOf(p2El(pfx + "payToBankCode").value), branch = p2DigitsOf(p2El(pfx + "payToBranchCode").value);
+    if (bank && bank.length !== 4) return "銀行コードは4桁の数字で入力してください（例：0005）。";
+    if (branch && branch.length !== 3) return "支店番号は3桁の数字で入力してください（例：001）。";
+    return "";
+  }
   // 振込先の欄（口座6項目＋その周り）を支払方式で開閉する。銀行振込なら開き、それ以外は畳む（見出しの ▶ で開ける）。
   // 畳んでも値は消さず、保存にも入る。方式をコードで変えたときは戻り値の関数を呼んで合わせる。
   function p2PayToSection(pfx, methodId, extra){
     var btn = p2El(pfx + "payto-toggle"), sel = p2El(methodId);
+    [["payToBankCode", 4, "例 0005"], ["payToBranchCode", 3, "例 001"]].forEach(function(x){
+      var el = p2El(pfx + x[0]);
+      el.inputMode = "numeric"; el.maxLength = x[1] + 2; el.placeholder = x[2];   // 全角やハイフン入りで貼っても切れないよう少し余裕
+    });
     var parts = P2_PAYTO_KEYS.map(function(k){ return p2El(pfx + k).closest(".pay2-fld"); }).concat(extra || []);
     var open = true;
     function render(){
@@ -1684,6 +1701,8 @@
   function p2SaveEdit(){
     var vals = p2EditValues();
     if (!vals.vendorName && !vals.invoiceNo) return p2FormErr("pay2-edit", "ベンダー名か請求書番号のどちらかは入力してください。");
+    var codeErr = p2PayToCodeErr("p2f-");
+    if (codeErr) return p2FormErr("pay2-edit", codeErr);
     p2SaveDoc("payable", vals);
   }
 
@@ -1750,7 +1769,7 @@
       p2Field("p2v-aliases", "別名・表記ゆれ（, 区切り・任意）", "text", d.aliases, true) +
       p2SelectField("p2v-defaultMethod", "支払方法", PAY_METHODS, d.defaultMethod || "その他") +
       p2SelectField("p2v-category", "区分", PAY_CATEGORIES, d.category || "その他") +
-      p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末／月末締め20日）", "text", d.paymentTerms, true) +
+      p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末／月末締め20日）", "text", v ? d.paymentTerms : "月末締め翌月末", true) +   // 新規の既定は月末締め翌月末（2026/09/15 オーナー指定）
       '<div class="pay2-fld wide pay2-payto-note" id="p2v-terms-hint"></div>' +
       '<div class="pay2-fld"><label>周期</label><div class="pay2-cad-row">' +
         '<select id="p2v-cadence">' +
@@ -1816,6 +1835,8 @@
     };
     Object.assign(vals, p2PayToValues("p2v-"));
     if (!vals.name) return p2FormErr("pay2-vendor", "ベンダー名は必須です。");
+    var codeErr = p2PayToCodeErr("p2v-");
+    if (codeErr) return p2FormErr("pay2-vendor", codeErr);
     p2SaveDoc("vendor", vals);
   }
 
