@@ -228,6 +228,12 @@
           <span class="inbox-count-label">件の契約書が自動更新</span>
           <span class="inbox-count-acct">SYSLEA</span>
         </button>
+        <!-- 請求書メールの未処理（SYSLEA の 01.payment に残っているメール数）。0件のときは hidden。押すと請求書管理を開く。 -->
+        <button type="button" class="inbox-count-btn inbox-alert-btn" id="home-pay-queue-btn" hidden>
+          <span class="inbox-count-num" id="home-pay-queue-num">0</span>
+          <span class="inbox-count-label">件の請求書メールが未処理</span>
+          <span class="inbox-count-acct">SYSLEA</span>
+        </button>
         <!-- 期限切れタスク。0件のときは hidden。押すとタスク管理を「期限切れ」ビューで開く。 -->
         <button type="button" class="inbox-count-btn inbox-alert-btn" id="home-task-overdue-btn" hidden>
           <span class="inbox-count-num" id="home-task-overdue-num">0</span>
@@ -247,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.74</span>
+      <span>v2.33.75</span>
     </div>
   </footer>
 </div>

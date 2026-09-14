@@ -29,7 +29,7 @@
     payables: [], vendors: [], receipts: [], tab: "detail",
     fMonth: "", fMethod: "", fUnpaid: false, fNeedInput: false, fQueue: false, fQ: "", fExcluded: false, fMismatch: false,
     vq: "", vFm: "", vFcat: "", vNoEmail: false, vOverdue: false, vFex: "hide",
-    checkOpen: true, checkOverdueOnly: false, checkView: "matrix", _recv: {},
+    checkOpen: true, checkOverdueOnly: false, checkView: "matrix", _recv: {}, qsum: null,
     wired: false, editId: null, vendId: null
   };
 
@@ -212,8 +212,13 @@
         '<span class="kpi-value' + (tone ? " " + tone : "") + '">' + value + "</span>" +
         '<span class="kpi-sub">' + sub + "</span></button>";
     };
+    var qs = p2.qsum || {};
+    var qN = typeof qs.parent === "number" ? qs.parent : null;
+    var qSub = qs.connected === false ? "SYSLEA の Google 連携が必要"
+      : qs.last ? "前回の突き合わせ " + qs.last.total + "件・" + p2TimeLabel(qs.last.at)
+      : "押して突き合わせ";
     band.innerHTML =
-      tile("queue", "未処理メール", "—", "押して突き合わせ", "") +
+      tile("queue", "未処理メール", qN == null ? "—" : qN + "件", qSub, qN ? "is-neg" : "") +
       tile("late", "未着", late + "社", "今月 " + lateCur + " ／ 先月 " + latePrev, late ? "is-neg" : "") +
       tile("overdue", "支払期限切れ", od.n + "件", money(od), od.n ? "is-neg" : "") +
       tile("soon", "7日以内に支払", sn.n + "件", money(sn), sn.n ? "is-warn" : "") +
@@ -313,7 +318,7 @@
       // 未処理キュー（旧 取り込みモーダル）
       p2El("pay2-import-close").addEventListener("click", p2CloseImport);
       p2El("pay2-import-cancel").addEventListener("click", p2CloseImport);
-      p2El("pay2-queue-reload").addEventListener("click", p2QueueLoad);
+      p2El("pay2-queue-reload").addEventListener("click", function(){ p2QueueLoad(true); });
       p2El("pay2-queue-dismiss-junk").addEventListener("click", p2QueueDismissJunk);
       p2El("pay2-import-list").addEventListener("click", p2QueueClick);
     }
@@ -331,9 +336,23 @@
       p2RenderAll();
       p2El("pay2-summary").hidden = (p2.tab !== "detail");
       p2CountStatus();
+      p2QueueSummaryLoad();
     }).catch(function(err){
       p2Status(apiErrorMessage(err, "請求書管理"), "err");
     });
+  }
+  // 「未処理メール」の件数（親 01.payment のメール数＋前回の突き合わせ）。重い突き合わせはしない。
+  function p2QueueSummaryLoad(){
+    return apiFetch("/api/payables/queue/summary").then(function(res){
+      p2.qsum = res || {};
+    }).catch(function(){
+      p2.qsum = { error: true };
+    }).then(p2RenderKpis);
+  }
+  function p2TimeLabel(ms){
+    if (!ms) return "";
+    try { return new Date(Number(ms)).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+    catch(e){ return ""; }
   }
 
   function p2SwitchTab(tab){
@@ -1625,19 +1644,22 @@
   function p2CloseImport(){
     p2El("pay2-import-modal").hidden = true;
     document.body.style.overflow = "";
-    if (p2q.dirty){ p2q.dirty = false; p2Load(); }
+    if (p2q.dirty){ p2q.dirty = false; p2Load(); } else p2QueueSummaryLoad();
   }
-  function p2QueueLoad(){
+  // fresh=true（再読込）で突き合わせをやり直す。開いたときはサーバーが5分持っている結果を使う。
+  function p2QueueLoad(fresh){
     if (p2q.loading) return;
     p2q.loading = true;
     p2El("pay2-import-error").hidden = true;
     p2El("pay2-queue-dismiss-junk").hidden = true;
-    p2El("pay2-queue-sum").textContent = "Gmail と台帳を突き合わせ中…（数十秒かかることがあります）";
+    p2El("pay2-queue-sum").textContent = "Gmail と台帳を突き合わせ中…（数秒〜十数秒かかることがあります）";
     p2El("pay2-import-list").innerHTML = "";
-    apiFetch("/api/payables/queue").then(function(res){
+    apiFetch("/api/payables/queue" + (fresh === true ? "?fresh=1" : "")).then(function(res){
       p2q.items = (res && res.items) || [];
       p2q.days = (res && res.days) || 60;
       p2q.truncated = !!(res && res.truncated);
+      p2q.generatedAt = (res && res.generatedAt) || 0;
+      p2q.cached = !!(res && res.cached);
       p2QueueRender();
     }).catch(function(err){
       p2El("pay2-queue-sum").textContent = "";
@@ -1652,7 +1674,8 @@
     p2El("pay2-queue-sum").innerHTML = "未処理 <b>" + open.length + "</b> 件" +
       '<span class="pay2-sum-muted"> ／ 01.payment ' + c.parent + " ／ ラベルあり台帳なし " + c.labeled +
       " ／ スレッド新着 " + c.thread + " ／ 入口外 " + c.sweep +
-      "（スレッド新着・入口外は直近" + p2q.days + "日" + (p2q.truncated ? "・件数が多いため先頭のみ" : "") + "）</span>";
+      "（スレッド新着・入口外は直近" + p2q.days + "日" + (p2q.truncated ? "・件数が多いため先頭のみ" : "") + "）" +
+      (p2q.generatedAt ? " ／ " + p2TimeLabel(p2q.generatedAt) + " 時点" + (p2q.cached ? "（最新にするには再読込）" : "") : "") + "</span>";
     var junk = open.filter(function(it){ return it.source === "sweep" && it.suggest === "dismiss"; }).length;
     var jb = p2El("pay2-queue-dismiss-junk");
     jb.hidden = !junk;

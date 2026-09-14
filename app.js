@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 155;
+  var BUILD_V = 156;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3152,6 +3152,19 @@
     contractsPendingTab = "";
     showView("contracts");
   });
+
+  /* ---- HOME の INBOX に出す「請求書メールが未処理」行 ----
+     SYSLEA の 01.payment（payment@ 宛はフィルタでここに入る）に残っているメール数。
+     bootstrap/home の paymentQueue.parent（Gmail のラベル件数だけ・Firestore は読まない）。0件なら隠す。 */
+  var homePayQueueBtn = document.getElementById("home-pay-queue-btn");
+  var homePayQueueNum = document.getElementById("home-pay-queue-num");
+  function applyHomePayQueue(pq){
+    if (!homePayQueueBtn) return;
+    var n = pq && typeof pq.parent === "number" ? pq.parent : 0;
+    homePayQueueBtn.hidden = n <= 0;
+    if (homePayQueueNum) homePayQueueNum.textContent = String(n);
+  }
+  if (homePayQueueBtn) homePayQueueBtn.addEventListener("click", function(){ showView("payables"); });
 
   /* ---- HOME の INBOX に出す「期限切れタスク」行 ----
      タスク管理タブを開かないと期限切れに気づけなかったため。件数は tasksState から
@@ -7272,6 +7285,7 @@
     // 契約書アラート。取れなかったときは行を出さないだけにして、
     // HOME のために追加の往復を増やさない(業務タブを開けば正しい件数になる)。
     applyHomeContractAlerts(b.contracts);
+    applyHomePayQueue(b.paymentQueue);
   }
 
   async function warmOnAuthReady(){
