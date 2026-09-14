@@ -1372,7 +1372,7 @@
       p2Field("p2f-regNo", "インボイス登録番号", "text", r.regNo) +
       p2SelectField("p2f-qualified", "適格区分", PAY_QUALIFIED, r.qualified || "不明") +
       p2SelectField("p2f-method", "支払方式", PAY_METHODS, r.method || "その他") +
-      '<div class="pay2-fld wide"><label>振込先</label></div>' +
+      '<div class="pay2-fld wide"><label>振込先</label><div class="pay2-payto-note" id="p2f-payto-auto" hidden></div></div>' +
       p2PayToFields("p2f-", r) +
       '<div class="pay2-fld wide" id="p2f-payto-check"></div>' +
       p2Field("p2f-sourceLink", "原本リンク", "text", r.sourceLink, true) +
@@ -1407,23 +1407,43 @@
     });
     recalc();
 
-    // ベンダーが確定したら未入力欄を既定値で補完（方式＋いつもの振込先）
-    function fillFromVendor(v){
-      if (!v) return;
-      if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
-      if (!p2El("p2f-method").value || p2El("p2f-method").value === "その他") p2El("p2f-method").value = v.defaultMethod || "その他";
-      P2_PAYTO_KEYS.forEach(function(k){
-        var el = p2El("p2f-" + k);
-        if (el && !el.value && v[k]) el.value = v[k];
-      });
+    // ベンダーが決まったら 方式＋いつもの振込先 を反映する。
+    // 書き換えるのは「空欄」か「前に自動で入れた値のまま」の欄だけ（手で直した値は触らない）。
+    // ベンダーを選び直せば前のベンダーの口座と入れ替わり、方式が銀行振込でなければ口座は入れない。
+    var autoFill = {};
+    function p2SetAuto(key, val){
+      var el = p2El("p2f-" + key);
+      if (!el || (el.value && el.value !== autoFill[key])) return;
+      el.value = val || "";
+      if (val) autoFill[key] = val; else delete autoFill[key];
+    }
+    function p2ApplyVendorPayTo(v){
+      var bank = p2El("p2f-method").value === "銀行振込";
+      P2_PAYTO_KEYS.forEach(function(k){ p2SetAuto(k, bank && v ? v[k] : ""); });
+      var shown = !!v && P2_PAYTO_KEYS.some(function(k){ return autoFill[k] && p2El("p2f-" + k).value === autoFill[k]; });
+      var note = p2El("p2f-payto-auto");
+      note.hidden = !shown;
+      note.textContent = shown ? "「" + (v.name || "") + "」に登録の振込先を反映しました（保存で台帳に入ります）。請求書の記載と違えば書き換えてください。" : "";
       p2RenderPayToCheck();
     }
-    p2El("p2f-vendorName").addEventListener("change", function(){
-      fillFromVendor(p2VendorByName(this.value)); p2RenderPayToCheck();
+    function fillFromVendor(v){
+      if (v){
+        if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
+        var m = p2El("p2f-method");
+        if (v.defaultMethod && (m.value === "その他" || m.value === autoFill.method)){ m.value = v.defaultMethod; autoFill.method = v.defaultMethod; }
+      }
+      p2ApplyVendorPayTo(v);
+    }
+    // 保存時の vendorId と同じ決め方（メールアドレス一致 → 名前一致）でベンダーを引く。
+    // datalist で選んだ瞬間は input しか来ない（change はフォーカスが外れてから）ので両方で拾う。
+    ["p2f-vendorName", "p2f-fromEmail"].forEach(function(id){
+      ["input", "change"].forEach(function(ev){
+        p2El(id).addEventListener(ev, function(){ fillFromVendor(p2CurVendor()); });
+      });
     });
-    // メールアドレス一致を優先（差出人アドレス → ベンダーマスタの emails）
-    p2El("p2f-fromEmail").addEventListener("change", function(){
-      fillFromVendor(p2VendorByEmail(this.value)); p2RenderPayToCheck();
+    p2El("p2f-method").addEventListener("change", function(){
+      if (this.value !== autoFill.method) delete autoFill.method;   // 手で選んだ方式はベンダーを変えても保つ
+      p2ApplyVendorPayTo(p2CurVendor());
     });
 
     // 口座チェック（目標4）: 入力中の口座 vs ベンダー登録の口座を比べて表示。
@@ -1444,7 +1464,9 @@
           ? '<div class="pay2-payto-note">この口座は「' + escapeHtml(v.name || "") + '」に未登録です。'
             + ' <button type="button" class="pay2-tool-btn" id="p2f-payto-register">この口座をベンダーに登録</button></div>'
           : "";
-      } else if (pNum && pNum !== vNum){
+      } else if (!pNum){
+        box.innerHTML = "";   // 口座が未入力なら「一致」とは言わない
+      } else if (pNum !== vNum){
         box.innerHTML = '<div class="pay2-payto-warn">⚠ この請求書の口座は「' + escapeHtml(v.name || "") + '」の登録と違います。'
           + '<br>登録: ' + escapeHtml(v.payToBank || "") + " " + escapeHtml(v.payToBranch || "") + " " + escapeHtml(v.payToType || "") + " " + escapeHtml(v.payToNumber || "")
           + '<br>今回: ' + escapeHtml(pv.payToBank) + " " + escapeHtml(pv.payToBranch) + " " + escapeHtml(pv.payToType) + " " + escapeHtml(pv.payToNumber)
@@ -1473,7 +1495,8 @@
       if (el) el.addEventListener("input", p2RenderPayToCheck);
       if (el) el.addEventListener("change", p2RenderPayToCheck);
     });
-    p2RenderPayToCheck();
+    // 開いた時点でベンダーが分かっていて口座が空なら反映（支払済の行は当時の口座と違うかもしれないので入れない）
+    if (r.paid) p2RenderPayToCheck(); else p2ApplyVendorPayTo(p2CurVendor());
 
     // PDF/本文からの AI 抽出
     var extMailBtn = p2El("p2f-extract-mail");
