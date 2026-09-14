@@ -348,7 +348,7 @@
       empty.hidden = false;
       empty.textContent = p2.fQueue ? "未払いの請求書はありません。"
         : p2.payables.length ? "この条件に合う請求書はありません。"
-        : "まだ請求書がありません。「＋ 新規」か「✉ メール取り込み」で追加してください。";
+        : "まだ請求書がありません。「＋ 新規」か「✉ 未処理キュー」で追加してください。";
       return;
     }
     empty.hidden = true;
