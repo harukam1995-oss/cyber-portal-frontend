@@ -672,7 +672,7 @@
   function p2CheckActs(v, month){
     return '<button type="button" class="pay2-mini-btn" data-find="' + escapeHtml(v.id) + '">メールを探す</button>' +
       '<button type="button" class="pay2-mini-btn" data-remind="' + escapeHtml(v.id) + '" data-month="' + escapeHtml(month) + '"' +
-        (p2VendorEmails(v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促の下書き</button>";
+        (p2VendorEmails(v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促メールを作成</button>";
   }
   // 一覧（選んだ支払月だけ・従来の表）
   function p2CheckListHtml(allRows, rows, month){
@@ -842,14 +842,33 @@
       mm + "月お支払い分のご請求書を、まだこちらで確認できておりませんでしたのでご連絡いたしました。\n" +
       "お手数ですが、payment@syslea.io 宛にご送付いただけますでしょうか。\n" +
       "すでにお送りいただいている場合は、行き違いにつきご容赦ください。\n\nよろしくお願いいたします。\n";
-    if (!window.confirm(to + " 宛の催促メールを SYSLEA の Gmail の下書きに保存します（送信はしません）。よろしいですか？")) return;
+    if (!CP.openComposePreset){ // 本体が古いときだけ（従来どおり下書き保存）
+      if (!window.confirm(to + " 宛の催促メールを SYSLEA の Gmail の下書きに保存します（送信はしません）。よろしいですか？")) return;
+      btn.disabled = true;
+      apiFetch(acctPath("/api/google/gmail/drafts", "syslea"), { method: "POST", body: JSON.stringify({ to: to, subject: subject, body: text }) })
+        .then(function(){ btn.textContent = "下書き済み"; p2Status("「" + (v.name || "") + "」宛の催促メールを Gmail の下書きに保存しました（送信はしていません）"); })
+        .catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "下書き"), "err"); });
+      return;
+    }
+    // ポータルの作成画面で開く（文面を直して送信、または下書き保存）。前回の請求書のスレッドがあればそこへの返信にする（先方が経緯を追える）。
+    var preset = { account: "syslea", to: to, subject: subject, body: text, title: "催促メール（" + (v.name || "") + "）" };
+    var last = p2.payables
+      .filter(function(r){ return r.vendorId === v.id && r.threadId && !r.excluded; })
+      .sort(function(a, b){ return String(b.receivedDate || "").localeCompare(String(a.receivedDate || "")); })[0];
+    if (!last){ CP.openComposePreset(preset); return; }
     btn.disabled = true;
-    apiFetch(acctPath("/api/google/gmail/drafts", "syslea"), { method: "POST", body: JSON.stringify({ to: to, subject: subject, body: text }) })
-      .then(function(){
-        btn.textContent = "下書き済み";
-        p2Status("「" + (v.name || "") + "」宛の催促メールを Gmail の下書きに保存しました（送信はしていません）");
+    apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(last.threadId) + (last.messageId ? "?messageId=" + encodeURIComponent(last.messageId) : ""), "syslea"))
+      .then(function(res){
+        var m = res && res.reply;
+        if (m && m.inReplyTo){
+          Object.assign(preset, {
+            threadId: last.threadId, inReplyTo: m.inReplyTo, references: m.references || "", subject: m.subject || subject,
+            title: "催促メール（" + (v.name || "") + "・" + (last.receivedDate || "") + " の請求書への返信）"
+          });
+        }
       })
-      .catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "下書き"), "err"); });
+      .catch(function(){ /* スレッドを読めなければ新規メールで */ })
+      .then(function(){ btn.disabled = false; CP.openComposePreset(preset); });
   }
 
   /* ---- 明細の突き合わせ（UPSIDER カード明細／GMO あおぞら 入出金明細）（漏れ防止計画 P4・2026/09/13〜14）----
@@ -1714,8 +1733,10 @@
       '<span class="pay2-import-date">' + escapeHtml(it.receivedDate || "") + "</span>" +
       (it.pdf ? '<span class="pay2-q-tag">PDF</span>' : "") +
       (labs ? '<span class="pay2-q-tag">' + escapeHtml(labs) + "</span>" : "") +
-      (it.sourceLink ? '<a class="pay2-q-open" href="' + escapeHtml(it.sourceLink) + '" target="_blank" rel="noopener">Gmail で開く ↗</a>' : "") +
-      "</div>";
+      '<span class="pay2-q-headacts">' +
+        (it.threadId ? '<button type="button" class="pay2-mini-btn" data-qview="1">本文・添付を見る</button>' : "") +
+        (it.sourceLink ? '<a class="pay2-q-open" href="' + escapeHtml(it.sourceLink) + '" target="_blank" rel="noopener">Gmail で開く ↗</a>' : "") +
+      "</span></div>";
     h += '<div class="pay2-import-from">' + escapeHtml(it.from || "(差出人不明)") + "</div>";
     h += '<div class="pay2-q-subj">' + escapeHtml(it.subject || "(件名なし)") + "</div>";
     if (it.snippet) h += '<div class="pay2-q-snip">' + escapeHtml(it.snippet) + "</div>";
@@ -1724,6 +1745,7 @@
         return escapeHtml((r.vendorName || "?") + " " + (r.periodMonth || r.receivedDate || "") + " " + (r.method || ""));
       }).join(" ／ ") + "</div>";
     }
+    h += '<div class="pay2-q-view" hidden></div>';
     h += '<div class="pay2-q-suggest">提案: ' + escapeHtml(P2Q_SUGGEST[sug] || sug) + "</div>";
     h += '<div class="pay2-q-form">' +
       '<input type="text" class="pay2-q-vendor" list="pay2-queue-vendors" placeholder="ベンダー" value="' + escapeHtml(it.vendorName || "") + '" aria-label="ベンダー">' +
@@ -1733,7 +1755,8 @@
       '<input type="month" class="pay2-q-month" value="' + escapeHtml(it.periodMonth || "") + '" aria-label="何月分" title="何月分">' +
       '<input type="text" class="pay2-q-amount" inputmode="numeric" placeholder="税込（任意）" aria-label="税込金額">' +
       '<input type="date" class="pay2-q-due" aria-label="支払期日" title="支払期日（任意）">' +
-      "</div>";
+      "</div>" +
+      (it.canAddEmail ? '<label class="pay2-q-addemail"><input type="checkbox" checked> 差出人 ' + escapeHtml(it.fromEmail || "") + " をベンダーのメールアドレスに追加（次から自動で照合）</label>" : "");
     h += '<div class="pay2-q-actions">' + btn("new", "確定（台帳に追加）", "pay2-tool-primary");
     if (rows.length){
       h += '<select class="pay2-q-link" aria-label="紐付け先の行">' + rows.map(function(r){
@@ -1746,10 +1769,55 @@
     return h;
   }
   function p2QueueClick(e){
-    var b = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
-    if (!b) return;
-    var card = b.closest(".pay2-q-item");
-    if (card) p2QueueAct(Number(card.getAttribute("data-idx")), b.getAttribute("data-act"));
+    var t = e.target;
+    var card = t && t.closest ? t.closest(".pay2-q-item") : null;
+    if (!card) return;
+    var idx = Number(card.getAttribute("data-idx"));
+    var v = t.closest("[data-qview]");
+    if (v){ p2QueueView(idx, card, v); return; }
+    var a = t.closest("[data-qatt]");
+    if (a){ p2QueueOpenAtt(idx, card, Number(a.getAttribute("data-qatt"))); return; }
+    var b = t.closest("button[data-act]");
+    if (b) p2QueueAct(idx, b.getAttribute("data-act"));
+  }
+  // カードの中でメール本文と添付を見る（Gmail に移らずに確定できるように）。
+  // 対象の1通の本文を出す（?messageId=。スレッドを使い回す請求書で別のメールの本文を出さない）。
+  function p2QueueView(idx, card, btn){
+    var it = p2q.items[idx];
+    var box = card.querySelector(".pay2-q-view");
+    if (!it || !box) return;
+    if (!box.hidden){ box.hidden = true; btn.textContent = "本文・添付を見る"; return; }
+    box.hidden = false;
+    btn.textContent = "本文を閉じる";
+    if (it._view) return;
+    box.textContent = "読み込み中…";
+    apiFetch(acctPath("/api/google/gmail/threads/" + encodeURIComponent(it.threadId) + "?messageId=" + encodeURIComponent(it.messageId), "syslea")).then(function(res){
+      var atts = (res && res.attachments) || [];
+      var mine = atts.filter(function(x){ return x.messageId === it.messageId; });
+      it._atts = mine.length ? mine : atts;
+      it._view = true;
+      box.innerHTML = '<div class="pay2-q-body">' + escapeHtml((res && res.body) || "(本文がありません)") + "</div>" +
+        (it._atts.length ? '<div class="pay2-q-atts">' + it._atts.map(function(x, j){
+          return '<button type="button" class="pay2-mini-btn" data-qatt="' + j + '" title="新しいタブで開く">📎 ' + escapeHtml(x.filename || "添付") + "</button>";
+        }).join("") + (mine.length ? "" : '<span class="pay2-muted">（このメールには添付が無いので、同じスレッドの添付）</span>') + "</div>" : "");
+    }).catch(function(err){
+      box.textContent = apiErrorMessage(err, "メール");
+    });
+  }
+  function p2QueueOpenAtt(idx, card, j){
+    var it = p2q.items[idx];
+    var att = it && it._atts && it._atts[j];
+    if (!att) return;
+    var w = window.open("", "_blank"); // 取得を待ってから開くとポップアップとして止められるので、先にタブを開いておく
+    mailAttachBytes(att).then(function(buf){
+      var url = URL.createObjectURL(new Blob([buf], { type: att.mimeType || "application/octet-stream" }));
+      if (w && !w.closed) w.location.href = url; else window.open(url, "_blank");
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 120000);
+    }).catch(function(err){
+      if (w) w.close();
+      var msg = card.querySelector(".pay2-q-msg");
+      if (msg){ msg.className = "pay2-q-msg err"; msg.textContent = apiErrorMessage(err, "添付") || "添付を開けませんでした。"; }
+    });
   }
   function p2QueueAct(idx, act){
     var it = p2q.items[idx];
@@ -1757,7 +1825,9 @@
     var card = p2El("pay2-import-list").querySelector('.pay2-q-item[data-idx="' + idx + '"]');
     if (!card) return Promise.resolve();
     var msg = card.querySelector(".pay2-q-msg");
-    var body = { action: act, messageId: it.messageId, threadId: it.threadId };
+    var body = { action: act, messageId: it.messageId, threadId: it.threadId, fromEmail: it.fromEmail || "" };
+    var addEl = card.querySelector(".pay2-q-addemail input");
+    body.addVendorEmail = !!(addEl && addEl.checked && (act === "new" || act === "link"));
     if (act === "new"){
       var vname = card.querySelector(".pay2-q-vendor").value.trim();
       var method = card.querySelector(".pay2-q-method").value;
@@ -1794,7 +1864,14 @@
         p2.payables.forEach(function(r, j){ if (r.id === saved.id) ix = j; });
         if (ix === -1) p2.payables.unshift(saved); else p2.payables[ix] = saved;
       }
-      msg.textContent = "✓ " + (P2Q_DONE[act] || act) + (res && res.label ? "（" + res.label.replace("01.payment/", "") + "）" : "");
+      if (res && res.vendorEmailAdded && res.vendorId){
+        // 次のカードの照合にもすぐ効くように手元のベンダーにも足しておく
+        p2.vendors = p2.vendors.map(function(v){
+          return v.id === res.vendorId ? Object.assign({}, v, { emails: p2VendorEmails(v).concat([it.fromEmail]).join(", ") }) : v;
+        });
+      }
+      msg.textContent = "✓ " + (P2Q_DONE[act] || act) + (res && res.label ? "（" + res.label.replace("01.payment/", "") + "）" : "") +
+        (res && res.vendorEmailAdded ? "・差出人アドレスをベンダーに追加" : "");
       p2QueueSum();
     }).catch(function(err){
       Array.prototype.forEach.call(ctrls, function(x){ x.disabled = false; });

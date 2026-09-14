@@ -3231,6 +3231,13 @@
 .pay2-q-msg:empty{ display:none; }
 .pay2-q-item.is-done .pay2-q-msg{ color: var(--ok); }
 .pay2-q-msg.err{ color: var(--err); }
+.pay2-q-headacts{ margin-left:auto; display:inline-flex; align-items:center; gap:8px; }
+.pay2-q-headacts .pay2-q-open{ margin-left:0; }
+.pay2-q-view{ margin:4px 0 2px; padding:8px 10px; border:1px solid var(--hairline); border-radius:2px; font-size:11px; color: var(--text-dim); }
+.pay2-q-body{ max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11.5px; line-height:1.6; color: var(--text-dim); }
+.pay2-q-atts{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+.pay2-q-addemail{ display:inline-flex; align-items:center; gap:5px; margin-top:4px; font-size:11px; color: var(--text-dim); }
+.pay2-q-addemail input{ width:auto; }
 @media (max-width:720px){
   .pay2-q-form{ grid-template-columns:1fr 1fr; }
   .pay2-q-form .pay2-q-vendor{ grid-column:1 / -1; }

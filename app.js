@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 156;
+  var BUILD_V = 157;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3941,6 +3941,26 @@
       mailComposeSubject.value = "";
       mailComposeBody.value = "";
     }
+    // 返信は本文にすぐ書き始めたい / 新規は宛先から。
+    showMailCompose((mode === "new" || mode === "forward") ? mailComposeTo : mailComposeBody);
+  }
+
+  // モジュール（請求書管理の催促など）から、宛先・件名・本文を入れて作成モーダルを開く。
+  // threadId / inReplyTo / references を渡すとそのスレッドへの返信として送る。送信・下書き保存は作成モーダルの通常の操作で。
+  function openComposePreset(o){
+    if (!mailComposeModal) return;
+    o = o || {};
+    composeCtx = { threadId: o.threadId || "", inReplyTo: o.inReplyTo || "", references: o.references || "", account: o.account === "syslea" ? "syslea" : "haruka" };
+    mailComposeTitle.textContent = o.title || "新規メール";
+    mailComposeTo.value = o.to || "";
+    mailComposeCc.value = o.cc || "";
+    mailComposeSubject.value = o.subject || "";
+    mailComposeBody.value = o.body || "";
+    showMailCompose(o.to ? mailComposeBody : mailComposeTo);
+  }
+
+  // 作成モーダルを表示する（宛先・件名・本文と composeCtx は呼び出し側で入れておく）。
+  function showMailCompose(focusEl){
     mailComposeBcc.value = "";
     mailComposeSetError("");
     mailComposeFrom.innerHTML =
@@ -3950,10 +3970,8 @@
 
     mailComposeModal.hidden = false;
     document.body.style.overflow = "hidden";
-    // 返信は本文にすぐ書き始めたい / 新規は宛先から。
     // focus() だけだと引用の長い本文で textarea もフォームも末尾までスクロールした状態で
     // 開いてしまい、宛先欄と書き始めの位置が見えないので、両方を先頭に戻す。
-    var focusEl = (mode === "new" || mode === "forward") ? mailComposeTo : mailComposeBody;
     setTimeout(function(){
       focusEl.focus();
       if (focusEl === mailComposeBody){
@@ -7350,6 +7368,8 @@
     acctPath: acctPath,
     extractPdfText: extractPdfText,
     mailAttachBytes: mailAttachBytes,
+    // 請求書管理の「催促メールを作成」が、宛先・件名・本文（と返信先のスレッド）を入れた作成モーダルを開く。
+    openComposePreset: openComposePreset,
     // 契約書のアラート判定は HOME の INBOX でも使うので本体側に置き、ここから渡す。
     CONTRACT_STATUSES: CONTRACT_STATUSES,
     contractStatusIdx: contractStatusIdx,
