@@ -688,6 +688,10 @@
   /* 口座チェック（明細モーダル内） */
   #p2f-payto-check:empty{ display:none; }
   .pay2-payto-note{ font-size:11px; color: var(--text-dim); line-height:1.6; }
+  /* 振込先の見出し（銀行振込以外は畳む。▼/▶ で開閉） */
+  .pay2-payto-toggle{ align-self:flex-start; padding:0; border:0; background:none; font:inherit; font-size:10.5px; letter-spacing:.3px; color: var(--text-faint); cursor:pointer; text-align:left; }
+  .pay2-payto-toggle:hover, .pay2-payto-toggle:focus-visible{ color: var(--accent); }
+  .pay2-form-grid .pay2-payto-off{ display:none; }
   .pay2-payto-ok{ font-size:11px; color: var(--ok); }
   .pay2-payto-warn{
     font-size:11px; color: var(--warn); line-height:1.7;

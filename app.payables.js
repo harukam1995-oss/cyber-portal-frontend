@@ -1411,6 +1411,24 @@
     };
   }
   var P2_PAYTO_KEYS = ["payToBank", "payToBranch", "payToType", "payToNumber", "payToName", "remitName"];
+  // 振込先の欄（口座6項目＋その周り）を支払方式で開閉する。銀行振込なら開き、それ以外は畳む（見出しの ▶ で開ける）。
+  // 畳んでも値は消さず、保存にも入る。方式をコードで変えたときは戻り値の関数を呼んで合わせる。
+  function p2PayToSection(pfx, methodId, extra){
+    var btn = p2El(pfx + "payto-toggle"), sel = p2El(methodId);
+    var parts = P2_PAYTO_KEYS.map(function(k){ return p2El(pfx + k).closest(".pay2-fld"); }).concat(extra || []);
+    var open = true;
+    function render(){
+      var filled = P2_PAYTO_KEYS.some(function(k){ return !!p2El(pfx + k).value; });
+      parts.forEach(function(el){ if (el) el.classList.toggle("pay2-payto-off", !open); });
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.textContent = (open ? "▼ " : "▶ ") + btn.getAttribute("data-title") + (open ? "" : " ・銀行振込のときだけ使います" + (filled ? "（入力あり）" : ""));
+    }
+    function byMethod(){ open = sel.value === "銀行振込"; render(); }
+    btn.addEventListener("click", function(){ open = !open; render(); });
+    sel.addEventListener("change", byMethod);
+    byMethod();
+    return byMethod;
+  }
 
   function p2OpenEdit(rec){
     p2.editId = rec ? rec.id : null;
@@ -1443,7 +1461,7 @@
       p2Field("p2f-regNo", "インボイス登録番号", "text", r.regNo) +
       p2SelectField("p2f-qualified", "適格区分", PAY_QUALIFIED, r.qualified || "不明") +
       p2SelectField("p2f-method", "支払方式", PAY_METHODS, r.method || "その他") +
-      '<div class="pay2-fld wide"><label>振込先</label><div class="pay2-payto-note" id="p2f-payto-auto" hidden></div></div>' +
+      '<div class="pay2-fld wide"><button type="button" class="pay2-payto-toggle" id="p2f-payto-toggle" data-title="振込先" aria-expanded="true">▼ 振込先</button><div class="pay2-payto-note" id="p2f-payto-auto" hidden></div></div>' +
       p2PayToFields("p2f-", r) +
       '<div class="pay2-fld wide" id="p2f-payto-check"></div>' +
       p2Field("p2f-sourceLink", "原本リンク", "text", r.sourceLink, true) +
@@ -1527,6 +1545,7 @@
         if (!p2El("p2f-vendorName").value.trim()) p2El("p2f-vendorName").value = v.name || "";
         var m = p2El("p2f-method");
         if (v.defaultMethod && (m.value === "その他" || m.value === autoFill.method)){ m.value = v.defaultMethod; autoFill.method = v.defaultMethod; }
+        if (payToSec) payToSec();   // 方式をコードで変えても change は来ないので、振込先の開閉を合わせる
       }
       p2ApplyVendorPayTo(v);
       p2ApplyVendorDue(v, true);
@@ -1600,6 +1619,8 @@
       if (el) el.addEventListener("change", p2RenderPayToCheck);
     });
     // 開いた時点でベンダーが分かっていて口座が空なら反映（支払済の行は当時の口座と違うかもしれないので入れない）
+    // 振込先は銀行振込のときだけ開く（照合の表示・「口座を確認した」も一緒に畳む）
+    var payToSec = p2PayToSection("p2f-", "p2f-method", [p2El("p2f-payto-auto"), p2El("p2f-payto-check"), p2El("p2f-payToChecked").closest("label")]);
     if (r.paid) p2RenderPayToCheck(); else p2ApplyVendorPayTo(p2CurVendor());
     p2ApplyVendorDue(p2CurVendor(), !r.paid);
 
@@ -1744,13 +1765,14 @@
       p2Field("p2v-expectDay", "想定到着日（1〜28・未着判定に使用）", "number", d.expectDay == null ? 25 : d.expectDay) +
       p2Field("p2v-expectCount", "月あたりの件数（同じ月に届く請求書の数・既定1）", "number", d.expectCount == null ? 1 : d.expectCount) +
       p2Field("p2v-statementKeys", "カード明細の照合キー（UPSIDER 明細の利用先に含まれる語・, 区切り・社名の英字は自動）", "text", d.statementKeys, true) +
-      '<div class="pay2-fld wide"><label>いつもの振込先（口座変更検知に使用）</label></div>' +
+      '<div class="pay2-fld wide"><button type="button" class="pay2-payto-toggle" id="p2v-payto-toggle" data-title="いつもの振込先（口座変更の検知に使用）" aria-expanded="true">▼ いつもの振込先（口座変更の検知に使用）</button></div>' +
       p2PayToFields("p2v-", d) +
       '<div class="pay2-fld wide"><label>メモ</label><textarea id="p2v-note" rows="2">' + escapeHtml(d.note || "") + "</textarea></div>" +
       '<div class="pay2-fld-checks">' +
         '<label><input type="checkbox" id="p2v-excluded"' + (d.excluded ? " checked" : "") + "> 支払対象外（このベンダー宛メールは取り込み時に対象外扱い）</label>" +
       "</div>" +
       "</div>";
+    p2PayToSection("p2v-", "p2v-defaultMethod", []);
     // 支払サイトをどう読んだかを見せる（台帳・未処理キューの支払期日はここから自動で入る）
     function termsHint(){
       var terms = p2El("p2v-paymentTerms").value.trim();
