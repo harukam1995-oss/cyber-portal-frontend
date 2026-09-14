@@ -253,7 +253,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.77</span>
+      <span>v2.33.78</span>
     </div>
   </footer>
 </div>
@@ -1011,11 +1011,13 @@
     <div class="cal-toolbar-left">
       <button class="cal-back-btn" id="payables-back" type="button">← 戻る</button>
       <div class="acct-tabs" role="tablist" id="pay2-tabs">
-        <button class="acct-tab active" type="button" data-p2tab="detail">支払明細</button>
-        <button class="acct-tab" type="button" data-p2tab="vendor">ベンダーマスタ</button>
+        <button class="acct-tab active" type="button" data-p2tab="check">未着チェック<span class="pay2-tab-n" id="pay2-tab-n-check"></span></button>
+        <button class="acct-tab" type="button" data-p2tab="detail">台帳<span class="pay2-tab-n" id="pay2-tab-n-detail"></span></button>
+        <button class="acct-tab" type="button" data-p2tab="stmt">明細の突き合わせ</button>
+        <button class="acct-tab" type="button" data-p2tab="vendor">ベンダー<span class="pay2-tab-n" id="pay2-tab-n-vendor"></span></button>
       </div>
     </div>
-    <div class="cal-toolbar-right" id="pay2-detail-tools">
+    <div class="cal-toolbar-right" id="pay2-detail-tools" hidden>
       <input type="search" id="pay2-q" class="pay2-q" placeholder="ベンダー・番号・メール・備考で検索" autocomplete="off" maxlength="80">
       <select id="pay2-month" class="pay2-sel" aria-label="受領月で絞り込み"><option value="">受領月（すべて）</option></select>
       <select id="pay2-method" class="pay2-sel" aria-label="支払方式で絞り込み">
@@ -1070,20 +1072,20 @@
   <section class="panel kpi-band pay2-kpis" id="pay2-kpis" hidden aria-label="今月やること"></section>
 
   <section class="panel cal-body-panel">
-    <div class="pay2-summary" id="pay2-summary" hidden></div>
+    <!-- タブ「未着チェック」: 定期ベンダー（毎月・Nヶ月ごと・毎年）だけ -->
     <div class="pay2-check" id="pay2-check" hidden>
       <div class="pay2-check-head">
-        <button type="button" id="pay2-check-toggle" class="pay2-check-toggle" aria-expanded="true">📅 未着チェック（支払月）</button>
+        <span class="pay2-sec-title">支払月</span>
+        <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="未着チェックの支払月" title="月別の表は、この支払月までの6か月">
+        <span class="pay2-check-view" id="pay2-check-filter" role="group" aria-label="絞り込み"><button type="button" class="ui-chip is-on" data-f="need">要対応</button><button type="button" class="ui-chip" data-f="all">すべて</button></span>
         <span class="pay2-check-view" id="pay2-check-view" role="group" aria-label="表示の切り替え"><button type="button" class="ui-chip is-on" data-view="matrix">月別</button><button type="button" class="ui-chip" data-view="list">一覧</button></span>
-        <input type="month" id="pay2-check-month" class="pay2-sel" aria-label="受領チェックの支払月" title="月別の表は、この支払月までの6か月">
-        <label class="pay2-check-inline"><input type="checkbox" id="pay2-check-overdue"> 未着のみ</label>
         <span class="pay2-check-sum" id="pay2-check-sum"></span>
       </div>
       <div class="pay2-check-body" id="pay2-check-body" hidden></div>
     </div>
+    <!-- タブ「明細の突き合わせ」 -->
     <div class="pay2-check" id="pay2-stmt" hidden>
       <div class="pay2-check-head">
-        <button type="button" id="pay2-stmt-toggle" class="pay2-check-toggle" aria-expanded="false">💳 明細の突き合わせ（カード・銀行）</button>
         <select id="pay2-stmt-source" class="pay2-sel" aria-label="明細の種類"><option value="upsider">UPSIDER カード</option><option value="gmo">GMO あおぞら 銀行</option></select>
         <select id="pay2-stmt-month" class="pay2-sel" aria-label="明細の月"></select>
         <label class="pay2-check-toggle pay2-file-btn">明細を取り込む（CSV / xlsx）<input type="file" id="pay2-stmt-file" accept=".csv,.xlsx,.xls,text/csv" hidden></label>
@@ -1091,7 +1093,9 @@
       </div>
       <div class="pay2-check-body" id="pay2-stmt-body" hidden></div>
     </div>
-    <div class="pay2-tablewrap" id="pay2-detail-wrap">
+    <!-- タブ「台帳」: すべての請求書（合計はこの表の分） -->
+    <div class="pay2-summary" id="pay2-summary" hidden></div>
+    <div class="pay2-tablewrap" id="pay2-detail-wrap" hidden>
       <table class="pay2-table" id="pay2-detail-table"></table>
       <p class="pay2-empty" id="pay2-detail-empty" hidden></p>
     </div>

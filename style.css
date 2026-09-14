@@ -3288,6 +3288,12 @@
 .pay2-st-mute{ color: var(--text-faint); }
 .pay2-table td .ui-badge + .ui-badge{ margin-left:4px; }
 .pay2-summary .ui-chip{ align-self:center; }
+/* 請求書管理：タブ（未着チェック｜台帳｜明細の突き合わせ｜ベンダー・2026/09/14） */
+#pay2-tabs{ flex-wrap:wrap; }
+.pay2-tab-n{ margin-left:5px; font-family: var(--font-mono); font-size:10px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.pay2-tab-n:empty{ display:none; }
+.pay2-tab-n.is-alert{ color: var(--err); }
+.pay2-sec-title{ font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint); }
 
   /* ================= スモビジ（#view-smallbiz・app.smallbiz.js） =================
      KPI は既存の .kpi-band、カードは .panel＋.card-head を流用。色はアクセント1色＋意味色（ok/warn/err）だけ。
