@@ -14,6 +14,16 @@
 
 const JP_TZ = "Asia/Tokyo";
 
+// app.js の書式キャッシュと日付キー（subTodayParts が使う）。export しないので sync-check の対象外。
+function jstFmt(locale, opts){
+  var cache = jstFmt.cache || (jstFmt.cache = {});
+  var key = locale + JSON.stringify(opts);
+  return cache[key] || (cache[key] = new Intl.DateTimeFormat(locale, Object.assign({ timeZone: JP_TZ }, opts)));
+}
+function jstDateKey(d){
+  return jstFmt("en-CA", { year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
+}
+
 /* ---- date/time helpers (JST-anchored) ---- */
 
 export function keyParts(key){
@@ -71,8 +81,7 @@ export function subCadenceWord(s){
 }
 
 export function subTodayParts(){
-  return new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
-    .format(new Date()).split("-").map(Number);
+  return jstDateKey(new Date()).split("-").map(Number);
 }
 export function subYm(y, m){ return y + "-" + String(m).padStart(2, "0"); }
 export function subChargesInRange(s, fromYm, count){

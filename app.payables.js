@@ -283,7 +283,7 @@
       p2El("pay2-queue").addEventListener("change", function(){ p2.fQueue = this.checked; p2RenderDetail(); });
       p2El("pay2-unpaid").addEventListener("change", function(){ p2.fUnpaid = this.checked; p2RenderDetail(); });
       p2El("pay2-need-input").addEventListener("change", function(){ p2.fNeedInput = this.checked; p2RenderDetail(); });
-      p2El("pay2-q").addEventListener("input", function(){ p2.fQ = this.value; p2RenderDetail(); });
+      (function(el){ CP.debouncedSearch(el, function(){ p2.fQ = el.value; p2RenderDetail(); }); })(p2El("pay2-q"));
       p2El("pay2-show-excluded").addEventListener("change", function(){ p2.fExcluded = this.checked; p2RenderDetail(); });
       // 未着チェック（支払月・要対応/すべて・月別/一覧）
       p2El("pay2-check-month").addEventListener("change", function(){ p2RenderCheck(); p2RenderTabCounts(); });
@@ -323,7 +323,7 @@
       p2El("pay2-vendor-csv-btn").addEventListener("click", function(){ p2Csv("syslea_vendors"); });
       p2El("pay2-vendor-sheet-btn").addEventListener("click", p2SheetSync);
       // ベンダーマスタの検索・フィルタ
-      p2El("pay2-vendor-q").addEventListener("input", function(){ p2.vq = this.value; p2RenderVendors(); });
+      (function(el){ CP.debouncedSearch(el, function(){ p2.vq = el.value; p2RenderVendors(); }); })(p2El("pay2-vendor-q"));
       p2El("pay2-vendor-fm").addEventListener("change", function(){ p2.vFm = this.value; p2RenderVendors(); });
       p2El("pay2-vendor-fcat").addEventListener("change", function(){ p2.vFcat = this.value; p2RenderVendors(); });
       p2El("pay2-vendor-noemail").addEventListener("change", function(){ p2.vNoEmail = this.checked; p2RenderVendors(); });
@@ -1903,6 +1903,7 @@
       p2q.items = (res && res.items) || [];
       p2q.days = (res && res.days) || 60;
       p2q.truncated = !!(res && res.truncated);
+      p2q.metaMissing = (res && res.metaMissing) || 0;
       p2q.generatedAt = (res && res.generatedAt) || 0;
       p2q.cached = !!(res && res.cached);
       p2QueueRender();
@@ -1920,6 +1921,7 @@
       '<span class="pay2-sum-muted"> ／ 01.payment ' + c.parent + " ／ ラベルあり台帳なし " + c.labeled +
       " ／ スレッド新着 " + c.thread + " ／ 入口外 " + c.sweep +
       "（スレッド新着・入口外は直近" + p2q.days + "日" + (p2q.truncated ? "・件数が多いため先頭のみ" : "") + "）" +
+      (p2q.metaMissing ? " ／ <b>" + p2q.metaMissing + " 通は Gmail から取得できず表示していません（再読込で取り直し）</b>" : "") +
       (p2q.generatedAt ? " ／ " + p2TimeLabel(p2q.generatedAt) + " 時点" + (p2q.cached ? "（最新にするには再読込）" : "") : "") + "</span>";
     var junk = open.filter(function(it){ return it.source === "sweep" && it.suggest === "dismiss"; }).length;
     var jb = p2El("pay2-queue-dismiss-junk");

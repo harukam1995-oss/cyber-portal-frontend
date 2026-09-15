@@ -659,7 +659,7 @@
       renderContractsAll();
     });
     var q = document.getElementById("contracts-page-q");
-    if (q) q.addEventListener("input", function(){ contractsQuery = q.value; renderContractsAll(); });
+    if (q) CP.debouncedSearch(q, function(){ contractsQuery = q.value; renderContractsAll(); });
     var reqSel = document.getElementById("contracts-page-requester");
     if (reqSel) reqSel.addEventListener("change", function(){ contractsRequester = reqSel.value; renderContractsAll(); });
     var newBtn = document.getElementById("contracts-page-new");
@@ -1205,7 +1205,7 @@
       renderEventTrackersAll();
     });
     var q = document.getElementById("projects-page-q");
-    if (q) q.addEventListener("input", function(){ eventQuery = q.value; renderEventTrackersAll(); });
+    if (q) CP.debouncedSearch(q, function(){ eventQuery = q.value; renderEventTrackersAll(); });
     var sortSel = document.getElementById("projects-page-sort");
     if (sortSel) sortSel.addEventListener("change", function(){ eventPageSort = sortSel.value; renderProjectsPage(); });
     var newBtn = document.getElementById("projects-page-new");
@@ -2299,7 +2299,7 @@
       renderSlackPage();
     });
     var q = document.getElementById("slack-page-q");
-    if (q) q.addEventListener("input", function(){ slackQuery = q.value; renderSlackPage(); });
+    if (q) CP.debouncedSearch(q, function(){ slackQuery = q.value; renderSlackPage(); });
     var per = document.getElementById("slack-page-period");
     if (per) per.addEventListener("change", function(){ slackPeriod = per.value; renderSlackPage(); });
     var quiet = document.getElementById("slack-page-quiet");

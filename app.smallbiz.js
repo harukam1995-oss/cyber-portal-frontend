@@ -27,9 +27,10 @@
   function safeUrl(u){ u = String(u || ""); return /^(https?:\/\/|obsidian:\/\/)/i.test(u) ? u : ""; }
   function fmtStamp(ms){
     if (!ms) return "";
-    var d = new Date(ms);
-    var p = function(x){ return (x < 10 ? "0" : "") + x; };
-    return d.getFullYear() + "/" + p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    // 端末のタイムゾーンではなく日本時間で出す（他の画面と揃える）
+    var p = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+      .formatToParts(new Date(ms)).reduce(function(a, x){ a[x.type] = x.value; return a; }, {});
+    return p.year + "/" + p.month + "/" + p.day + " " + (p.hour === "24" ? "00" : p.hour) + ":" + p.minute;
   }
 
   async function load(){

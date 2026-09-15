@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 166;
+  var BUILD_V = 167;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -17,8 +17,22 @@
 
   /* ================= shared date/time helpers (all JST-anchored) ================= */
 
+  // Intl.DateTimeFormat は生成が重い（1回あたり数十µs。カレンダーの描画では日数×予定数ぶん作っていた）。
+  // 同じ書式は作ったものを使い回す（2026/09/15）。関数のプロパティに持つので、定義の順番に関係なく呼べる。
+  function jstFmt(locale, opts){
+    var cache = jstFmt.cache || (jstFmt.cache = {});
+    var key = locale + JSON.stringify(opts);
+    return cache[key] || (cache[key] = new Intl.DateTimeFormat(locale, Object.assign({ timeZone: JP_TZ }, opts)));
+  }
   function jstDateKey(d){
-    return new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
+    return jstFmt("en-CA", { year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
+  }
+  // 検索窓: 入力のたびに一覧を全部描き直していたので、打ち終わり（既定 150ms）を待つ。日本語の変換中は描き直さない（2026/09/15）。
+  function debouncedSearch(input, apply, ms){
+    var timer = null;
+    var run = function(){ clearTimeout(timer); timer = setTimeout(apply, ms || 150); };
+    input.addEventListener("input", function(e){ if (!e.isComposing) run(); });
+    input.addEventListener("compositionend", run);
   }
   function keyParts(key){
     var p = key.split("-").map(Number);
@@ -50,12 +64,12 @@
   function fmtEventTime(edge){
     if (!edge) return "終日";
     if (edge.dateTime){
-      return new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit", hour12:false }).format(new Date(edge.dateTime));
+      return jstFmt("ja-JP", { hour:"2-digit", minute:"2-digit", hour12:false }).format(new Date(edge.dateTime));
     }
     return "終日";
   }
   function jstTimeHHMM(dtStr){
-    return new Intl.DateTimeFormat("en-GB", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit", hour12:false }).format(new Date(dtStr));
+    return jstFmt("en-GB", { hour:"2-digit", minute:"2-digit", hour12:false }).format(new Date(dtStr));
   }
   function minutesToHHMM(m){
     var h = Math.floor(m / 60), mm = m % 60;
@@ -262,7 +276,7 @@
     return apiErrorMessage(err, "保存");
   }
   function fmtSavedAt(ms){
-    return new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit" }).format(new Date(ms));
+    return jstFmt("ja-JP", { hour:"2-digit", minute:"2-digit" }).format(new Date(ms));
   }
   function uid(){
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -359,39 +373,44 @@
     return { h: h, m: parseInt(parts.minute,10), s: parseInt(parts.second,10) };
   }
 
+  // 値が変わったときだけ書く（毎秒 約20要素に同じ値を書き直していた）
+  function setTextIfChanged(el, v){ if (el && el.textContent !== v) el.textContent = v; }
   function tick(){
+    // タブが裏にあるときは止める（戻ったら visibilitychange ですぐ更新する）
+    if (document.hidden) return;
     var now = new Date();
     var tStr = timeFmt.format(now), sStr = secFmt.format(now);
     var mdStr = dateFmt.format(now), yrStr = yearFmt.format(now);
     var dowStr = dowFmt.format(now);
-    elTime.textContent = tStr;
-    elSec.textContent = sStr;
-    elMd.textContent = mdStr;
-    elYr.textContent = yrStr;
-    elDow.textContent = dowStr;
+    setTextIfChanged(elTime, tStr);
+    setTextIfChanged(elSec, sStr);
+    setTextIfChanged(elMd, mdStr);
+    setTextIfChanged(elYr, yrStr);
+    setTextIfChanged(elDow, dowStr);
     if (pvTime){
-      pvTime.textContent = tStr; pvSec.textContent = sStr;
-      pvMd.textContent = mdStr; pvYr.textContent = yrStr; pvDow.textContent = dowStr;
+      setTextIfChanged(pvTime, tStr); setTextIfChanged(pvSec, sStr);
+      setTextIfChanged(pvMd, mdStr); setTextIfChanged(pvYr, yrStr); setTextIfChanged(pvDow, dowStr);
     }
     if (bizTime){
-      bizTime.textContent = tStr; bizSec.textContent = sStr;
-      bizMd.textContent = mdStr; bizYr.textContent = yrStr; bizDow.textContent = dowStr;
+      setTextIfChanged(bizTime, tStr); setTextIfChanged(bizSec, sStr);
+      setTextIfChanged(bizMd, mdStr); setTextIfChanged(bizYr, yrStr); setTextIfChanged(bizDow, dowStr);
     }
 
     var p = jstParts(now);
     var secondsToday = p.h * 3600 + p.m * 60 + p.s;
     var frac = secondsToday / 86400;
     elRing.setAttribute("stroke-dashoffset", String(RING_LEN * (1 - frac)));
-    elQuote.textContent = timeMessageFor(p.h * 60 + p.m);
+    setTextIfChanged(elQuote, timeMessageFor(p.h * 60 + p.m));
 
     var pct = Math.round(frac * 100);
-    elProgressPct.textContent = pct + "%";
-    elProgressFill.style.width = pct + "%";
+    setTextIfChanged(elProgressPct, pct + "%");
+    if (elProgressFill.style.width !== pct + "%") elProgressFill.style.width = pct + "%";
 
-    elSync.textContent = "LAST SYNC " + timeFmt.format(now);
+    setTextIfChanged(elSync, "LAST SYNC " + timeFmt.format(now));
   }
   tick();
   setInterval(tick, 1000);
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden) tick(); });
 
   /* ================= weather (Open-Meteo 経由・バックエンド) =================
      APIキー不要の無料天気API。既定は柏市。バックエンド /api/weather が
@@ -530,7 +549,11 @@
     if (window.matchMedia && window.matchMedia("(max-width: 640px)").matches) return;
     var pick = HERO_ILLUSTRATIONS[Math.floor(Math.random() * HERO_ILLUSTRATIONS.length)];
     img.addEventListener("load", function(){ scene.classList.add("has-illustration"); });
-    img.src = pick;
+    // ログイン画面の裏では見えないので、ログインしてから読む（ログイン中は Firebase の読み込みに帯域を譲る）
+    var heroLoaded = false;
+    var loadHero = function(){ if (heroLoaded) return; heroLoaded = true; img.src = pick; };
+    if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser) loadHero();
+    else document.addEventListener("cyberportal:authready", loadHero, { once: true });
   })();
 
 
@@ -1048,8 +1071,8 @@
       el.innerHTML = "";
       events.forEach(function(ev){
         var d = ev.start.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + "T00:00:00+09:00");
-        var dateStr = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, month: "2-digit", day: "2-digit" }).format(d);
-        var dow = new Intl.DateTimeFormat("ja-JP", { timeZone: JP_TZ, weekday: "short" }).format(d);
+        var dateStr = jstFmt("ja-JP", { month: "2-digit", day: "2-digit" }).format(d);
+        var dow = jstFmt("ja-JP", { weekday: "short" }).format(d);
         var li = document.createElement("li");
         li.className = "pv-up-item";
         var dot = document.createElement("span"); dot.className = "pv-up-dot";
@@ -1080,8 +1103,7 @@
   // 次回課金日を { y, m, d } で返す。基準月(アンカー)から周期ぶんずつ前進して、
   // 今日以降で最初に来る日を求める。毎月(周期1ヶ月)は当月を基準にできる。
   function subNextParts(s){
-    var p = new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
-      .format(new Date()).split("-").map(Number);
+    var p = jstDateKey(new Date()).split("-").map(Number);
     var todayNum = p[0] * 10000 + p[1] * 100 + p[2];
     var step = subEvery(s) * (subUnit(s) === "year" ? 12 : 1); // ヶ月単位
     var day = Math.min(31, Math.max(1, Math.round(Number(s.day) || 1)));
@@ -1111,8 +1133,7 @@
     return subCadenceWord(s) + " " + mo + "/" + day;
   }
   function subTodayParts(){
-    return new Intl.DateTimeFormat("en-CA", { timeZone: JP_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
-      .format(new Date()).split("-").map(Number);
+    return jstDateKey(new Date()).split("-").map(Number);
   }
   function subYm(y, m){ return y + "-" + String(m).padStart(2, "0"); }
   /* s の課金月を列挙する。subNextParts と同じアンカー(2年前の基準月)から周期ぶんずつ
@@ -1347,7 +1368,8 @@
      周期 daily は分母7、days(曜日指定)は分母=その週の対象曜日数。
      単位 / 一時停止(active) / 色分け(color) / ストリーク(backend が streak を返す) に対応。 */
   var HABIT_COLOR_CSS = {
-    cyan: "var(--cyan)", magenta: "var(--magenta)", green: "var(--ok)",
+    // cyan と magenta は B/アンバー化で同じ色（#ff8f3f）になり、色見本が2つ同じに見えていた。magenta は収支の支出と同じ暖色の中間色にする
+    cyan: "var(--cyan)", magenta: "#a8836a", green: "var(--ok)",
     amber: "var(--warn)", violet: "var(--violet)", pink: "#ff8fc7"
   };
   var HABIT_COLOR_KEYS = ["cyan", "magenta", "green", "amber", "violet", "pink"];
@@ -2512,7 +2534,7 @@
     var key = jstDateKey(d);
     if (key < dayKey) return 0;
     if (key > dayKey) return 1440;
-    var parts = new Intl.DateTimeFormat("en-US", { timeZone: JP_TZ, hour:"2-digit", minute:"2-digit", hour12:false }).formatToParts(d).reduce(function(a,p){ a[p.type]=p.value; return a; }, {});
+    var parts = jstFmt("en-US", { hour:"2-digit", minute:"2-digit", hour12:false }).formatToParts(d).reduce(function(a,p){ a[p.type]=p.value; return a; }, {});
     var h = parseInt(parts.hour === "24" ? "0" : parts.hour, 10), m = parseInt(parts.minute, 10);
     return h * 60 + m;
   }
@@ -2669,21 +2691,28 @@
   // 描画後に実測して、はみ出すチップだけ隠し「+N件」に畳む。
   function fitMonthChips(){
     var MORE_H = 16; // 「+N件」行の見込み高さ
-    calGridContainer.querySelectorAll(".cal-month-cell").forEach(function(cell){
-      var chips = Array.prototype.slice.call(cell.querySelectorAll(".cal-month-chip"));
-      var more = cell.querySelector(".cal-month-more");
-      chips.forEach(function(c){ c.hidden = false; });
-      if (more) more.hidden = true;
-      if (!chips.length) return;
-      var bottom = cell.getBoundingClientRect().bottom - 6; // セル下 padding ぶん
-      var shown = chips.length;
-      for (var i = 0; i < chips.length; i++){
-        var reserve = (i < chips.length - 1) ? MORE_H : 0; // 続きがあるなら +N 行を確保
-        if (chips[i].getBoundingClientRect().bottom > bottom - reserve){ shown = i; break; }
+    // セルごとに「表示→位置を読む→隠す」を繰り返すとレイアウトの計算がセル数ぶん走っていたので、
+    // 全セルまとめて ①全部表示 ②位置を読む ③はみ出しを隠す の順にする（2026/09/15。セルの高さは 1fr で中身に依らない）。
+    var cells = Array.prototype.slice.call(calGridContainer.querySelectorAll(".cal-month-cell")).map(function(cell){
+      return { cell: cell, chips: Array.prototype.slice.call(cell.querySelectorAll(".cal-month-chip")), more: cell.querySelector(".cal-month-more") };
+    });
+    cells.forEach(function(c){
+      c.chips.forEach(function(ch){ ch.hidden = false; });
+      if (c.more) c.more.hidden = true;
+    });
+    cells.forEach(function(c){
+      c.shown = c.chips.length;
+      if (!c.chips.length) return;
+      var bottom = c.cell.getBoundingClientRect().bottom - 6; // セル下 padding ぶん
+      for (var i = 0; i < c.chips.length; i++){
+        var reserve = (i < c.chips.length - 1) ? MORE_H : 0; // 続きがあるなら +N 行を確保
+        if (c.chips[i].getBoundingClientRect().bottom > bottom - reserve){ c.shown = i; break; }
       }
-      if (shown >= chips.length) return;
-      for (var j = shown; j < chips.length; j++) chips[j].hidden = true;
-      if (more){ more.hidden = false; more.textContent = "+" + (chips.length - shown) + "件"; }
+    });
+    cells.forEach(function(c){
+      if (c.shown >= c.chips.length) return;
+      for (var j = c.shown; j < c.chips.length; j++) c.chips[j].hidden = true;
+      if (c.more){ c.more.hidden = false; c.more.textContent = "+" + (c.chips.length - c.shown) + "件"; }
     });
   }
 
@@ -3207,6 +3236,20 @@
     if (homePayQueueNum) homePayQueueNum.textContent = String(n);
   }
   if (homePayQueueBtn) homePayQueueBtn.addEventListener("click", function(){ showView("payables"); });
+
+  /* ---- HOME の INBOX に出す「Drive バックアップが古い」行（2026/09/15）----
+     週次の自動バックアップ（GitHub Actions）が止まっていても画面では気づけなかったため。最終から8日以上（または未実行）で出す。 */
+  var homeBackupBtn = document.getElementById("home-backup-btn");
+  function applyHomeBackup(bk){
+    if (!homeBackupBtn || !bk) return;
+    var lastAt = Number(bk.lastAt) || 0;
+    var days = lastAt ? Math.floor((Date.now() - lastAt) / 86400000) : -1;
+    homeBackupBtn.hidden = !(days < 0 || days >= 8);
+    var num = document.getElementById("home-backup-num"), label = document.getElementById("home-backup-label");
+    if (num) num.textContent = days < 0 ? "—" : String(days);
+    if (label) label.textContent = days < 0 ? "Drive バックアップがまだありません" : "日 Drive バックアップがありません";
+  }
+  if (homeBackupBtn) homeBackupBtn.addEventListener("click", function(){ openSettings(); });
 
   /* ---- HOME の INBOX に出す「期限切れタスク」行 ----
      タスク管理タブを開かないと期限切れに気づけなかったため。件数は tasksState から
@@ -4193,7 +4236,12 @@
       mailState.query = q;
       reloadMailFromFirstPage();
     };
-    mailSearchInput.addEventListener("input", function(){
+    mailSearchInput.addEventListener("input", function(e){
+      if (e.isComposing) return; // 日本語の変換中は検索しない（確定は compositionend で拾う）
+      clearTimeout(mailSearchTimer);
+      mailSearchTimer = setTimeout(runMailSearch, 350);
+    });
+    mailSearchInput.addEventListener("compositionend", function(){
       clearTimeout(mailSearchTimer);
       mailSearchTimer = setTimeout(runMailSearch, 350);
     });
@@ -4871,9 +4919,12 @@
     var roots = matched.filter(function(t){ return !t.parentId || !inMatched[t.parentId]; }).sort(cmp);
     // 子は常に期限順（親の下でのグルーピングはしない）
     var byDue = taskComparator("due");
+    // 親ごとに matched 全体を探していた（件数の2乗）ので、先に親 id → 子の表を作る
+    var childrenOf = {};
+    matched.forEach(function(t){ if (t.parentId && inMatched[t.parentId]) (childrenOf[t.parentId] = childrenOf[t.parentId] || []).push(t); });
     function appendTree(ul, root){
       ul.appendChild(buildTaskRow(root, todayKey, 0));
-      matched.filter(function(t){ return t.parentId === root.id; }).sort(byDue).forEach(function(ch){
+      (childrenOf[root.id] || []).slice().sort(byDue).forEach(function(ch){
         ul.appendChild(buildTaskRow(ch, todayKey, 1));
       });
     }
@@ -5272,7 +5323,7 @@
   });
 
   var taskSearchInput = document.getElementById("task-search");
-  if (taskSearchInput) taskSearchInput.addEventListener("input", function(){
+  if (taskSearchInput) debouncedSearch(taskSearchInput, function(){
     taskSearchQuery = taskSearchInput.value;
     renderTasks();
   });
@@ -5626,13 +5677,19 @@
   }
   // escapeHtml 済みの文字列を返す。terms は小文字。
   function highlightHtml(text, terms){
-    var esc = escapeHtml(text || "");
-    if (!terms.length) return esc;
-    // 長い語から当てて、短い語が先に食い合わないようにする
-    var pattern = terms.slice().sort(function(a, b){ return b.length - a.length; })
-      .map(function(t){ return escapeRegExp(escapeHtml(t)); }).join("|");
-    if (!pattern) return esc;
-    return esc.replace(new RegExp("(" + pattern + ")", "gi"), "<mark>$1</mark>");
+    var raw = String(text || "");
+    if (!terms.length) return escapeHtml(raw);
+    // 生の文字列で位置を探してから、区間ごとにエスケープする（2026/09/15。以前はエスケープ後の文字列に当てていて、
+    // 「R&D」を「amp」で検索すると "&amp;" の中身に当たり表示が崩れていた）。長い語から当てて、短い語が先に食い合わないようにする
+    var pattern = terms.slice().sort(function(a, b){ return b.length - a.length; }).map(escapeRegExp).filter(Boolean).join("|");
+    if (!pattern) return escapeHtml(raw);
+    var re = new RegExp(pattern, "gi"), out = "", last = 0, m;
+    while ((m = re.exec(raw))){
+      if (!m[0]){ re.lastIndex++; continue; }
+      out += escapeHtml(raw.slice(last, m.index)) + "<mark>" + escapeHtml(m[0]) + "</mark>";
+      last = m.index + m[0].length;
+    }
+    return out + escapeHtml(raw.slice(last));
   }
   function escapeRegExp(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
@@ -5908,7 +5965,7 @@
   });
   wireAcctTabs("note-tag-tabs", function(){ return noteFormTag; }, function(v){ noteFormTag = v; });
 
-  noteSearchInput.addEventListener("input", function(){
+  debouncedSearch(noteSearchInput, function(){
     noteSearchQuery = noteSearchInput.value;
     renderNotes();
   });
@@ -6414,7 +6471,24 @@
     var kb = s.lastBytes ? " ・ " + Math.max(1, Math.round(s.lastBytes / 1024)) + "KB" : "";
     return "Drive バックアップ: 最終 " + when + " ・ " + (s.fileCount || 1) + "世代" + kb;
   }
+  // Firestore の使用量の目安（バックの db_usage.js が数えた今日＝太平洋時間の分）。設定を開いたときに取る（2026/09/15）。
+  async function refreshDbUsage(){
+    var el = document.getElementById("settings-db-usage");
+    if (!el) return;
+    el.textContent = "データベース使用量: 確認中…";
+    try {
+      var u = await apiFetch("/api/usage");
+      var lim = u.limits || { reads: 50000, writes: 20000 };
+      var num = function(n){ return (Number(n) || 0).toLocaleString("ja-JP"); };
+      var pct = function(n, max){ return Math.round((Number(n) || 0) / max * 100); };
+      var rp = pct(u.reads, lim.reads), wp = pct(u.writes, lim.writes);
+      el.textContent = "データベース使用量（今日の目安）: 読み取り " + num(u.reads) + " / " + num(lim.reads) + "（" + rp + "%）・書き込み " +
+        num(u.writes) + " / " + num(lim.writes) + "（" + wp + "%）" + (Math.max(rp, wp) >= 70 ? " ・ 上限の7割を超えています" : "") +
+        " ・ 毎日16時（冬は17時）にリセット";
+    } catch(e){ el.textContent = "データベース使用量: 取得できませんでした"; }
+  }
   async function refreshBackupState(){
+    refreshDbUsage();
     var el = document.getElementById("settings-backup-state");
     if (!el) return;
     el.textContent = "Drive バックアップ: 確認中…";
@@ -7358,6 +7432,7 @@
     // HOME のために追加の往復を増やさない(業務タブを開けば正しい件数になる)。
     applyHomeContractAlerts(b.contracts);
     applyHomePayQueue(b.paymentQueue);
+    applyHomeBackup(b.backup);
   }
 
   async function warmOnAuthReady(){
@@ -7421,6 +7496,7 @@
     mkHabitIconBtn: mkHabitIconBtn,
     showView: showView,
     makeMasterDetail: makeMasterDetail,
+    debouncedSearch: debouncedSearch,
     // app.money.js(サブスク管理・今月の収支)が使う。計算の純関数は本体に残してある。
     finCurrentMonth: finCurrentMonth, finDayLabel: finDayLabel, finMonthDaysLeft: finMonthDaysLeft, finMonthLabel: finMonthLabel, finShiftMonth: finShiftMonth, finSignedYen: finSignedYen, finYen: finYen, startGoogleConnect: startGoogleConnect, subCategoryOf: subCategoryOf, subChargesInRange: subChargesInRange, subDaysLabel: subDaysLabel, subDaysUntil: subDaysUntil, subEvery: subEvery, subMonthlyAmount: subMonthlyAmount, subNextDateLabel: subNextDateLabel, subNextKey: subNextKey, subNextParts: subNextParts, subNorm: subNorm, subTodayParts: subTodayParts, subUnit: subUnit, subWhenLabel: subWhenLabel, subYen: subYen, subYm: subYm,
     // モジュールのモーダルを Esc で閉じられるようにする(上の Esc スタックに足す)。
