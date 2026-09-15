@@ -73,8 +73,9 @@ test("sw.js SHELL and CORE files exist, and CORE is inside SHELL", () => {
    （増やす変更はテストが落ちる＝方針に戻す）。コメント内の記述は数えない。 */
 // 2026/09/14 CSS 整理(v2.33.70)後の値。残る gradient は機能のもの（ドット地・スケルトン・「色なし」の斜線・
 // ヒーロー下端のフェード）、backdrop-filter は `none` 以外の1件＝パネルの打ち消し側ではなくカウント対象外の書式ゆれ。
+// 2026/09/15: .event-form の入力欄の基本ルールを :where() で包み、Phase 1〜4 の上書きを元のルールへ畳んで !important 71→9。
 const CSS_LIMITS = {
-  "!important": 71,
+  "!important": 9,
   "gradient(": 6,
   "backdrop-filter (not none)": 1,
   "text-shadow (not none)": 0,
