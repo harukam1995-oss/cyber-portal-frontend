@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 168;
+  var BUILD_V = 169;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -868,14 +868,14 @@
       loadMailLabels();
     }
     // 読み込みに失敗していたら、開き直したときに読み直す（以前は初回だけで、空のまま戻らなかった）
-    if (name === "tasks" && (!tasksInitialized || (tasksLoadDone && !tasksLoadOk))){
+    if (name === "tasks" && (!tasksInitialized || (tasksStore.loadDone && !tasksStore.loadOk))){
       tasksInitialized = true;
       initTasks();
     } else if (name === "tasks" && !projectsLoaded){
       // ログイン直後の先読みではプロジェクト一覧を取っていないので、タスク管理ページを初めて開いたときに取る
       ensureProjectsLoaded().then(function(){ renderTaskSidebar(); renderTasks(); });
     }
-    if (name === "notes" && (!notesInitialized || (notesLoadDone && !notesLoadOk))){
+    if (name === "notes" && (!notesInitialized || (notesStore.loadDone && !notesStore.loadOk))){
       notesInitialized = true;
       initNotes();
     }
@@ -2315,7 +2315,7 @@
     tasks: async function(layer){
       var today = jstDateKey(new Date());
       // タスクは読み込み済みなら手元の一覧を使う（/api/tasks を読み直さない・編集もすぐ反映される）
-      var list = tasksLoadOk ? tasksState : ((await apiFetch("/api/tasks")).tasks || []);
+      var list = tasksStore.loadOk ? tasksState : ((await apiFetch("/api/tasks")).tasks || []);
       return list
         .filter(function(t){ return t && t.due && !t.done; })
         .map(function(t){ return calItem(layer, t.due, t.dueTime || "", t.text || "(無題)", today, false); });
@@ -2378,7 +2378,7 @@
     var wanted = CAL_LAYERS.filter(function(l){ return calLayers[l.key]; });
     wanted.forEach(function(l){
       var c = calLayerCache[l.key];
-      if (c && (now - c.at > CAL_LAYER_TTL_MS || (l.key === "tasks" && tasksLoadOk))) calLayerCache[l.key] = null;
+      if (c && (now - c.at > CAL_LAYER_TTL_MS || (l.key === "tasks" && tasksStore.loadOk))) calLayerCache[l.key] = null;
     });
     await Promise.all(wanted.map(function(l){
       if (calLayerCache[l.key]) return null;
@@ -4448,7 +4448,7 @@
   var tasksState = [];
   var tasksStatusBar = document.getElementById("tasks-status-bar");
   var taskList = document.getElementById("task-list");
-  var taskSaveTimer = null;
+
   var taskFilterTag = "all";      // アカウント(all/haruka/syslea) — 上部タブ
   var taskTagFilter = "";         // 自由タグでの絞り込み("" = なし) — サイドバー
   var taskStatusTab = "pending";  // "pending" | "done" — メイン上部タブ
@@ -4539,10 +4539,8 @@
     }
     return chip;
   }
-  // モーダルの「タグ（自由）」入力の下に、現在の入力内容をチップでプレビュー(× で削除)
-  function renderTaskTagChips(){
-    var input = document.getElementById("task-tags-input");
-    var wrap = document.getElementById("task-tags-chips");
+  // モーダルの「タグ（自由）」入力の下に、現在の入力内容をチップでプレビュー(× で削除)。タスク・メモ共通。
+  function renderFreeTagChips(input, wrap, rerender){
     if (!input || !wrap) return;
     var tags = parseFreeTags(input.value);
     wrap.innerHTML = "";
@@ -4550,9 +4548,12 @@
     tags.forEach(function(t){
       wrap.appendChild(taskFreeTagChip(t, function(){
         input.value = tags.filter(function(x){ return x !== t; }).join(", ");
-        renderTaskTagChips();
+        rerender();
       }));
     });
+  }
+  function renderTaskTagChips(){
+    renderFreeTagChips(document.getElementById("task-tags-input"), document.getElementById("task-tags-chips"), renderTaskTagChips);
   }
   // サイドバー(ビュー / プロジェクト / タグ)を描く。件数は「現在のアカウントタブ＋
   // 未完了/完了タブ」を通した集合に対して数える(＝その項目を選んだら何件出るか)。
@@ -4663,29 +4664,85 @@
     tasksStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
-  function initTasks(){
-    tasksLoadPromise = loadTasksFromApi();
-    return tasksLoadPromise;
-  }
-  async function loadTasksFromApi(){
-    tasksLoadDone = false;
-    setTasksStatus("読み込み中…");
-    try{
-      var res = await apiFetch("/api/tasks");
-      tasksState = res.tasks || [];
-      tasksLoadOk = true;
-      setTasksStatus("ポータルに保存済み");
-    } catch(err){
-      // 以前読めていた一覧は残す(空にすると次の保存＝全置換で全部消える)。
-      if (!tasksLoadOk) tasksState = [];
-      setTasksStatus(apiErrorMessage(err, "タスク"), "err");
+  /* ---- タスク/メモの読み込みと一括保存（2026/09/15 に共通化。以前はタスクとメモに同じ処理が2本あった）----
+     PUT <path>/bulk はコレクションの全置換なので、読み込みに成功するまでは保存しない（空の一覧で既存を消さない）。
+     保存は 600ms まとめてから送り、送信中に次の保存が来たら、終わってから最新の一覧でもう1回送る
+     （リトライで遅れた古い一覧が後から着いて新しい保存を上書きするのを防ぐ）。
+     cfg: { path, key, label, setStatus(text, cls), get(), set(list), onInit(), onLoaded() }
+     返す store: loadOk / loadDone（読み取り用）・init()・ensure()（読み込み成功を待つ・失敗済みなら読み直す）・schedule()・saveNow() */
+  function makeBulkStore(cfg){
+    var s = { loadDone: false, loadOk: false };
+    var promise = null, timer = null, saving = false, queued = false;
+    async function load(){
+      s.loadDone = false;
+      cfg.setStatus("読み込み中…");
+      try{
+        var res = await apiFetch(cfg.path);
+        cfg.set(res[cfg.key] || []);
+        s.loadOk = true;
+        cfg.setStatus("ポータルに保存済み");
+      } catch(err){
+        // 以前読めていた一覧は残す(空にすると次の保存＝全置換で全部消える)。
+        if (!s.loadOk) cfg.set([]);
+        cfg.setStatus(apiErrorMessage(err, cfg.label), "err");
+      }
+      s.loadDone = true;
+      cfg.onLoaded();
     }
-    tasksLoadDone = true;
-    renderTasks();
-    // プロジェクト一覧(サイドバー・モーダルのセレクト用)。タスク管理ページが見えているときだけ取る
-    // (ログイン直後の先読みで毎回 /api/event-trackers を読んでいた)。モーダルを開くときは各所で ensureProjectsLoaded する。
-    if (isViewShown("tasks")) ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
+    s.init = function(){ promise = load(); return promise; };
+    // 作る/触る前にこれで読み込み完了(成功)を待つ。失敗済みなら読み直す。コールドスタート(~50秒)でも途中で諦めない。
+    s.ensure = function(){
+      if (!promise || (s.loadDone && !s.loadOk)){ if (cfg.onInit) cfg.onInit(); s.init(); }
+      return promise.then(function(){ return s.loadOk; });
+    };
+    s.schedule = function(){
+      cfg.setStatus("保存中…");
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(s.saveNow, 600);
+    };
+    s.saveNow = async function(){
+      if (!s.loadOk){
+        cfg.setStatus(cfg.label + "を読み込めていないため保存していません。再読み込みしてください。", "err");
+        return;
+      }
+      if (saving){ queued = true; return; }
+      saving = true;
+      try{
+        var list = cfg.get();
+        var body = {};
+        body[cfg.key] = list;
+        await apiFetch(cfg.path + "/bulk", {
+          method: "PUT",
+          // 空の一覧での全置換はサーバーが拒否する。本当に最後の1件を消したときだけ許可する。
+          headers: list.length ? {} : { "X-Allow-Empty": "1" },
+          body: JSON.stringify(body)
+        });
+        if (!queued) cfg.setStatus("保存済み ・ " + fmtSavedAt(Date.now()));
+      } catch(err){
+        console.error("[" + cfg.key + " save] failed:", err);
+        cfg.setStatus(artifactErrorMessage(err), "err");
+      } finally {
+        saving = false;
+        if (queued){ queued = false; s.saveNow(); }
+      }
+    };
+    return s;
   }
+  // フォームの保存前: 一覧の読み込み前(コールドスタート中・メール/メモからのタスク化直後)に足すと、全置換の保存で既存が消える。
+  // 読み込みの完了を待ち、失敗なら保存しない。待っている間にモーダルが閉じられたら false。タスク・メモ共通。
+  async function formWaitsForStore(store, errEl, modalEl, noun){
+    if (store.loadOk) return true;
+    errEl.hidden = false;
+    errEl.textContent = noun + "一覧を読み込み中です…";
+    if (!(await store.ensure())){
+      errEl.textContent = noun + "一覧を読み込めませんでした。既存の" + noun + "を消さないよう保存を止めています。時間をおいてもう一度保存してください。";
+      return false;
+    }
+    errEl.hidden = true;
+    return !modalEl.hidden;
+  }
+
+  function initTasks(){ return tasksStore.init(); }
 
   function buildTaskRow(task, todayKey, depth){
     var li = document.createElement("li");
@@ -5101,7 +5158,7 @@
     var wrap = document.createElement("div");
     wrap.className = "task-empty empty-state";
     // 読み込みに失敗しているのに「タスクはありません」と出すと、0件だと思って追加してしまう。
-    if (tasksLoadDone && !tasksLoadOk){
+    if (tasksStore.loadDone && !tasksStore.loadOk){
       wrap.innerHTML = '<div class="empty-title">タスクを読み込めませんでした</div>' +
         '<div class="empty-sub">通信状態を確認して、もう一度読み込んでください。</div>' +
         '<button type="button" class="ev-btn">再読み込み</button>';
@@ -5154,16 +5211,21 @@
     scheduleTasksSave();
   }
 
-  // PUT /api/tasks/bulk は全置換なので、一覧の読み込みが成功する前に1件足して保存すると
-  // 既存タスクが消える。作る/触る前にこれで読み込み完了(成功)を待つ(モーダルの保存・app.jimuhack.js)。
-  // 失敗済みなら読み直す。コールドスタート(~50秒)でも途中で諦めない。
-  var tasksLoadDone = false;
-  var tasksLoadOk = false;
-  var tasksLoadPromise = null;
-  function ensureTasksLoaded(){
-    if (!tasksLoadPromise || (tasksLoadDone && !tasksLoadOk)){ tasksInitialized = true; initTasks(); }
-    return tasksLoadPromise.then(function(){ return tasksLoadOk; });
-  }
+  // PUT /api/tasks/bulk は全置換なので、一覧の読み込みが成功する前に1件足して保存すると既存タスクが消える。
+  // 作る/触る前に ensureTasksLoaded で読み込み完了(成功)を待つ(モーダルの保存・app.jimuhack.js)。
+  var tasksStore = makeBulkStore({
+    path: "/api/tasks", key: "tasks", label: "タスク", setStatus: setTasksStatus,
+    get: function(){ return tasksState; },
+    set: function(v){ tasksState = v; },
+    onInit: function(){ tasksInitialized = true; },
+    onLoaded: function(){
+      renderTasks();
+      // プロジェクト一覧(サイドバー・モーダルのセレクト用)。タスク管理ページが見えているときだけ取る
+      // (ログイン直後の先読みで毎回 /api/event-trackers を読んでいた)。モーダルを開くときは各所で ensureProjectsLoaded する。
+      if (isViewShown("tasks")) ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
+    }
+  });
+  function ensureTasksLoaded(){ return tasksStore.ensure(); }
   // 本文・自由タグ・期限・URL・備考を入れた状態で新規タスクモーダルを開く(保存はユーザーが押す)。
   function openNewTaskPreset(p){
     p = p || {};
@@ -5181,39 +5243,7 @@
     });
   }
 
-  function scheduleTasksSave(){
-    setTasksStatus("保存中…");
-    if (taskSaveTimer) clearTimeout(taskSaveTimer);
-    taskSaveTimer = setTimeout(saveTasksNow, 600);
-  }
-
-  var tasksSaving = false, tasksSaveQueued = false;
-  async function saveTasksNow(){
-    // 全置換なので、一覧を読めていない状態では送らない(送ると既存のタスクが消える)。
-    if (!tasksLoadOk){
-      setTasksStatus("タスクを読み込めていないため保存していません。再読み込みしてください。", "err");
-      return;
-    }
-    // 送信中に次の保存が来たら、終わってから最新の一覧でもう1回送る
-    // (リトライで遅れた古い一覧が後から着いて新しい保存を上書きするのを防ぐ)。
-    if (tasksSaving){ tasksSaveQueued = true; return; }
-    tasksSaving = true;
-    try{
-      await apiFetch("/api/tasks/bulk", {
-        method: "PUT",
-        // 空の一覧での全置換はサーバーが拒否する。本当に最後の1件を消したときだけ許可する。
-        headers: tasksState.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ tasks: tasksState })
-      });
-      if (!tasksSaveQueued) setTasksStatus("保存済み ・ " + fmtSavedAt(Date.now()));
-    } catch(err){
-      console.error("[saveTasksNow] failed:", err);
-      setTasksStatus(artifactErrorMessage(err), "err");
-    } finally {
-      tasksSaving = false;
-      if (tasksSaveQueued){ tasksSaveQueued = false; saveTasksNow(); }
-    }
-  }
+  function scheduleTasksSave(){ tasksStore.schedule(); }
 
   wireAcctTabs("task-filter-tabs", function(){ return taskFilterTag; }, function(v){
     taskFilterTag = v;
@@ -5444,18 +5474,7 @@
 
   taskForm.addEventListener("submit", async function(e){
     e.preventDefault();
-    // 一覧の読み込み前(コールドスタート中・メール/メモからのタスク化直後)に足すと、
-    // 全置換の保存で既存のタスクが消える。読み込みの完了を待ち、失敗なら保存しない。
-    if (!tasksLoadOk){
-      taskFormError.hidden = false;
-      taskFormError.textContent = "タスク一覧を読み込み中です…";
-      if (!(await ensureTasksLoaded())){
-        taskFormError.textContent = "タスク一覧を読み込めませんでした。既存のタスクを消さないよう保存を止めています。時間をおいてもう一度保存してください。";
-        return;
-      }
-      taskFormError.hidden = true;
-      if (taskModal.hidden) return; // 待っている間に閉じられた
-    }
+    if (!(await formWaitsForStore(tasksStore, taskFormError, taskModal, "タスク"))) return;
     var text = taskTitleInput.value.trim();
     if (!text){
       taskFormError.hidden = false;
@@ -5512,7 +5531,7 @@
   var notesState = [];
   var notesStatusBar = document.getElementById("notes-status-bar");
   var notesGrid = document.getElementById("notes-grid");
-  var noteSaveTimer = null;
+
   var editingNoteId = null; // null = creating a new note
   var noteFilterTag = "all";
   var noteSearchQuery = "";
@@ -5538,33 +5557,16 @@
     notesStatusBar.className = "cal-status-chip" + (cls ? " " + cls : "");
   }
 
-  // タスクと同じく PUT /api/notes/bulk は全置換。読み込みに成功するまでは保存しない。
-  var notesLoadDone = false;
-  var notesLoadOk = false;
-  var notesLoadPromise = null;
-  function initNotes(){
-    notesLoadPromise = loadNotesFromApi();
-    return notesLoadPromise;
-  }
-  function ensureNotesLoaded(){
-    if (!notesLoadPromise || (notesLoadDone && !notesLoadOk)){ notesInitialized = true; initNotes(); }
-    return notesLoadPromise.then(function(){ return notesLoadOk; });
-  }
-  async function loadNotesFromApi(){
-    notesLoadDone = false;
-    setNotesStatus("読み込み中…");
-    try{
-      var res = await apiFetch("/api/notes");
-      notesState = res.notes || [];
-      notesLoadOk = true;
-      setNotesStatus("ポータルに保存済み");
-    } catch(err){
-      if (!notesLoadOk) notesState = [];
-      setNotesStatus(apiErrorMessage(err, "メモ"), "err");
-    }
-    notesLoadDone = true;
-    renderNotes();
-  }
+  // タスクと同じく PUT /api/notes/bulk は全置換。読み込みに成功するまでは保存しない（makeBulkStore）。
+  var notesStore = makeBulkStore({
+    path: "/api/notes", key: "notes", label: "メモ", setStatus: setNotesStatus,
+    get: function(){ return notesState; },
+    set: function(v){ notesState = v; },
+    onInit: function(){ notesInitialized = true; },
+    onLoaded: function(){ renderNotes(); }
+  });
+  function initNotes(){ return notesStore.init(); }
+  function ensureNotesLoaded(){ return notesStore.ensure(); }
 
   // The editor is a contenteditable div (so 太字 shows real bold while
   // typing, not literal ** markers). Storage stays plain text with a
@@ -5705,7 +5707,7 @@
       // ピン留めはカード側でも先頭に出す（メモページと同じ優先順位）
       .sort(function(a, b){ return ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || ((b.updatedAt || 0) - (a.updatedAt || 0)); })
       .slice(0, 5);
-    if (notesLoadDone && !notesLoadOk){
+    if (notesStore.loadDone && !notesStore.loadOk){
       list.innerHTML = '<li class="sched-empty">メモを読み込めませんでした。</li>';
       return;
     }
@@ -5737,7 +5739,7 @@
       .slice()
       .sort(function(a, b){ return (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99"); })
       .slice(0, 5);
-    if (tasksLoadDone && !tasksLoadOk){
+    if (tasksStore.loadDone && !tasksStore.loadOk){
       list.innerHTML = '<li class="sched-empty">タスクを読み込めませんでした。</li>';
       return;
     }
@@ -5909,7 +5911,7 @@
   function noteEmptyState(){
     var wrap = document.createElement("div");
     wrap.className = "notes-empty empty-state";
-    if (notesLoadDone && !notesLoadOk){
+    if (notesStore.loadDone && !notesStore.loadOk){
       wrap.innerHTML = '<div class="empty-title">メモを読み込めませんでした</div>' +
         '<div class="empty-sub">通信状態を確認して、もう一度読み込んでください。</div>' +
         '<button type="button" class="ev-btn">再読み込み</button>';
@@ -5929,35 +5931,7 @@
     return wrap;
   }
 
-  function scheduleNotesSave(){
-    setNotesStatus("保存中…");
-    if (noteSaveTimer) clearTimeout(noteSaveTimer);
-    noteSaveTimer = setTimeout(saveNotesNow, 600);
-  }
-
-  var notesSaving = false, notesSaveQueued = false;
-  async function saveNotesNow(){
-    if (!notesLoadOk){
-      setNotesStatus("メモを読み込めていないため保存していません。再読み込みしてください。", "err");
-      return;
-    }
-    if (notesSaving){ notesSaveQueued = true; return; }
-    notesSaving = true;
-    try{
-      await apiFetch("/api/notes/bulk", {
-        method: "PUT",
-        headers: notesState.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ notes: notesState })
-      });
-      if (!notesSaveQueued) setNotesStatus("保存済み ・ " + fmtSavedAt(Date.now()));
-    } catch(err){
-      console.error("[saveNotesNow] failed:", err);
-      setNotesStatus(artifactErrorMessage(err), "err");
-    } finally {
-      notesSaving = false;
-      if (notesSaveQueued){ notesSaveQueued = false; saveNotesNow(); }
-    }
-  }
+  function scheduleNotesSave(){ notesStore.schedule(); }
 
   wireAcctTabs("note-filter-tabs", function(){ return noteFilterTag; }, function(v){
     noteFilterTag = v;
@@ -6083,18 +6057,7 @@
     if (noteTagsInputEl) noteTagsInputEl.value = (tags || []).join(", ");
     renderNoteTagChips();
   }
-  function renderNoteTagChips(){
-    if (!noteTagsInputEl || !noteTagsChipsEl) return;
-    var tags = parseFreeTags(noteTagsInputEl.value);
-    noteTagsChipsEl.innerHTML = "";
-    noteTagsChipsEl.hidden = !tags.length;
-    tags.forEach(function(t){
-      noteTagsChipsEl.appendChild(taskFreeTagChip(t, function(){
-        noteTagsInputEl.value = tags.filter(function(x){ return x !== t; }).join(", ");
-        renderNoteTagChips();
-      }));
-    });
-  }
+  function renderNoteTagChips(){ renderFreeTagChips(noteTagsInputEl, noteTagsChipsEl, renderNoteTagChips); }
   if (noteTagsInputEl){
     noteTagsInputEl.addEventListener("input", renderNoteTagChips);
     noteTagsInputEl.addEventListener("blur", function(){
@@ -6178,16 +6141,7 @@
 
   noteForm.addEventListener("submit", async function(e){
     e.preventDefault();
-    if (!notesLoadOk){
-      noteFormError.hidden = false;
-      noteFormError.textContent = "メモ一覧を読み込み中です…";
-      if (!(await ensureNotesLoaded())){
-        noteFormError.textContent = "メモ一覧を読み込めませんでした。既存のメモを消さないよう保存を止めています。時間をおいてもう一度保存してください。";
-        return;
-      }
-      noteFormError.hidden = true;
-      if (noteModal.hidden) return;
-    }
+    if (!(await formWaitsForStore(notesStore, noteFormError, noteModal, "メモ"))) return;
     var title = noteTitleInput.value.trim();
     if (!title){
       noteFormError.hidden = false;
