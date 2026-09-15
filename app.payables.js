@@ -850,6 +850,7 @@
      「何月分」＝締めの月として、ベンダーの支払サイト（自由記入）から期日を出す。
        月末締め翌月末       … 6月分 → 7/31
        月末締め20日         … 6月分 → 7/20（「当月」「翌々月」と書いていなければ翌月）
+       月末締め翌々月末     … 6月分 → 8/31（「月末締め翌々月」のように日が無ければ月末）
        月末締め翌々月10日   … 6月分 → 8/10
        請求書発行後30日 など … 請求日＋30日（請求日が無ければ出さない）
      読めない書き方は null。土日祝の前倒し・後ろ倒しはしない。 */
@@ -860,6 +861,8 @@
     var m = s.match(/(?:後|から)(\d{1,3})日|(\d{1,3})日(?:後|以内)/);
     return m ? Number(m[1] || m[2]) : null;
   }
+  // ベンダーの支払サイト欄の候補（2026/09/15：翌々月末を追加。登録済みの書き方も候補に足す）
+  var P2_TERMS_PRESETS = ["月末締め翌月末", "月末締め翌々月末", "月末締め20日"];
   function p2DueFromTerms(terms, periodMonth, invoiceDate){
     var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "");
     if (!s) return null;
@@ -872,8 +875,9 @@
     var pay = s.replace(/^.*締め?/, "");   // 締めの後ろ＝払う日
     var ym = p2MonthAdd(periodMonth, /翌々月/.test(pay) ? 2 : /当月|同月/.test(pay) ? 0 : 1);
     var last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
-    if (pay.indexOf("末") !== -1) return ym + "-" + last;
     var d = pay.match(/(\d{1,2})日/);
+    // 「翌々月」「翌月払い」のように日を書いていなければ月末払い
+    if (pay.indexOf("末") !== -1 || (!d && /翌々?月|当月|同月/.test(pay))) return ym + "-" + last;
     return d ? ym + "-" + ("0" + Math.min(Number(d[1]), last)).slice(-2) : null;
   }
   // "2026-07-31" → "7/31（金）"。土日は「銀行休業日」を添える
@@ -1544,7 +1548,7 @@
       var cur = p2El("p2f-dueDate").value, msg = "";
       if (v && !upsider){
         if (!terms) msg = "「" + escapeHtml(v.name || "") + "」は支払サイトが未登録です（ベンダーに登録すると支払期日が自動で入ります）。";
-        else if (!due) msg = "支払サイト「" + escapeHtml(terms) + "」からは支払期日を出せません" + (byInvoice ? "（請求日を入れてください）。" : "（書き方の例：月末締め翌月末／月末締め20日）。");
+        else if (!due) msg = "支払サイト「" + escapeHtml(terms) + "」からは支払期日を出せません" + (byInvoice ? "（請求日を入れてください）。" : "（書き方の例：月末締め翌月末／月末締め翌々月末／月末締め20日）。");
         else {
           msg = "支払サイト「" + escapeHtml(terms) + "」・" + (byInvoice ? "請求日 " + escapeHtml(p2DueLabel(inv)) : Number(pm.slice(5)) + "月分") + " → " + escapeHtml(p2DueLabel(due)) +
             (cur && cur !== due ? " " + p2Badge("入力中の期日と違います", "warn") : "");
@@ -1769,7 +1773,7 @@
       p2Field("p2v-aliases", "別名・表記ゆれ（, 区切り・任意）", "text", d.aliases, true) +
       p2SelectField("p2v-defaultMethod", "支払方法", PAY_METHODS, d.defaultMethod || "その他") +
       p2SelectField("p2v-category", "区分", PAY_CATEGORIES, d.category || "その他") +
-      p2Field("p2v-paymentTerms", "支払サイト（例：月末締め翌月末／月末締め20日）", "text", v ? d.paymentTerms : "月末締め翌月末", true) +   // 新規の既定は月末締め翌月末（2026/09/15 オーナー指定）
+      p2Field("p2v-paymentTerms", "支払サイト（候補から選ぶか入力。例：月末締め翌月末／月末締め翌々月末／月末締め20日）", "text", v ? d.paymentTerms : "月末締め翌月末", true) +   // 新規の既定は月末締め翌月末（2026/09/15 オーナー指定）
       '<div class="pay2-fld wide pay2-payto-note" id="p2v-terms-hint"></div>' +
       '<div class="pay2-fld"><label>周期</label><div class="pay2-cad-row">' +
         '<select id="p2v-cadence">' +
@@ -1799,10 +1803,17 @@
       var byInvoice = p2TermsDays(terms) != null;
       var due = p2DueFromTerms(terms, pm, inv);
       p2El("p2v-terms-hint").innerHTML = !terms ? "未登録だと、台帳の支払期日は自動で入りません。"
-        : !due ? p2Badge("読み取れません", "warn") + " 書き方の例：月末締め翌月末／月末締め20日／月末締め翌々月10日／請求書発行後30日"
+        : !due ? p2Badge("読み取れません", "warn") + " 書き方の例：月末締め翌月末／月末締め翌々月末／月末締め20日／月末締め翌々月10日／請求書発行後30日"
         : "読み取り：" + (byInvoice ? "請求日 " + p2DueLabel(inv) : Number(pm.slice(5)) + "月分") + " → " + p2DueLabel(due) + "（台帳・未処理キューの支払期日に自動で入ります）";
     }
-    p2El("p2v-paymentTerms").addEventListener("input", termsHint);
+    var termsEl = p2El("p2v-paymentTerms"), termsList = document.createElement("datalist");
+    termsList.id = "p2v-terms-list";
+    P2_TERMS_PRESETS.concat(p2.vendors.map(function(x){ return String(x.paymentTerms || "").trim(); }))
+      .filter(function(s, i, a){ return s && a.indexOf(s) === i; })
+      .forEach(function(s){ var o = document.createElement("option"); o.value = s; termsList.appendChild(o); });
+    termsEl.parentNode.appendChild(termsList);
+    termsEl.setAttribute("list", "p2v-terms-list");
+    termsEl.addEventListener("input", termsHint);
     termsHint();
     var cadEl = p2El("p2v-cadence");
     cadEl.addEventListener("change", function(){
