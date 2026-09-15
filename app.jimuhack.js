@@ -164,7 +164,6 @@
     return { c: c, i: i, ctr: i ? c / i * 100 : 0, pos: i ? pw / i : 0, n: rows.length, src: "landing" };
   }
   function searchStats(m){ return landingStats(m) || qStats(m); }
-  function latestSearchMonth(){ return [latest(S.landing), latest(S.queries)].filter(Boolean).sort().pop() || null; }
   function searchPartialEnd(m){ return S.landing[m] ? partialEnd("landing", m) : partialEnd("queries", m); }
   function rowsStats(rows){
     if (!rows) return null;

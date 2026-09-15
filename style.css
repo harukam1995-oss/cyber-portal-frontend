@@ -3061,7 +3061,7 @@
   .jh-todo-row::before{ content:""; position:absolute; left:0; top:7px; bottom:7px; width:2px; background: var(--accent); }
   .jh-todo-row.lv-warn::before{ background: var(--warn); }
   .jh-todo-row.lv-err::before{ background: var(--err); }
-  .jh-todo-text{ flex:1; min-width:0; font-size:12.5px; line-height:1.55; }
+
   .jh-notice{ padding:10px 14px; font-size:12px; line-height:1.6; color: var(--text-dim); }
   .jh-notice.is-err{ color: var(--err); }
   .jh-notice ul{ margin:4px 0 0; padding-left:18px; }
