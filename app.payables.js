@@ -48,15 +48,26 @@
   function p2VendorEmails(v){
     return String((v && v.emails) || "").split(/[\s,|;]+/).map(p2EmailKey).filter(Boolean);
   }
+  // 請求書サービスの共用送信元（misoca・Bill One など）。いろいろな会社の請求書が同じアドレスから届くので、
+  // ベンダーの判定には使わない（2026/09/15：永山さんの請求書が misoca 経由で早河さんと判定され、早河さんの口座が入っていた）。
+  // バックの SHARED_SENDER_DOMAINS と同じ並び。
+  var P2_SHARED_SENDER_DOMAINS = ["misoca.jp", "moneyforward.com", "bill-one.com", "billone.jp", "freee.co.jp", "board.biz", "makeleaps.com", "stripe.com", "paypal.com", "docusign.net", "invoice.ne.jp"];
+  function p2IsSharedSender(email){
+    var dom = p2EmailKey(email).split("@")[1] || "";
+    return P2_SHARED_SENDER_DOMAINS.some(function(d){ return dom === d || dom.slice(-(d.length + 1)) === "." + d; });
+  }
   function p2VendorByEmail(email){
     var k = p2EmailKey(email);
-    if (!k) return null;
+    if (!k || p2IsSharedSender(k)) return null;
     return p2.vendors.filter(function(x){ return p2VendorEmails(x).indexOf(k) !== -1; })[0] || null;
   }
+  // 名前の照合は 全角半角・空白の違いを無視し、別名（, 区切り）にも当てる（「永山真理子」でも「永山 真理子」に当たる）
+  function p2NameKey(s){ return String(s == null ? "" : s).normalize("NFKC").replace(/\s+/g, "").toLowerCase(); }
   function p2VendorByName(name){
-    var n = String(name || "").trim();
+    var n = p2NameKey(name);
     if (!n) return null;
-    return p2.vendors.filter(function(x){ return (x.name || "").trim() === n; })[0] || null;
+    return p2.vendors.filter(function(x){ return p2NameKey(x.name) === n; })[0] ||
+      p2.vendors.filter(function(x){ return String(x.aliases || "").split(/[,、|/]+/).some(function(a){ return p2NameKey(a) === n; }); })[0] || null;
   }
   function p2Status(msg, cls){
     var el = p2El("pay2-status");
@@ -1591,8 +1602,9 @@
     p2El("p2f-dueDate").addEventListener("change", function(){ p2ApplyVendorDue(p2CurVendor(), false); });
 
     // 口座チェック（目標4）: 入力中の口座 vs ベンダー登録の口座を比べて表示。
+    // 選んだベンダー名を優先し、名前で当たらないときだけ差出人アドレスで引く（保存時の vendorId と同じ決め方）
     function p2CurVendor(){
-      return p2VendorByEmail(p2El("p2f-fromEmail").value.trim()) || p2VendorByName(p2El("p2f-vendorName").value.trim());
+      return p2VendorByName(p2El("p2f-vendorName").value) || p2VendorByEmail(p2El("p2f-fromEmail").value.trim());
     }
     function p2RenderPayToCheck(){
       var box = p2El("p2f-payto-check");
@@ -1669,8 +1681,8 @@
     var cur = (p2.editId && p2ById(p2.payables, p2.editId)) || {};
     var name = p2El("p2f-vendorName").value.trim();
     var email = p2El("p2f-fromEmail").value.trim();
-    // 該当ベンダーはメールアドレス一致を優先し、無ければ名前一致
-    var v = p2VendorByEmail(email) || p2VendorByName(name);
+    // 該当ベンダーは名前（選んだベンダー）を優先し、名前で当たらなければメールアドレス（共用送信元は除く）
+    var v = p2VendorByName(name) || p2VendorByEmail(email);
     var vals = {
       receivedDate: p2El("p2f-receivedDate").value,
       vendorName: name,
