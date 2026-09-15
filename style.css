@@ -1971,6 +1971,8 @@
     color: var(--text); font-size: 12.5px; line-height: 1.5;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   }
+  /* Firestore の無料枠切れの案内。起動中トーストと重ならないよう一段上に出す */
+  .server-warming-toast.is-quota{ bottom: 64px; border-color: var(--accent); }
 
   /* =====================================================================
      B / AMBER restyle · Phase 1 — 発光・HUD装飾・グラス効果の全撤去

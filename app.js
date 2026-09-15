@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 165;
+  var BUILD_V = 166;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -165,6 +165,32 @@
     return auth.currentUser.getIdToken();
   }
 
+  // Firestore の無料枠（1日の読み取り5万回）を使い切ったときの扱い（2026/09/15）。回復（太平洋時間の0時＝日本時間16時〔冬17時〕）
+  // までは自動の読み込み（ログイン直後の先読み・個別ロードへの切り替え）を止め、画面下に理由を出す。手で押した操作はそのまま送る。
+  var dbQuotaUntil = 0;
+  var dbQuotaToastEl = null;
+  function nextPacificMidnight(){
+    var now = new Date();
+    var la = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    var next = new Date(la.getTime());
+    next.setHours(24, 0, 0, 0);
+    return now.getTime() + (next.getTime() - la.getTime());
+  }
+  function dbQuotaPaused(){ return Date.now() < dbQuotaUntil; }
+  function noteDbQuotaExceeded(){
+    if (dbQuotaPaused()) return;
+    dbQuotaUntil = nextPacificMidnight();
+    if (!dbQuotaToastEl){
+      dbQuotaToastEl = document.createElement("div");
+      dbQuotaToastEl.className = "server-warming-toast is-quota";
+      dbQuotaToastEl.setAttribute("role", "status");
+      document.body.appendChild(dbQuotaToastEl);
+    }
+    dbQuotaToastEl.textContent = "データベースの無料枠（1日の上限）に達しました。" + fmtSavedAt(dbQuotaUntil) + " ごろに回復します。それまで自動の読み込みを止めています。";
+    dbQuotaToastEl.hidden = false;
+    setTimeout(function(){ if (dbQuotaToastEl) dbQuotaToastEl.hidden = true; }, Math.max(0, dbQuotaUntil - Date.now()));
+  }
+
   async function apiFetch(path, options){
     options = options || {};
     var token = await getIdToken();
@@ -183,6 +209,7 @@
       try { body = await res.json(); } catch(e){}
       var err = new Error((body && body.message) || ("APIエラー: " + res.status));
       err.code = (body && body.error) || ("http_" + res.status);
+      if (err.code === "db_quota_exceeded") noteDbQuotaExceeded();
       throw err;
     }
     if (res.status === 204) return null;
@@ -455,14 +482,7 @@
       applyWeatherResponse(normalizeOpenMeteo(d, place));
       ok = true;
     } catch (omErr) {
-      // 2) フォールバック: バックエンド経由(ブラウザ側が Open-Meteo をブロックされる環境向け)。
-      try {
-        var qs = (wp && wp.lat != null && wp.lon != null)
-          ? "?lat=" + encodeURIComponent(wp.lat) + "&lon=" + encodeURIComponent(wp.lon) + "&place=" + encodeURIComponent(wp.place || "")
-          : "";
-        applyWeatherResponse(await apiFetch("/api/weather" + qs));
-        ok = true;
-      } catch (beErr) { /* 下でエラー表示 */ }
+      // バックエンド経由のフォールバック（/api/weather）は 2026/09/15 に撤去。Render から Open-Meteo に届かず常に失敗していた。
     }
     if (ok) {
       weatherRetriesLeft = 0;
@@ -478,6 +498,19 @@
   }
   // 30分ごとに更新
   setInterval(function(){ if (document.visibilityState === "visible") loadWeather(); }, 30 * 60 * 1000);
+
+  // 地名 → { lat, lon, place }。Open-Meteo のジオコーディング（キー不要・CORS 可）をブラウザから直接使う（設定の保存用）。
+  async function geocodePlace(name){
+    var r = null;
+    try {
+      r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=ja&format=json&name=" + encodeURIComponent(name), { cache: "no-store" });
+    } catch(e){ r = null; }
+    if (!r || !r.ok) throw new Error("地名の変換に失敗しました。しばらくして再度お試しください。");
+    var d = await r.json();
+    var hit = d && d.results && d.results[0];
+    if (!hit) throw new Error("その地名が見つかりませんでした。別の表記で試してください。");
+    return { lat: hit.latitude, lon: hit.longitude, place: String(hit.name || name).slice(0, 40) };
+  }
 
   /* ================= hero illustrations (user-supplied artwork, one shown at random per load) ================= */
   var HERO_ILLUSTRATIONS = [
@@ -800,8 +833,10 @@
         calInitialized = true;
         loadAndRenderCalendar();
       } else if (calState.loadOk){
-        // ログイン時に非表示のまま先読み済み。表示された今、レイアウトを描き直す(再取得なし)。
+        // ログイン時に非表示のまま先読み済み。表示された今、レイアウトを描き直す(予定は再取得なし)。
+        // 重ね表示のレイヤーは先読みでは取っていないので、ここで取ってから描き直す(取得済みで期限内ならキャッシュ)。
         renderCalendarView();
+        loadCalOverlays().then(function(){ if (isViewShown("calendar")) renderCalendarView(); });
       }
     }
     if (name === "mail" && !mailInitialized){
@@ -813,6 +848,9 @@
     if (name === "tasks" && (!tasksInitialized || (tasksLoadDone && !tasksLoadOk))){
       tasksInitialized = true;
       initTasks();
+    } else if (name === "tasks" && !projectsLoaded){
+      // ログイン直後の先読みではプロジェクト一覧を取っていないので、タスク管理ページを初めて開いたときに取る
+      ensureProjectsLoaded().then(function(){ renderTaskSidebar(); renderTasks(); });
     }
     if (name === "notes" && (!notesInitialized || (notesLoadDone && !notesLoadOk))){
       notesInitialized = true;
@@ -2254,8 +2292,9 @@
   var CAL_LAYER_FETCH = {
     tasks: async function(layer){
       var today = jstDateKey(new Date());
-      var res = await apiFetch("/api/tasks");
-      return (res.tasks || [])
+      // タスクは読み込み済みなら手元の一覧を使う（/api/tasks を読み直さない・編集もすぐ反映される）
+      var list = tasksLoadOk ? tasksState : ((await apiFetch("/api/tasks")).tasks || []);
+      return list
         .filter(function(t){ return t && t.due && !t.done; })
         .map(function(t){ return calItem(layer, t.due, t.dueTime || "", t.text || "(無題)", today, false); });
     },
@@ -2309,14 +2348,15 @@
   };
 
   // ON になっているレイヤーを（未取得なら取得して）まとめる。1本コケても他は出す。
-  // タスクや請求書は別画面で更新されるので、3分で取り直す（毎描画だと重い）。
-  var CAL_LAYER_TTL_MS = 3 * 60 * 1000;
+  // 契約書・請求書・トラッカーは別画面で更新されるので、10分で取り直す（毎描画だと重い。以前は3分で、
+  // カレンダーを行き来するたびに台帳を全件読んでいた）。タスクは手元の一覧から毎回作り直す。
+  var CAL_LAYER_TTL_MS = 10 * 60 * 1000;
   async function loadCalOverlays(){
     var now = Date.now();
     var wanted = CAL_LAYERS.filter(function(l){ return calLayers[l.key]; });
     wanted.forEach(function(l){
       var c = calLayerCache[l.key];
-      if (c && now - c.at > CAL_LAYER_TTL_MS) calLayerCache[l.key] = null;
+      if (c && (now - c.at > CAL_LAYER_TTL_MS || (l.key === "tasks" && tasksLoadOk))) calLayerCache[l.key] = null;
     });
     await Promise.all(wanted.map(function(l){
       if (calLayerCache[l.key]) return null;
@@ -2389,7 +2429,9 @@
     // 片方だけコケても、取れた方は出す（両方ダメなら従来のエラー処理へ）。
     var accts = acct === "both" ? ["haruka", "syslea"] : [acct];
     // レイヤーの取得は予定の取得と並行に走らせる（直列だと Render のコールドスタートぶん待たされる）
-    var overlaysP = loadCalOverlays();
+    // レイヤーはカレンダーが見えているときだけ取る。ログイン直後の先読み（非表示）でも取っていて、
+    // HOME を開くだけで台帳・トラッカー・契約書を全件読んでいた（2026/09/15）。表示したときは showView が取る。
+    var overlaysP = isViewShown("calendar") ? loadCalOverlays() : Promise.resolve();
     try{
       var settled = await Promise.all(accts.map(function(a){
         return apiFetch(acctPath(qs, a))
@@ -4374,16 +4416,24 @@
 
   // event_trackers(プロジェクトボード)を、ビジネスタブのカード描画とは独立に一覧取得する。
   // タスクモーダルの「プロジェクト」セレクトとサイドバーの「プロジェクト」一覧で使う。
-  async function ensureProjectsLoaded(force){
-    if (projectsLoaded && !force) return projectsForLink;
-    try {
-      var res = await apiFetch("/api/event-trackers");
+  function isViewShown(name){
+    var v = document.getElementById("view-" + name);
+    return !!(v && !v.hidden);
+  }
+  var projectsLoadingP = null; // 取得中の Promise（同時に呼ばれても /api/event-trackers は1回）
+  function ensureProjectsLoaded(force){
+    if (projectsLoaded && !force) return Promise.resolve(projectsForLink);
+    if (projectsLoadingP && !force) return projectsLoadingP;
+    projectsLoadingP = apiFetch("/api/event-trackers").then(function(res){
       projectsForLink = (res && res.eventTrackers || []).map(function(t){
         return { id: t.id, name: t.name || "(無題)", archived: !!t.archived };
       });
       projectsLoaded = true;
-    } catch(e){ /* 取れなければ前回値のまま */ }
-    return projectsForLink;
+    }).catch(function(){ /* 取れなければ前回値のまま */ }).then(function(){
+      projectsLoadingP = null;
+      return projectsForLink;
+    });
+    return projectsLoadingP;
   }
   function projectName(id){
     if (!id) return "";
@@ -4584,8 +4634,9 @@
     }
     tasksLoadDone = true;
     renderTasks();
-    // プロジェクト一覧(サイドバー・モーダルのセレクト用)を裏で用意しておく
-    ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
+    // プロジェクト一覧(サイドバー・モーダルのセレクト用)。タスク管理ページが見えているときだけ取る
+    // (ログイン直後の先読みで毎回 /api/event-trackers を読んでいた)。モーダルを開くときは各所で ensureProjectsLoaded する。
+    if (isViewShown("tasks")) ensureProjectsLoaded().then(function(){ renderTaskSidebar(); });
   }
 
   function buildTaskRow(task, todayKey, depth){
@@ -6545,7 +6596,7 @@
         }
       };
       var placeInput = elSetPlace ? elSetPlace.value.trim() : "";
-      if (placeInput) patch.weather = { place: placeInput };
+      var curPlace = (settingsState && settingsState.weather && settingsState.weather.place) || "";
 
       // 家計簿シート URL: 現在値から変わったときだけ送る(空にすると連携解除)。
       var financeChanged = false;
@@ -6557,6 +6608,9 @@
 
       if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
       try {
+        // 地名が変わったときだけ、ブラウザで緯度経度に変換して送る。以前は保存のたびに地名だけを送ってサーバーが変換していたが、
+        // Render から Open-Meteo に届かず、地名を変えていなくても保存が長く待たされて失敗していた（2026/09/15）。
+        if (placeInput && placeInput !== curPlace) patch.weather = await geocodePlace(placeInput);
         var res = await apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(patch) });
         if (res && res.settings){
           applySettings(res.settings);
@@ -7312,6 +7366,11 @@
     try {
       applyHomeBootstrap(await apiFetch("/api/bootstrap/home"));
     } catch(e){
+      if (e && e.code === "db_quota_exceeded"){
+        // 無料枠切れ。個別ロードに切り替えても同じ上限にリクエストを重ねるだけなので、天気（ブラウザ直取得）だけ出す。
+        loadWeather();
+        return;
+      }
       // 集約が失敗したら従来どおり個別ロードにフォールバック(= 変更前の挙動)。
       loadSettings();
       loadGmailUnreadCount();
@@ -7322,6 +7381,7 @@
     // タスクは HOME の INBOX（期限切れ行）とプライベート/ビジネスのカードで使うので、
     // アイドルになったら先に取っておく。以後のタブ切り替えは再取得なし。
     scheduleIdle(function(){
+      if (dbQuotaPaused()) return;
       loadHarukaMail();
       warmCalendarView();
       if (!tasksInitialized){ tasksInitialized = true; initTasks(); }
