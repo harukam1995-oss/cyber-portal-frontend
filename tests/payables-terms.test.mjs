@@ -15,8 +15,9 @@ function cut(name){
   const end = src.indexOf("\n  }\n", start);
   return src.slice(start, end + 4);
 }
-const { p2DueFromTerms, p2DueLabel } = new Function(
-  cut("p2MonthAdd") + cut("p2TermsDays") + cut("p2DueFromTerms") + cut("p2DueLabel") + "\nreturn { p2DueFromTerms, p2DueLabel };"
+const { p2DueFromTerms, p2DueLabel, p2PeriodCheck } = new Function(
+  cut("p2MonthAdd") + cut("p2TermsDays") + cut("p2DueFromTerms") + cut("p2DueLabel") + cut("p2CloseLimit") + cut("p2PeriodCheck") +
+  "\nreturn { p2DueFromTerms, p2DueLabel, p2PeriodCheck };"
 )();
 
 test("月末締め翌月末: 6月分 → 7月末", () => {
@@ -54,6 +55,38 @@ test("読めないとき・何月分が無いときは null", () => {
   assert.equal(p2DueFromTerms("月末締め", "2026-06", ""), null);
   assert.equal(p2DueFromTerms("都度相談", "2026-06", ""), null);
   assert.equal(p2DueFromTerms("月末締め翌月末", "", "2026-07-01"), null);
+});
+
+test("何月分を確認: 請求日が月末の5日前より前なら警告", () => {
+  const T = "月末締め翌月末";
+  assert.equal(p2PeriodCheck(T, "2026-07", "2026-07-22", "", []), "warn");
+  assert.equal(p2PeriodCheck(T, "2026-07", "2026-07-25", "", []), "warn");
+  assert.equal(p2PeriodCheck(T, "2026-07", "2026-07-26", "", []), "");
+  assert.equal(p2PeriodCheck(T, "2026-06", "2026-07-01", "", []), "");
+  assert.equal(p2PeriodCheck(T, "2026-07", "", "", []), "");
+  assert.equal(p2PeriodCheck("請求書発行後30日", "2026-07", "2026-07-01", "", []), "");
+  assert.equal(p2PeriodCheck("", "2026-07", "2026-07-01", "", []), "");
+});
+
+test("何月分を確認: 請求書の期日が 支払サイト＋何月分 と合えば出さない（株式会社ラット 7月分・7/22 発行・期日 8/31）", () => {
+  const T = "月末締め翌月末";
+  assert.equal(p2PeriodCheck(T, "2026-07", "2026-07-22", "2026-08-31", []), "due");
+  assert.equal(p2PeriodCheck(T, "2026-07", "2026-07-22", "2026-07-31", []), "warn");
+});
+
+test("何月分を確認: 同じベンダーが締め前に当月分を出していれば出さない", () => {
+  const T = "月末締め翌月末";
+  const rat = [{ periodMonth: "2026-07", invoiceDate: "2026-07-14", dueDate: "2026-08-31" }];
+  assert.equal(p2PeriodCheck(T, "2026-08", "2026-08-15", "", rat), "habit");
+  // 何月分が請求書の月になっている行（9月分・9/1 発行・期日 9/30）は根拠にしない
+  const wrong = [{ periodMonth: "2026-09", invoiceDate: "2026-09-01", dueDate: "2026-09-30" }];
+  assert.equal(p2PeriodCheck(T, "2026-10", "2026-10-01", "", wrong), "warn");
+  // 期日の無い行・締め後の発行の行も根拠にしない
+  const noHabit = [
+    { periodMonth: "2026-07", invoiceDate: "2026-07-14", dueDate: "" },
+    { periodMonth: "2026-06", invoiceDate: "2026-06-30", dueDate: "2026-07-31" },
+  ];
+  assert.equal(p2PeriodCheck(T, "2026-08", "2026-08-15", "", noHabit), "warn");
 });
 
 test("期日の表示に曜日と土日の注記", () => {

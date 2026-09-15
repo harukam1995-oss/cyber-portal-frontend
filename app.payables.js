@@ -896,6 +896,27 @@
     var wd = new Date(key + "T00:00:00Z").getUTCDay();
     return Number(key.slice(5, 7)) + "/" + Number(key.slice(8, 10)) + "（" + "日月火水木金土".charAt(wd) + "）" + (wd === 0 || wd === 6 ? " ※銀行休業日" : "");
   }
+  // 何月分の締めの目安＝その月末の5日前（"2026-07" → "2026-07-26"）。これより前に出た請求書は何月分がずれているかもしれない
+  function p2CloseLimit(periodMonth){
+    return new Date(Date.UTC(+periodMonth.slice(0, 4), +periodMonth.slice(5, 7), -5)).toISOString().slice(0, 10);
+  }
+  // 「何月分を確認」を出すか（2026/09/15）。請求日が締めより前でも、次のどちらかなら何月分は合っているとみなす：
+  //   due   … 請求書の記載・手入力の期日（自動で入れた値は渡さない）が 支払サイト＋何月分 と一致
+  //   habit … 同じベンダーの別の行に「締め前の発行で、期日が 支払サイト＋何月分 と一致」がある
+  //           ＝月の途中で当月分を出す会社（例：株式会社ラット 7月分・7/22 発行・期日 8/31）
+  // 戻り値："" 締め前ではない・判定しない／"warn" 確認が要る／"due"・"habit" 締め前だが合っている
+  function p2PeriodCheck(terms, periodMonth, invoiceDate, givenDue, others){
+    if (p2TermsDays(terms) != null || !invoiceDate || !/^\d{4}-\d{2}$/.test(periodMonth || "")) return "";
+    if (invoiceDate >= p2CloseLimit(periodMonth)) return "";
+    var due = p2DueFromTerms(terms, periodMonth, invoiceDate);
+    if (!due) return "";
+    if (givenDue && givenDue === due) return "due";
+    var habit = (others || []).some(function(o){
+      return /^\d{4}-\d{2}$/.test(o.periodMonth || "") && !!o.invoiceDate && !!o.dueDate &&
+        o.invoiceDate < p2CloseLimit(o.periodMonth) && o.dueDate === p2DueFromTerms(terms, o.periodMonth, o.invoiceDate);
+    });
+    return habit ? "habit" : "warn";
+  }
   function p2CheckSuggestions(){
     var m0 = p2CurMonth(), m1 = p2MonthAdd(m0, -1), m2 = p2MonthAdd(m0, -2);
     var hide = p2SuggHidden();
@@ -1564,9 +1585,15 @@
         else {
           msg = "支払サイト「" + escapeHtml(terms) + "」・" + (byInvoice ? "請求日 " + escapeHtml(p2DueLabel(inv)) : Number(pm.slice(5)) + "月分") + " → " + escapeHtml(p2DueLabel(due)) +
             (cur && cur !== due ? " " + p2Badge("入力中の期日と違います", "warn") : "");
-          // 締めより前に発行された請求書＝「何月分」がずれている可能性（6月分なら 7月発行・6月末ごろ発行のはず）
-          var closeLim = new Date(Date.UTC(+pm.slice(0, 4), +pm.slice(5, 7), -5)).toISOString().slice(0, 10);
-          if (!byInvoice && inv && inv < closeLim) msg += "<br>" + p2Badge("何月分を確認", "warn") + " 請求日 " + escapeHtml(p2DueLabel(inv)) + " が " + Number(pm.slice(5)) + "月分の締めより前です。";
+          // 締めより前に発行された請求書＝「何月分」がずれている可能性（6月分なら 7月発行・6月末ごろ発行のはず）。
+          // 請求書の期日や、同じベンダーの別の行が 支払サイト＋何月分 と合うなら警告しない（月の途中で当月分を出す会社）
+          var others = p2.payables.filter(function(x){ return x.vendorId === v.id && x.id !== p2.editId && !x.excluded; })
+            .map(function(x){ return { periodMonth: p2Mkey(x.periodMonth), invoiceDate: x.invoiceDate, dueDate: x.dueDate }; });
+          var chk = p2PeriodCheck(terms, pm, inv, cur !== autoFill.dueDate ? cur : "", others);
+          var early = "請求日 " + escapeHtml(p2DueLabel(inv)) + " は " + Number(pm.slice(5)) + "月分の締めより前ですが、";
+          if (chk === "warn") msg += "<br>" + p2Badge("何月分を確認", "warn") + " 請求日 " + escapeHtml(p2DueLabel(inv)) + " が " + Number(pm.slice(5)) + "月分の締めより前です。";
+          else if (chk === "due") msg += "<br>" + early + "入力中の期日と合うので何月分はこのままで良さそうです。";
+          else if (chk === "habit") msg += "<br>" + early + "このベンダーは月の途中に当月分を発行しています（過去の行の期日が支払サイトと一致）。";
         }
       }
       var box = p2El("p2f-due-auto");
