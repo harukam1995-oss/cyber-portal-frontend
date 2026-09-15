@@ -44,13 +44,15 @@ jobs:
           # 先に /healthz を1回叩いて起こす(スリープしていた場合の 50 秒を本番リクエストの
           # タイムアウトに食わせない)。
           curl -s -o /dev/null --max-time 90 "https://cyber-portal-backend.onrender.com/healthz" || true
+          # skipIfWithinHours: 前の試行がタイムアウトしてもサーバー側で終わっていれば、再試行で全データを読み直さない
+          # (12 時間以内のバックアップがあれば {skipped:true, lastFile…} を返す)。
           for attempt in 1 2 3; do
             # 応答本文はバックアップの状態(lastAt / lastFile / fileCount)でシークレットを含まない。
             body=$(curl -s -w '\n%{http_code}' --max-time 300 \
               -X POST "$URL" \
               -H "X-Ingest-Token: $TOKEN" \
               -H "Content-Type: application/json; charset=utf-8" \
-              --data-binary '{}' || printf '\n000')
+              --data-binary '{"skipIfWithinHours":12}' || printf '\n000')
             code=$(printf '%s' "$body" | tail -n 1)
             payload=$(printf '%s' "$body" | sed '$d')
             echo "attempt $attempt -> HTTP $code"

@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 172;
+  var BUILD_V = 173;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -2372,8 +2372,9 @@
     },
     payables: async function(layer){
       var today = jstDateKey(new Date());
-      var res = await apiFetch("/api/payables");
-      return (res.payables || [])
+      // 未払いで日付のある行だけの軽い応答（台帳全体・ベンダーを読まない・2026/09/15）
+      var res = await apiFetch("/api/payables/due");
+      return (res.items || [])
         .filter(function(p){ return p && !p.paid && (p.scheduledDate || p.dueDate); })
         .map(function(p){
           var amt = p.amountIncl ? " " + subYen(p.amountIncl) : "";
@@ -6573,6 +6574,7 @@
       csvDryRun = res;
       var c = res.counts || {};
       var msg = "新規 " + (c.create || 0) + " ・ 更新 " + (c.update || 0)
+        + (c.unchanged ? " ・ 変更なし " + c.unchanged : "")
         + (mode === "replace" ? " ・ 削除 " + (c.delete || 0) : "")
         + " ・ エラー " + (c.error || 0);
       if (res.errors && res.errors.length){
@@ -6633,6 +6635,7 @@
       if (rs){
         rs.hidden = false;
         rs.textContent = "取り込み完了: 新規 " + (c.create || 0) + " ・ 更新 " + (c.update || 0)
+          + (c.unchanged ? " ・ 変更なし " + c.unchanged : "")
           + (mode === "replace" ? " ・ 削除 " + (c.delete || 0) : "") + " ・ スキップ " + (c.error || 0);
       }
       if (target === "tasks" && tasksInitialized) initTasks();

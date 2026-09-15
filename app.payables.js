@@ -1262,13 +1262,14 @@
       if (!parsed.source || !rows.length) throw new Error("UPSIDER の利用明細（取引日・決済ID）か GMO あおぞらの入出金明細（日付・摘要・出金金額）の列が見つかりませんでした。");
       var chunks = [];
       for (var i = 0; i < rows.length; i += 500) chunks.push(rows.slice(i, i + 500));
-      var tot = { created: 0, updated: 0, skipped: 0, months: {} };
+      var tot = { created: 0, updated: 0, unchanged: 0, skipped: 0, months: {} };
       sum.textContent = rows.length + " 行を取り込み中…";
       return chunks.reduce(function(p, ch){
         return p.then(function(){
           return apiFetch("/api/payables/statements/import", { method: "POST", body: JSON.stringify({ source: parsed.source, rows: ch }) }).then(function(r){
             tot.created += (r && r.created) || 0;
             tot.updated += (r && r.updated) || 0;
+            tot.unchanged += (r && r.unchanged) || 0;
             tot.skipped += (r && r.skipped) || 0;
             ((r && r.months) || []).forEach(function(m){ tot.months[m] = 1; });
           });
@@ -1276,7 +1277,7 @@
       }, Promise.resolve()).then(function(){ tot.source = parsed.source; return tot; });
     }).then(function(tot){
       var ms = Object.keys(tot.months).sort();
-      p2Status((tot.source === "gmo" ? "銀行明細（GMO あおぞら）" : "カード明細（UPSIDER）") + "を取り込みました：新規 " + tot.created + " ／ 更新 " + tot.updated +
+      p2Status((tot.source === "gmo" ? "銀行明細（GMO あおぞら）" : "カード明細（UPSIDER）") + "を取り込みました：新規 " + tot.created + " ／ 更新 " + tot.updated + (tot.unchanged ? " ／ 変更なし " + tot.unchanged : "") +
         (tot.skipped ? " ／ 取り込まない行 " + tot.skipped + "（入金など）" : "") + (ms.length ? "（" + ms[0] + " 〜 " + ms[ms.length - 1] + "）" : ""));
       p2s.open = true;
       p2s.source = tot.source;
@@ -2156,7 +2157,7 @@
   /* ---- Google スプレッドシートから取り込み（↓スプシから取り込み） ---- */
   function p2SheetPullSummary(o){
     o = o || {};
-    return "更新 " + (o.updated || 0) + " ／ 新規 " + (o.created || 0) + " ／ スキップ " + (o.skipped || 0);
+    return "更新 " + (o.updated || 0) + " ／ 新規 " + (o.created || 0) + (o.unchanged ? " ／ 変更なし " + o.unchanged : "") + " ／ スキップ " + (o.skipped || 0);
   }
   function p2SheetPull(){
     if (!window.confirm("「SYSLEA支払管理」スプシの 支払明細／ベンダーマスタ タブの内容で、ポータルの台帳を更新します。\n\n※ 先に「↑ スプシ」で最新化してから編集してください（空セルはその項目のみ現状維持ですが、チェック列は空＝OFF になります）。\n\nまず件数プレビューを出します。よろしいですか？")) return;
