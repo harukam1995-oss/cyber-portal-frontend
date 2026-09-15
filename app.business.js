@@ -911,12 +911,7 @@
   var EVENT_STATUSES = ["計画中", "進行中", "完了"];
   var eventTrackersState = [];
   var eventTemplatesState = [];
-  var eventEditRows = [];         // 管理モーダルの作業コピー(アクティブ＋アーカイブ 両方持つ)
-  var eventTplRows = [];          // テンプレの作業コピー
-  var eventDetailIdx = null;
-  var eventTplDetailIdx = null;
-  var pbView = "list";            // "list" = プロジェクト / "templates" = テンプレ
-  var pbShowArchived = false;
+  var pbView = "list";            // 管理モーダルのタブ: "list" = プロジェクト / "templates" = テンプレ
   var eventTrackersWired = false;
   var eventTrackersLoadOk = false;
 
@@ -1211,11 +1206,7 @@
     var newBtn = document.getElementById("projects-page-new");
     if (newBtn) newBtn.addEventListener("click", function(){
       openEventModal();
-      if (eventTrackersLoadOk){
-        eventEditRows.push(eventNewRow());
-        eventDetailIdx = eventEditRows.length - 1;
-        renderEventModal();
-      }
+      if (eventTrackersLoadOk && pbMD) pbMD.addNew();
     });
   }
 
@@ -1226,19 +1217,38 @@
     else renderProjectsPage();
   }
 
-  /* ---- イベントトラッカー管理モーダル (cases/contracts と同じ master-detail) ---- */
-  function openEventModal(targetId){
-    var modal = document.getElementById("pb-modal");
-    if (!modal) return;
-    if (!eventTrackersLoadOk){
-      eventSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
-      loadEventTrackers();
-      return;
-    }
-    var errEl = document.getElementById("pb-form-error");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    eventEditRows = eventTrackersState.map(function(t){
-      var m = t.match || {};
+  /* ---- イベントトラッカー管理モーダル（プロジェクト／テンプレの2タブ）----
+     枠（一覧・並べ替え・新規・削除・保存・Esc で戻る）は app.js の makeMasterDetail を2つ使う（2026/09/15 に共通化。
+     以前はこのファイルに同じ流れを手書きしていた）。モーダル・見出し・フォーム・エラー・保存ボタンは2つで共有し、
+     見えているタブ（pbView）の方だけが描画・保存する。プロジェクトはアーカイブ済みを「▸ アーカイブ済み (N)」に畳み、
+     並べ替えはアクティブの行だけ。デプロイ直後に古い app.js（ids などに未対応）と組み合わさったら、
+     管理モーダルだけ使えなくして再読み込みを促す（カードや一覧は動かす）。 */
+  var PB_SHARED_IDS = { modal: "pb-modal", "modal-title": "pb-modal-title", "modal-close": "pb-modal-close", form: "pb-form", "form-error": "pb-form-error", cancel: "pb-cancel", save: "pb-save" };
+  var pbMdOk = !!(CP.makeMasterDetail && CP.makeMasterDetail.version >= 2);
+  function pbCopyMatch(m){
+    m = m || {};
+    return { keywords: (m.keywords || []).slice(), gmailQuery: m.gmailQuery || "", senders: (m.senders || []).slice(), slackChannels: (m.slackChannels || []).slice() };
+  }
+  function pbCleanMatch(m){
+    return {
+      keywords: (m.keywords || []).slice(0, 30),
+      gmailQuery: String(m.gmailQuery || "").trim().slice(0, 200),
+      senders: (m.senders || []).slice(0, 20),
+      slackChannels: (m.slackChannels || []).slice(0, 20)
+    };
+  }
+  var pbMD = pbMdOk ? CP.makeMasterDetail({
+    prefix: "pb",
+    ids: PB_SHARED_IDS,
+    titles: ["プロジェクトボードの管理", "プロジェクトの設定"],
+    emptyHtml: '<div class="habit-edit-empty">プロジェクトがありません。「＋ 新規作成」から追加してください。</div>',
+    label: "プロジェクトボード",
+    active: function(){ return pbView !== "templates"; },
+    canEdit: function(){ return eventTrackersLoadOk; },
+    group: function(r){ return r.archived === true; },
+    groupLabel: "アーカイブ済み",
+    rowClass: function(r){ return r.archived ? " is-dim" : ""; },
+    toRow: function(t){
       return {
         id: t.id,
         name: t.name || "",
@@ -1249,42 +1259,113 @@
         autoIngest: t.autoIngest !== false,
         archived: t.archived === true,
         confidential: t.confidential === true,
-        match: {
-          keywords: (m.keywords || []).slice(),
-          gmailQuery: m.gmailQuery || "",
-          senders: (m.senders || []).slice(),
-          slackChannels: (m.slackChannels || []).slice()
-        },
+        match: pbCopyMatch(t.match),
         items: (t.items || []).map(function(it){
           return { id: it.id || uid(), text: it.text || "", done: it.done === true, note: it.note || "",
             dueDate: it.dueDate || "", source: it.source === "manual" ? "manual" : "auto" };
         }),
         digest: (t.digest || []).slice()
       };
-    });
-    eventTplRows = (eventTemplatesState || []).map(function(tp){
-      var m = tp.match || {};
+    },
+    newRow: eventNewRow,
+    rowName: function(r){ return (r.name || "").trim(); },
+    rowHint: eventHint,
+    renderDetail: renderEventDetailView,
+    clean: function(r){
+      var nm = (r.name || "").trim();
+      if (!nm) return { error: "プロジェクト名を入力してください。" };
+      var kind = r.kind === "recurring" ? "recurring" : "oneoff";
+      return { row: {
+        id: r.id, name: nm.slice(0, 120), kind: kind,
+        period: kind === "recurring" ? String(r.period || "").trim().slice(0, 7) : "",
+        dueDate: r.dueDate || "",
+        status: EVENT_STATUSES.indexOf(r.status) !== -1 ? r.status : "計画中",
+        autoIngest: r.autoIngest !== false, archived: r.archived === true, confidential: r.confidential === true,
+        match: pbCleanMatch(r.match),
+        items: (r.items || []).map(function(it){
+          return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200), done: it.done === true,
+            note: String(it.note || "").trim().slice(0, 400), dueDate: it.dueDate || "",
+            source: it.source === "manual" ? "manual" : "auto" };
+        }).filter(function(it){ return it.text; }),
+        digest: (r.digest || []).slice(0, 3)
+      } };
+    },
+    save: function(rows){
+      return apiFetch("/api/event-trackers/bulk", {
+        method: "PUT",
+        headers: rows.length ? {} : { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ eventTrackers: rows })
+      });
+    },
+    afterSave: function(){ loadEventTrackers(); }
+  }) : null;
+  var pbTplMD = pbMdOk ? CP.makeMasterDetail({
+    prefix: "pb-tpl",
+    ids: PB_SHARED_IDS,
+    titles: ["テンプレの管理", "テンプレの設定"],
+    emptyHtml: '<div class="habit-edit-empty">テンプレがありません。「＋ 新規作成」から追加してください。<br>周期=毎月自動 にすると毎月「YYYY年M月度_名前」が自動生成されます。</div>',
+    label: "プロジェクトボード",
+    active: function(){ return pbView === "templates"; },
+    canEdit: function(){ return eventTrackersLoadOk; },
+    toRow: function(tp){
       return {
         id: tp.id, name: tp.name || "", cadence: tp.cadence === "monthly" ? "monthly" : "manual",
-        match: { keywords: (m.keywords || []).slice(), gmailQuery: m.gmailQuery || "",
-          senders: (m.senders || []).slice(), slackChannels: (m.slackChannels || []).slice() },
+        match: pbCopyMatch(tp.match),
         items: (tp.items || []).map(function(it){ return { id: it.id || uid(), text: it.text || "" }; })
       };
-    });
-    pbView = "list"; pbShowArchived = false;
-    eventDetailIdx = null; eventTplDetailIdx = null;
-    if (targetId){
-      for (var i = 0; i < eventEditRows.length; i++){ if (eventEditRows[i].id === targetId){ eventDetailIdx = i; break; } }
+    },
+    newRow: pbTemplateNewRow,
+    rowName: function(r){ return (r.name || "").trim(); },
+    rowHint: pbTemplateHint,
+    rowButtons: function(r){
+      return [mkHabitIconBtn("＋", "このテンプレから作成", "", function(e){ e.stopPropagation(); pbCreateFromTemplate(r); })];
+    },
+    deleteMessage: function(name){ return "テンプレ「" + name + "」を削除しますか?"; },
+    renderDetail: renderPbTplDetail,
+    clean: function(r){
+      var nm = (r.name || "").trim();
+      if (!nm) return { error: "テンプレ名を入力してください。" };
+      return { row: {
+        id: r.id, name: nm.slice(0, 120), cadence: r.cadence === "monthly" ? "monthly" : "manual",
+        items: (r.items || []).map(function(it){ return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200) }; })
+          .filter(function(it){ return it.text; }),
+        match: pbCleanMatch(r.match)
+      } };
+    },
+    save: function(rows){
+      return apiFetch("/api/event-trackers/templates", {
+        method: "PUT",
+        headers: rows.length ? {} : { "X-Allow-Empty": "1" }, // 空の全置換は全部消したときだけ
+        body: JSON.stringify({ templates: rows })
+      });
+    },
+    afterSave: function(){ loadEventTrackers(); }
+  }) : null;
+
+  function openEventModal(targetId){
+    if (!pbMD){
+      eventSetStatus("新しい版に更新されています。ページを再読み込みしてください。", true);
+      return;
     }
-    renderEventModal();
-    modal.hidden = false;
+    if (!eventTrackersLoadOk){
+      eventSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
+      loadEventTrackers();
+      return;
+    }
+    pbView = "list";
+    renderPbTabs();
+    pbTplMD.open(eventTemplatesState || []);
+    pbMD.open(eventTrackersState, targetId);
   }
-  function closePbModal(){ var m = document.getElementById("pb-modal"); if (m) m.hidden = true; }
+  // Esc: 見えているタブの詳細なら一覧へ、一覧ならモーダルを閉じる
   function pbModalBack(){
-    if (pbView === "templates"){
-      if (eventTplDetailIdx != null){ eventTplDetailIdx = null; renderEventModal(); return; }
-    } else if (eventDetailIdx != null){ eventDetailIdx = null; renderEventModal(); return; }
-    closePbModal();
+    var md = pbView === "templates" ? pbTplMD : pbMD;
+    if (md) md.back();
+  }
+  function renderEventModal(){
+    renderPbTabs();
+    if (pbMD) pbMD.render();
+    if (pbTplMD) pbTplMD.render();
   }
   function eventNewRow(){
     return { id: uid(), name: "", kind: "oneoff", period: "", dueDate: "", status: "計画中",
@@ -1317,10 +1398,10 @@
       items: (tpl.items || []).map(function(it){ return { id: uid(), text: it.text || "", done: false, note: "", dueDate: "", source: "auto" }; }),
       digest: []
     };
-    eventEditRows.push(row);
+    pbMD.rows.push(row);
     pbView = "list";
-    eventDetailIdx = eventEditRows.length - 1;
-    eventTplDetailIdx = null;
+    pbMD.detailIdx = pbMD.rows.length - 1;
+    pbTplMD.detailIdx = null;
     renderEventModal();
   }
   function eventHint(r){
@@ -1335,109 +1416,8 @@
       b.classList.toggle("is-active", b.getAttribute("data-pbtab") === pbView);
     });
   }
-  function renderEventModal(){
-    renderPbTabs();
-    var listView = document.getElementById("pb-list-view");
-    var detailView = document.getElementById("pb-detail-view");
-    var tplListView = document.getElementById("pb-tpl-list-view");
-    var tplDetailView = document.getElementById("pb-tpl-detail-view");
-    var title = document.getElementById("pb-modal-title");
-
-    var isTpl = pbView === "templates";
-    var inTrkDetail = !isTpl && eventDetailIdx != null && !!eventEditRows[eventDetailIdx];
-    var inTplDetail = isTpl && eventTplDetailIdx != null && !!eventTplRows[eventTplDetailIdx];
-    if (!inTrkDetail) eventDetailIdx = null;
-    if (!inTplDetail) eventTplDetailIdx = null;
-
-    if (listView) listView.hidden = isTpl || inTrkDetail;
-    if (detailView) detailView.hidden = isTpl || !inTrkDetail;
-    if (tplListView) tplListView.hidden = !isTpl || inTplDetail;
-    if (tplDetailView) tplDetailView.hidden = !isTpl || !inTplDetail;
-
-    if (title) title.textContent =
-      inTrkDetail ? "プロジェクトの設定" :
-      inTplDetail ? "テンプレの設定" :
-      isTpl ? "テンプレの管理" : "プロジェクトボードの管理";
-
-    if (inTrkDetail) renderEventDetailView(eventDetailIdx);
-    else if (isTpl && !inTplDetail) renderPbTplList();
-    else if (inTplDetail) renderPbTplDetail(eventTplDetailIdx);
-    else renderEventListView();
-  }
-  function pbListRow(r, globalIdx, activeSiblings){
-    var row = document.createElement("div");
-    row.className = "habit-list-row" + (r.archived ? " is-dim" : "");
-    row.tabIndex = 0; row.setAttribute("role", "button");
-    var txt = document.createElement("div"); txt.className = "habit-list-txt";
-    var nm = document.createElement("div"); nm.className = "habit-list-name";
-    nm.textContent = (r.name || "").trim() || "（名称未設定）";
-    var hint = document.createElement("div"); hint.className = "habit-list-hint";
-    hint.textContent = eventHint(r);
-    txt.appendChild(nm); txt.appendChild(hint);
-    var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
-    // 並べ替えはアクティブ行のみ(アーカイブ行は順序を持たない扱い)
-    if (!r.archived && activeSiblings && activeSiblings.length > 1){
-      var myPos = activeSiblings.indexOf(r);
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (myPos > 0){ swapRows(r, activeSiblings[myPos - 1]); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (myPos < activeSiblings.length - 1){ swapRows(r, activeSiblings[myPos + 1]); }
-      });
-      up.disabled = myPos === 0;
-      down.disabled = myPos === activeSiblings.length - 1;
-      row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-    } else {
-      row.appendChild(txt); row.appendChild(chev);
-    }
-    function open(){ eventDetailIdx = eventEditRows.indexOf(r); renderEventModal(); }
-    row.addEventListener("click", open);
-    row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-    return row;
-  }
-  function swapRows(a, b){
-    var ia = eventEditRows.indexOf(a), ib = eventEditRows.indexOf(b);
-    if (ia < 0 || ib < 0) return;
-    eventEditRows[ia] = b; eventEditRows[ib] = a;
-    renderEventListView();
-  }
-  function renderEventListView(){
-    var wrap = document.getElementById("pb-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    var activeRows = eventEditRows.filter(function(r){ return !r.archived; });
-    var archivedRows = eventEditRows.filter(function(r){ return r.archived; });
-
-    if (!activeRows.length){
-      var e = document.createElement("div");
-      e.className = "habit-edit-empty";
-      e.textContent = "プロジェクトがありません。「＋ 新規作成」から追加してください。";
-      wrap.appendChild(e);
-    } else {
-      activeRows.forEach(function(r, idx){ wrap.appendChild(pbListRow(r, idx, activeRows)); });
-    }
-
-    if (archivedRows.length){
-      var toggle = document.createElement("button");
-      toggle.type = "button"; toggle.className = "pb-archived-toggle";
-      toggle.textContent = (pbShowArchived ? "▾ " : "▸ ") + "アーカイブ済み (" + archivedRows.length + ")";
-      toggle.addEventListener("click", function(){ pbShowArchived = !pbShowArchived; renderEventListView(); });
-      wrap.appendChild(toggle);
-      if (pbShowArchived){
-        var box = document.createElement("div");
-        box.className = "pb-archived-list";
-        archivedRows.forEach(function(r){ box.appendChild(pbListRow(r, -1, null)); });
-        wrap.appendChild(box);
-      }
-    }
-  }
-  function renderEventDetailView(idx){
-    var body = document.getElementById("pb-detail-body");
-    var r = eventEditRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
+  // 詳細フォーム（pbMD が body を空にしてから呼ぶ。入力で r を直接書き換える）
+  function renderEventDetailView(body, r){
 
     var name = document.createElement("input");
     name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 120;
@@ -1614,7 +1594,7 @@
     archBtn.textContent = r.archived ? "アーカイブから戻す" : "このプロジェクトをアーカイブ";
     archBtn.addEventListener("click", function(){
       r.archived = !r.archived;
-      eventDetailIdx = null;
+      pbMD.detailIdx = null;
       renderEventModal();
     });
     body.appendChild(archBtn);
@@ -1635,101 +1615,9 @@
     }
   }
 
-  async function onEventModalSubmit(e){
-    e.preventDefault();
-    var errEl = document.getElementById("pb-form-error");
-    var saveBtn = document.getElementById("pb-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    function showErr(msg){ if (errEl){ errEl.textContent = msg; errEl.hidden = false; } }
-    function failAt(i, msg){ eventDetailIdx = i; renderEventModal(); showErr(msg); }
-    if (!eventTrackersLoadOk){ showErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
-    var cleaned = [];
-    for (var i = 0; i < eventEditRows.length; i++){
-      var r = eventEditRows[i];
-      var nm = (r.name || "").trim();
-      if (!nm){ failAt(i, "プロジェクト名を入力してください。"); return; }
-      var kind = r.kind === "recurring" ? "recurring" : "oneoff";
-      var items = (r.items || []).map(function(it){
-        return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200), done: it.done === true,
-          note: String(it.note || "").trim().slice(0, 400), dueDate: it.dueDate || "",
-          source: it.source === "manual" ? "manual" : "auto" };
-      }).filter(function(it){ return it.text; });
-      cleaned.push({
-        id: r.id, name: nm.slice(0, 120), kind: kind,
-        period: kind === "recurring" ? String(r.period || "").trim().slice(0, 7) : "",
-        dueDate: r.dueDate || "",
-        status: EVENT_STATUSES.indexOf(r.status) !== -1 ? r.status : "計画中",
-        autoIngest: r.autoIngest !== false, archived: r.archived === true, confidential: r.confidential === true,
-        match: {
-          keywords: (r.match.keywords || []).slice(0, 30),
-          gmailQuery: String(r.match.gmailQuery || "").trim().slice(0, 200),
-          senders: (r.match.senders || []).slice(0, 20),
-          slackChannels: (r.match.slackChannels || []).slice(0, 20)
-        },
-        items: items, digest: (r.digest || []).slice(0, 3)
-      });
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      await apiFetch("/api/event-trackers/bulk", {
-        method: "PUT",
-        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ eventTrackers: cleaned })
-      });
-      closePbModal();
-      loadEventTrackers();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
   /* ---- テンプレ (繰り返しプロジェクトの雛形) ---- */
-  function renderPbTplList(){
-    var wrap = document.getElementById("pb-tpl-rows");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    if (!eventTplRows.length){
-      wrap.innerHTML = '<div class="habit-edit-empty">テンプレがありません。「＋ 新規作成」から追加してください。<br>周期=毎月自動 にすると毎月「YYYY年M月度_名前」が自動生成されます。</div>';
-      return;
-    }
-    var single = eventTplRows.length <= 1;
-    eventTplRows.forEach(function(r, idx){
-      var row = document.createElement("div");
-      row.className = "habit-list-row";
-      row.tabIndex = 0; row.setAttribute("role", "button");
-      var txt = document.createElement("div"); txt.className = "habit-list-txt";
-      var nm = document.createElement("div"); nm.className = "habit-list-name";
-      nm.textContent = (r.name || "").trim() || "（名称未設定）";
-      var hint = document.createElement("div"); hint.className = "habit-list-hint";
-      hint.textContent = pbTemplateHint(r);
-      txt.appendChild(nm); txt.appendChild(hint);
-      var mk = mkHabitIconBtn("＋", "このテンプレから作成", "", function(e){ e.stopPropagation(); pbCreateFromTemplate(r); });
-      var up = mkHabitIconBtn("↑", "上へ", "", function(e){
-        e.stopPropagation();
-        if (idx > 0){ var t = eventTplRows[idx - 1]; eventTplRows[idx - 1] = r; eventTplRows[idx] = t; renderPbTplList(); }
-      });
-      var down = mkHabitIconBtn("↓", "下へ", "", function(e){
-        e.stopPropagation();
-        if (idx < eventTplRows.length - 1){ var t = eventTplRows[idx + 1]; eventTplRows[idx + 1] = r; eventTplRows[idx] = t; renderPbTplList(); }
-      });
-      up.hidden = down.hidden = single;
-      up.disabled = idx === 0;
-      down.disabled = idx === eventTplRows.length - 1;
-      var chev = document.createElement("span"); chev.className = "habit-list-chev"; chev.textContent = "›";
-      row.appendChild(txt); row.appendChild(mk); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-      function open(){ eventTplDetailIdx = idx; renderEventModal(); }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-      wrap.appendChild(row);
-    });
-  }
-  function renderPbTplDetail(idx){
-    var body = document.getElementById("pb-tpl-detail-body");
-    var r = eventTplRows[idx];
-    if (!body || !r) return;
-    body.innerHTML = "";
+  // 詳細フォーム（pbTplMD が body を空にしてから呼ぶ）
+  function renderPbTplDetail(body, r){
 
     var name = document.createElement("input");
     name.type = "text"; name.className = "habit-edit-name"; name.maxLength = 120;
@@ -1809,48 +1697,6 @@
     mkNow.addEventListener("click", function(){ pbCreateFromTemplate(r); });
     body.appendChild(mkNow);
   }
-  async function onPbTemplateSubmit(){
-    var errEl = document.getElementById("pb-form-error");
-    var saveBtn = document.getElementById("pb-save");
-    if (errEl){ errEl.hidden = true; errEl.textContent = ""; }
-    var cleaned = [];
-    for (var i = 0; i < eventTplRows.length; i++){
-      var r = eventTplRows[i];
-      var nm = (r.name || "").trim();
-      if (!nm){ eventTplDetailIdx = i; renderEventModal(); if (errEl){ errEl.textContent = "テンプレ名を入力してください。"; errEl.hidden = false; } return; }
-      var items = (r.items || []).map(function(it){ return { id: it.id || uid(), text: String(it.text || "").trim().slice(0, 200) }; })
-        .filter(function(it){ return it.text; });
-      cleaned.push({
-        id: r.id, name: nm.slice(0, 120), cadence: r.cadence === "monthly" ? "monthly" : "manual",
-        items: items,
-        match: {
-          keywords: (r.match.keywords || []).slice(0, 30),
-          gmailQuery: String(r.match.gmailQuery || "").trim().slice(0, 200),
-          senders: (r.match.senders || []).slice(0, 20),
-          slackChannels: (r.match.slackChannels || []).slice(0, 20)
-        }
-      });
-    }
-    if (!eventTrackersLoadOk){
-      if (errEl){ errEl.textContent = "読み込みに失敗しています。再読み込みしてからやり直してください。"; errEl.hidden = false; }
-      return;
-    }
-    if (saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
-    try {
-      await apiFetch("/api/event-trackers/templates", {
-        method: "PUT",
-        headers: cleaned.length ? {} : { "X-Allow-Empty": "1" }, // 空の全置換は全部消したときだけ
-        body: JSON.stringify({ templates: cleaned })
-      });
-      closePbModal();
-      loadEventTrackers();
-    } catch (err){
-      if (errEl){ errEl.textContent = apiErrorMessage(err, "プロジェクトボード"); errEl.hidden = false; }
-    } finally {
-      if (saveBtn){ saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-    }
-  }
-
   function wireEventTrackers(){
     if (eventTrackersWired) return;
     eventTrackersWired = true;
@@ -1858,65 +1704,18 @@
     if (manageBtn) manageBtn.addEventListener("click", function(){ openEventModal(); });
     var allBtn = document.getElementById("pv-events-all");
     if (allBtn) allBtn.addEventListener("click", function(){ showView("projects"); });
-    var modal = document.getElementById("pb-modal");
-    var closeBtn = document.getElementById("pb-modal-close");
-    var cancelBtn = document.getElementById("pb-cancel");
-    var form = document.getElementById("pb-form");
-    if (closeBtn) closeBtn.addEventListener("click", closePbModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", closePbModal);
-    if (modal) modal.addEventListener("click", function(e){ if (e.target === modal) closePbModal(); });
-
+    if (!pbMD) return;
+    // 閉じる・キャンセル・新規・戻る・削除・保存は makeMasterDetail が配線する（保存は見えているタブの方だけが動く）
+    pbMD.wire();
+    pbTplMD.wire();
     var tabs = document.getElementById("pb-tabs");
     if (tabs) tabs.addEventListener("click", function(e){
       var b = e.target.closest("[data-pbtab]");
       if (!b) return;
       pbView = b.getAttribute("data-pbtab") === "templates" ? "templates" : "list";
-      eventDetailIdx = null; eventTplDetailIdx = null;
+      pbMD.detailIdx = null;
+      pbTplMD.detailIdx = null;
       renderEventModal();
-    });
-
-    // プロジェクト側
-    var newBtn = document.getElementById("pb-new");
-    var backBtn = document.getElementById("pb-detail-back");
-    var delBtn = document.getElementById("pb-detail-del");
-    if (newBtn) newBtn.addEventListener("click", function(){
-      eventEditRows.push(eventNewRow());
-      eventDetailIdx = eventEditRows.length - 1;
-      renderEventModal();
-    });
-    if (backBtn) backBtn.addEventListener("click", function(){ eventDetailIdx = null; renderEventModal(); });
-    if (delBtn) delBtn.addEventListener("click", async function(){
-      if (eventDetailIdx == null) return;
-      var r = eventEditRows[eventDetailIdx];
-      if (r && (r.name || "").trim() && !(await askConfirm('「' + r.name + '」を削除しますか?'))) return;
-      eventEditRows.splice(eventDetailIdx, 1);
-      eventDetailIdx = null;
-      renderEventModal();
-    });
-
-    // テンプレ側
-    var tplNewBtn = document.getElementById("pb-tpl-new");
-    var tplBackBtn = document.getElementById("pb-tpl-detail-back");
-    var tplDelBtn = document.getElementById("pb-tpl-detail-del");
-    if (tplNewBtn) tplNewBtn.addEventListener("click", function(){
-      eventTplRows.push(pbTemplateNewRow());
-      eventTplDetailIdx = eventTplRows.length - 1;
-      renderEventModal();
-    });
-    if (tplBackBtn) tplBackBtn.addEventListener("click", function(){ eventTplDetailIdx = null; renderEventModal(); });
-    if (tplDelBtn) tplDelBtn.addEventListener("click", async function(){
-      if (eventTplDetailIdx == null) return;
-      var r = eventTplRows[eventTplDetailIdx];
-      if (r && (r.name || "").trim() && !(await askConfirm('テンプレ「' + r.name + '」を削除しますか?'))) return;
-      eventTplRows.splice(eventTplDetailIdx, 1);
-      eventTplDetailIdx = null;
-      renderEventModal();
-    });
-
-    if (form) form.addEventListener("submit", function(e){
-      e.preventDefault();
-      if (pbView === "templates") onPbTemplateSubmit();
-      else onEventModalSubmit(e);
     });
   }
 

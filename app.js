@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 169;
+  var BUILD_V = 170;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -1218,11 +1218,16 @@
        toRow(保存済み1件) → 作業コピー1行 / newRow() / rowName(r) 一覧の名前・削除確認に使う
        rowHint(r) / rowClass(r)?(先頭に空白) / rowDot(r)?(CSS色 or null=色なし。無ければドット無し)
        renderDetail(body, r, idx) 入力で r を直接書き換える / clean(r) → { row } か { error }
-       save(rows) → Promise / afterSave()? / canEdit()?(false なら保存しない＝読み込み失敗中の全置換防止) */
+       save(rows) → Promise / afterSave()? / canEdit()?(false なら保存しない＝読み込み失敗中の全置換防止)
+     2026/09/15 追加（プロジェクトボードの2タブ用。どれも省略可で、省略したときの動きは従来どおり）:
+       ids { 部品名: 実際の id }（モーダル・見出し・フォーム・エラー・保存ボタンなどを2つのインスタンスで共有する）
+       active()（false の間は一覧/詳細を隠し、保存も受け付けない＝同じフォームを共有するタブの切り替え）
+       group(r) / groupLabel（true の行を「▸ groupLabel (N)」に畳む。並べ替えはグループ外の行だけ）
+       rowButtons(r) → [要素]（一覧の行の ↑↓ の前に足すボタン）／ deleteMessage(name)（削除確認の文言） */
   function makeMasterDetail(cfg){
     var p = cfg.prefix;
-    function $(s){ return document.getElementById(p + "-" + s); }
-    var md = { rows: [], detailIdx: null };
+    function $(s){ return document.getElementById((cfg.ids && cfg.ids[s]) || p + "-" + s); }
+    var md = { rows: [], detailIdx: null, showGrouped: false };
 
     function setErr(msg){
       var el = $("form-error");
@@ -1236,6 +1241,7 @@
       setErr("");
       md.rows = (sourceRows || []).map(cfg.toRow);
       md.detailIdx = null;
+      md.showGrouped = false;
       for (var i = 0; targetId && i < md.rows.length; i++){
         if (md.rows[i].id === targetId){ md.detailIdx = i; break; }
       }
@@ -1255,9 +1261,10 @@
       md.render();
     };
     md.render = function(){
+      var lv = $("list-view"), dv = $("detail-view"), title = $("modal-title");
+      if (cfg.active && !cfg.active()){ if (lv) lv.hidden = true; if (dv) dv.hidden = true; return; }
       var inDetail = md.detailIdx != null && !!md.rows[md.detailIdx];
       if (!inDetail) md.detailIdx = null;
-      var lv = $("list-view"), dv = $("detail-view"), title = $("modal-title");
       if (lv) lv.hidden = inDetail;
       if (dv) dv.hidden = !inDetail;
       if (title) title.textContent = cfg.titles[inDetail ? 1 : 0];
@@ -1267,59 +1274,85 @@
       body.innerHTML = "";
       cfg.renderDetail(body, md.rows[md.detailIdx], md.detailIdx);
     };
+    // 一覧の1行。siblings＝並べ替えの相手になる行の配列（null なら ↑↓ なし）
+    function buildRow(r, siblings){
+      var row = document.createElement("div");
+      row.className = "habit-list-row" + (cfg.rowClass ? cfg.rowClass(r) : "");
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      if (cfg.rowDot){
+        var dot = document.createElement("span");
+        dot.className = "habit-list-dot";
+        var color = cfg.rowDot(r);
+        if (color) dot.style.background = color; else dot.classList.add("none");
+        row.appendChild(dot);
+      }
+      var txt = document.createElement("div");
+      txt.className = "habit-list-txt";
+      var nm = document.createElement("div");
+      nm.className = "habit-list-name";
+      nm.textContent = cfg.rowName(r) || "（名称未設定）";
+      var hint = document.createElement("div");
+      hint.className = "habit-list-hint";
+      hint.textContent = cfg.rowHint(r);
+      txt.appendChild(nm); txt.appendChild(hint);
+      row.appendChild(txt);
+      if (cfg.rowButtons) cfg.rowButtons(r).forEach(function(b){ row.appendChild(b); });
+      if (siblings){
+        var pos = siblings.indexOf(r);
+        var move = function(d){
+          return function(e){
+            e.stopPropagation();
+            var other = siblings[pos + d];
+            if (!other) return;
+            var a = md.rows.indexOf(r), b = md.rows.indexOf(other);
+            md.rows[a] = other; md.rows[b] = r;
+            renderList();
+          };
+        };
+        var up = mkHabitIconBtn("↑", "上へ", "", move(-1));
+        var down = mkHabitIconBtn("↓", "下へ", "", move(1));
+        up.hidden = down.hidden = siblings.length <= 1;
+        up.disabled = pos === 0;
+        down.disabled = pos === siblings.length - 1;
+        row.appendChild(up); row.appendChild(down);
+      }
+      var chev = document.createElement("span");
+      chev.className = "habit-list-chev";
+      chev.textContent = "›";
+      row.appendChild(chev);
+      function open(){ md.detailIdx = md.rows.indexOf(r); md.render(); }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
+      return row;
+    }
     function renderList(){
       var wrap = $("rows");
       if (!wrap) return;
       wrap.innerHTML = "";
       var rows = md.rows;
-      if (!rows.length){ wrap.innerHTML = cfg.emptyHtml; return; }
-      rows.forEach(function(r, idx){
-        var row = document.createElement("div");
-        row.className = "habit-list-row" + (cfg.rowClass ? cfg.rowClass(r) : "");
-        row.tabIndex = 0;
-        row.setAttribute("role", "button");
-        if (cfg.rowDot){
-          var dot = document.createElement("span");
-          dot.className = "habit-list-dot";
-          var color = cfg.rowDot(r);
-          if (color) dot.style.background = color; else dot.classList.add("none");
-          row.appendChild(dot);
-        }
-        var txt = document.createElement("div");
-        txt.className = "habit-list-txt";
-        var nm = document.createElement("div");
-        nm.className = "habit-list-name";
-        nm.textContent = cfg.rowName(r) || "（名称未設定）";
-        var hint = document.createElement("div");
-        hint.className = "habit-list-hint";
-        hint.textContent = cfg.rowHint(r);
-        txt.appendChild(nm); txt.appendChild(hint);
-        function move(d){
-          return function(e){
-            e.stopPropagation();
-            var j = idx + d;
-            if (j < 0 || j >= rows.length) return;
-            rows[idx] = rows[j]; rows[j] = r;
-            renderList();
-          };
-        }
-        var up = mkHabitIconBtn("↑", "上へ", "", move(-1));
-        var down = mkHabitIconBtn("↓", "下へ", "", move(1));
-        up.hidden = down.hidden = rows.length <= 1;
-        up.disabled = idx === 0;
-        down.disabled = idx === rows.length - 1;
-        var chev = document.createElement("span");
-        chev.className = "habit-list-chev";
-        chev.textContent = "›";
-        row.appendChild(txt); row.appendChild(up); row.appendChild(down); row.appendChild(chev);
-        function open(){ md.detailIdx = idx; md.render(); }
-        row.addEventListener("click", open);
-        row.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } });
-        wrap.appendChild(row);
-      });
+      var main = cfg.group ? rows.filter(function(r){ return !cfg.group(r); }) : rows;
+      if (!main.length) wrap.innerHTML = cfg.emptyHtml;
+      main.forEach(function(r){ wrap.appendChild(buildRow(r, main)); });
+      if (!cfg.group) return;
+      // グループ（例：アーカイブ済み）は折りたたむ。並べ替えはしない
+      var grouped = rows.filter(function(r){ return cfg.group(r); });
+      if (!grouped.length) return;
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "pb-archived-toggle";
+      toggle.textContent = (md.showGrouped ? "▾ " : "▸ ") + cfg.groupLabel + " (" + grouped.length + ")";
+      toggle.addEventListener("click", function(){ md.showGrouped = !md.showGrouped; renderList(); });
+      wrap.appendChild(toggle);
+      if (!md.showGrouped) return;
+      var box = document.createElement("div");
+      box.className = "pb-archived-list";
+      grouped.forEach(function(r){ box.appendChild(buildRow(r, null)); });
+      wrap.appendChild(box);
     }
     md.submit = async function(e){
       if (e) e.preventDefault();
+      if (cfg.active && !cfg.active()) return; // 同じフォームを共有する、いま見えていないタブの保存
       setErr("");
       if (cfg.canEdit && !cfg.canEdit()){ setErr("読み込みに失敗しています。再読み込みしてからやり直してください。"); return; }
       var cleaned = [];
@@ -1351,7 +1384,7 @@
         var r = md.current();
         if (!r) return;
         var name = cfg.rowName(r);
-        if (name && !(await askConfirm('「' + name + '」を削除しますか?'))) return;
+        if (name && !(await askConfirm(cfg.deleteMessage ? cfg.deleteMessage(name) : '「' + name + '」を削除しますか?'))) return;
         var i = md.rows.indexOf(r);
         if (i !== -1) md.rows.splice(i, 1);
         md.detailIdx = null;
@@ -1361,6 +1394,8 @@
     };
     return md;
   }
+  // 2 = ids / active / group / rowButtons / deleteMessage に対応（app.business.js のプロジェクトボードがこの番号を確認する）
+  makeMasterDetail.version = 2;
 
   /* ================= プライベート: 習慣トラッカー (v1c / v1c+) =================
      Firestore に習慣定義(habits)と日次ログ(habit_log)を持つ。週は日曜始まり。
