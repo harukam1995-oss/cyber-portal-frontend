@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 171;
+  var BUILD_V = 172;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -27,6 +27,14 @@
   function jstDateKey(d){
     return jstFmt("en-CA", { year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
   }
+  // 日付・年月の欄で年を手入力すると、Chrome は max が無いと年を6桁まで受け付ける（2026 と打った後に続けて月を打つと
+  // 「202612/03/01」になる）。フォーカスした時点で max を付けて年を4桁にする（2026/09/15。モジュールが後から作る欄にも効くよう
+  // document で拾う。index.html の期限欄のように max が既にあるものはそのまま）。
+  var DATE_INPUT_MAX = { date: "9999-12-31", month: "9999-12", "datetime-local": "9999-12-31T23:59" };
+  document.addEventListener("focusin", function(e){
+    var t = e.target;
+    if (t && t.tagName === "INPUT" && DATE_INPUT_MAX[t.type] && !t.max) t.max = DATE_INPUT_MAX[t.type];
+  });
   // 検索窓: 入力のたびに一覧を全部描き直していたので、打ち終わり（既定 150ms）を待つ。日本語の変換中は描き直さない（2026/09/15）。
   function debouncedSearch(input, apply, ms){
     var timer = null;
