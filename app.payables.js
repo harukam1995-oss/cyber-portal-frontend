@@ -117,7 +117,7 @@
     var x = a.split("-").map(Number), y = b.split("-").map(Number);
     return (y[0] - x[0]) * 12 + (y[1] - x[1]);
   }
-  var PAY_EXPECT_DAY_FALLBACK = 25;
+  var PAY_EXPECT_DAY_FALLBACK = 10;   // 2026/09/15 に 25→10（月末締めの請求書は翌月の1〜6日に届くことが多い）
   function p2CurMonth(){ return p2Mkey(jstDateKey(new Date())); }
   function p2ExpectDay(v){
     var n = parseInt(v && v.expectDay, 10);
@@ -128,18 +128,93 @@
     var n = parseInt(v && v.expectCount, 10);
     return (n >= 1 && n <= 10) ? n : 1;
   }
+  // 未着チェックの対象（2026/09/15）: 定期（毎月・Nヶ月ごと・毎年）のベンダー。UPSIDER（カード払い）はカード明細の突き合わせで見るので外す
+  function p2CheckTarget(v){
+    return !!v && !v.excluded && p2CadenceOf(v) >= 1 && v.defaultMethod !== "UPSIDER";
+  }
+  /* ---- 請求の来ない月（スキップ・2026/09/15）----
+     v.skipMonths = [{ month:"YYYY-MM"（未着チェックの支払月）, reason }]。その月は未着・要対応・今月やること・催促の対象外で、月別表は「休」。
+     請求書が届けば受領が優先。前月・前々月ともスキップなら「スポットにする」を提案。 */
+  var P2_SKIP_REASONS = ["稼働なし", "翌月にまとめて請求", "停止・解約", "その他"];
+  function p2SkipOf(v, month){
+    var hit = ((v && v.skipMonths) || []).filter(function(x){ return x && x.month === month; })[0];
+    return hit ? (hit.reason || "スキップ") : "";
+  }
+  // list に month を足す（reason が空なら外す）。同じ月は置き換え・古い順
+  function p2WithSkip(list, month, reason){
+    var out = (list || []).filter(function(x){ return x && x.month !== month; });
+    if (reason) out.push({ month: month, reason: reason });
+    return out.sort(function(a, b){ return a.month < b.month ? -1 : a.month > b.month ? 1 : 0; });
+  }
+  // 未着チェックの「支払月」（2026/09/15 に統一）: 何月分＋支払サイトから出した支払期日の月。
+  // 出せなければ 支払期日の月 → 何月分の翌月 → 受領日の月 → 請求日の月。支払予定日は使わない（振込をまとめた日で請求書の月とずれるため）。
+  // UPSIDER は受領日の月（カードの請求書は利用のたびに届く・未着チェックの対象外）。
+  function p2PayMonthOf(row, terms){
+    var pm = p2Mkey(row.periodMonth);
+    if (row.method === "UPSIDER") return p2Mkey(row.receivedDate) || p2Mkey(row.invoiceDate) || pm;
+    var due = pm && terms ? p2DueFromTerms(terms, pm, row.invoiceDate || "") : null;
+    if (due) return due.slice(0, 7);
+    return p2Mkey(row.dueDate) || (pm ? p2MonthAdd(pm, 1) : "") || p2Mkey(row.receivedDate) || p2Mkey(row.invoiceDate);
+  }
+  // 何月分の初期値（2026/09/15）。「何月分」＝締めの月。請求日（無ければ受領日）が 25日以降ならその月、10日までなら前月。
+  // 11〜24日は同じベンダーの過去の行（others: [{ periodMonth, date }]）のうち月の途中に出た行で多い「発行月−何月分」、無ければ前月。
+  function p2GuessPeriod(dateKey, others){
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || "")) return "";
+    var m = dateKey.slice(0, 7), day = Number(dateKey.slice(8, 10));
+    if (day >= 25) return m;
+    if (day > 10){
+      var cnt = {};
+      (others || []).forEach(function(o){
+        var pm = p2Mkey(o && o.periodMonth), d = String((o && o.date) || "");
+        var dd = Number(d.slice(8, 10));
+        if (pm && /^\d{4}-\d{2}-\d{2}$/.test(d) && dd > 10 && dd < 25){ var k = p2MonthsDiff(pm, d.slice(0, 7)); cnt[k] = (cnt[k] || 0) + 1; }
+      });
+      var best = Object.keys(cnt).sort(function(a, b){ return cnt[b] - cnt[a]; })[0];
+      if (best != null) return p2MonthAdd(m, -Number(best));
+    }
+    return p2MonthAdd(m, -1);
+  }
+  // 同じベンダーの行（何月分の推定用）
+  function p2PeriodHistory(v, exceptId){
+    if (!v) return [];
+    return (p2.payables || []).filter(function(x){ return x.vendorId === v.id && x.id !== exceptId && !x.excluded && x.periodMonth; })
+      .map(function(x){ return { periodMonth: x.periodMonth, date: x.invoiceDate || x.receivedDate || "" }; });
+  }
+  // 想定到着日の提案（2026/09/15）。samples＝[{ pay:"YYYY-MM"（支払月）, received:"YYYY-MM-DD" }]。
+  // 支払月より前に届いた分は0・支払月に届いた分はその日・支払月より後（遅れ）は数えない。支払月ごとの最大の、直近3か月の最大＋3日（3〜28）。2か月分未満は null
+  function p2ArrivalDay(samples, uptoMonth){
+    var byPay = {};
+    (samples || []).forEach(function(s){
+      if (!s || !s.pay || !/^\d{4}-\d{2}-\d{2}$/.test(s.received || "") || (uptoMonth && s.pay > uptoMonth)) return;
+      var rm = s.received.slice(0, 7);
+      var d = rm < s.pay ? 0 : rm === s.pay ? Number(s.received.slice(8, 10)) : null;
+      if (d != null) byPay[s.pay] = Math.max(byPay[s.pay] == null ? 0 : byPay[s.pay], d);
+    });
+    var pays = Object.keys(byPay).sort().slice(-3);
+    if (pays.length < 2) return null;
+    var days = pays.map(function(p){ return byPay[p]; });
+    return { day: Math.max(3, Math.min(28, Math.max.apply(null, days) + 3)), days: days };
+  }
+  function p2DaySamples(v){
+    return (p2.payables || []).filter(function(r){ return r.vendorId === v.id && !r.excluded && r.receivedDate; })
+      .map(function(r){ return { pay: p2PayMonthOf(r, v.paymentTerms), received: r.receivedDate }; });
+  }
   function p2RecvCount(v, month){
     var e = p2._recv[v.id];
     return (e && e.count && e.count[month]) || 0;
   }
-  // 受領実績インデックス（サーバーで syslea_payables＋payments を threadId 名寄せ済みの
-  // p2.receipts から）。vendorId → { last:"YYYY-MM", byMonth: { "YYYY-MM": receipt } }
-  // receipt.month は「支払月」（いつ払うか）。受領チェックはこの支払月で並べる。
-  // 案B: p2.receipts は syslea_payables 由来のみ（source は常に "payable"）。
+  // 受領実績インデックス（サーバーで syslea_payables を名寄せ済みの p2.receipts から）。
+  // vendorId → { last:"YYYY-MM", first, byMonth: { "YYYY-MM": receipt }, count }
+  // 月は「支払月」。2026/09/15 からサーバーの receipt.month（支払予定日→期日→受領日→…）ではなく
+  // p2PayMonthOf（何月分＋支払サイト）で決め直す＝同じベンダーの請求書が行によって別の月に入らないように。
   function p2RecvIndex(){
-    var idx = {};
-    (p2.receipts || []).forEach(function(r){
-      if (!r || !r.vendorId || !r.month) return;
+    var idx = {}, rowById = {}, venById = {};
+    (p2.payables || []).forEach(function(p){ rowById[p.id] = p; });
+    (p2.vendors || []).forEach(function(v){ venById[v.id] = v; });
+    (p2.receipts || []).forEach(function(r0){
+      if (!r0 || !r0.vendorId || !r0.month) return;
+      var row = rowById[r0.payableId], rv = venById[r0.vendorId];
+      var r = Object.assign({}, r0, { month: (row && p2PayMonthOf(row, rv ? rv.paymentTerms : "")) || r0.month });
       var e = idx[r.vendorId] || (idx[r.vendorId] = { last: "", first: "", byMonth: {}, count: {} });
       if (!e.first || r.month < e.first) e.first = r.month;
       if (!e.byMonth[r.month] || r.source === "payable") e.byMonth[r.month] = r; // 同月は手入力行を優先
@@ -151,7 +226,7 @@
   // 定期ベンダー v が month（"YYYY-MM"）に到来予定か。毎月は常時、Nヶ月毎は直近受領月を位相基準に判定。
   function p2ExpectedInMonth(v, month){
     var cm = p2CadenceOf(v);
-    if (cm < 1) return false;
+    if (cm < 1 || !p2CheckTarget(v)) return false;   // UPSIDER はカード明細の突き合わせで見る（2026/09/15）
     var e = p2._recv[v.id];
     if (e && e.first && month < e.first) return false; // 最初に受け取った支払月より前は数えない（途中から取引の始まったベンダーの過去月を未着にしない）
     if (cm === 1) return true;
@@ -164,6 +239,7 @@
     if (!p2ExpectedInMonth(v, month)) return "";
     var e = p2._recv[v.id];
     if (p2RecvCount(v, month) >= p2ExpectCount(v)) return "received"; // 月N件のベンダーは N件そろって受領
+    if (p2SkipOf(v, month)) return "skipped";   // 請求の来ない月（スキップ）。届いていれば受領が優先
     if (!e || !e.last) return "waiting";   // 受領実績ゼロは未着にしない（静かに・要件 §6）
     var cur = p2CurMonth();
     if (month < cur) return "overdue";
@@ -664,8 +740,8 @@
 
   /* ---- 支払月の受領チェック（③ 未着アラート） ----
      定期ベンダー（毎月／Nヶ月毎）ごとに、選んだ「支払月」に払う請求書が届いているか一覧。
-     受領実績 p2.receipts は `syslea_payables` 由来（案B）。receipt.month＝支払月
-     （支払予定日→支払期日→受領日→請求日→何月分）。
+     受領実績 p2.receipts は `syslea_payables` 由来（案B）。支払月は p2PayMonthOf が決める
+     （何月分＋支払サイトの期日の月 → 支払期日 → 何月分の翌月 → 受領日。2026/09/15）。UPSIDER は対象外・スキップした月は「休」。
      状態: 受領（その支払月の台帳行あり）／未着（到来予定・未受領・当月で想定到着日超 or 過去月）
      ／待機（到来予定・未受領・想定到着日前）。受領実績ゼロのベンダーは未着にしない。
      「要対応」（既定）で欠落のあるベンダーだけ、「すべて」で全部。行クリックで台帳行 or ベンダー編集。 */
@@ -681,10 +757,10 @@
     var allRows = p2.vendors
       .filter(function(v){ return !v.excluded && p2ExpectedInMonth(v, month) && p2CheckMatch(v); })
       .map(function(v){ return { v: v, st: p2VendorMonthState(v, month) }; });
-    var rc = 0, oc = 0, wc = 0;
-    allRows.forEach(function(r){ if (r.st === "received") rc++; else if (r.st === "overdue") oc++; else wc++; });
+    var rc = 0, oc = 0, wc = 0, sc = 0;
+    allRows.forEach(function(r){ if (r.st === "received") rc++; else if (r.st === "overdue") oc++; else if (r.st === "skipped") sc++; else wc++; });
     var rows = p2.checkOverdueOnly ? allRows.filter(function(r){ return r.st === "overdue"; }) : allRows;
-    var rank = { overdue: 0, waiting: 1, received: 2 };
+    var rank = { overdue: 0, waiting: 1, received: 2, skipped: 3 };
     rows.sort(function(a, b){
       return (rank[a.st] - rank[b.st]) || String(a.v.name || "").localeCompare(String(b.v.name || ""), "ja");
     });
@@ -692,7 +768,7 @@
     if (sum){
       sum.innerHTML = allRows.length
         ? ("対象 <b>" + allRows.length + "</b> 社 ／ <span class=\"ok\">受領 " + rc + "</span>" +
-           " ／ <span class=\"warn\">未着 " + oc + "</span> ／ 待機 " + wc)
+           " ／ <span class=\"warn\">未着 " + oc + "</span> ／ 待機 " + wc + (sc ? " ／ 休 " + sc : ""))
         : (p2CheckFiltering() ? "条件に合うベンダーはありません。" : "この支払月に払う予定の定期ベンダーはありません。");
     }
 
@@ -715,6 +791,13 @@
     body.innerHTML = p2SuggestHtml(sugg) + (isList ? p2CheckListHtml(allRows, rows, month) : p2CheckMatrixHtml(month, mxRows));
     body.querySelectorAll("tbody tr").forEach(function(tr){
       tr.addEventListener("click", function(ev){
+        // スキップの「休」を押したら取り消す
+        var un = ev.target && ev.target.closest ? ev.target.closest("[data-unskip]") : null;
+        if (un){
+          var uv = p2ById(p2.vendors, un.getAttribute("data-unskip")), um = un.getAttribute("data-month");
+          if (uv && window.confirm("「" + (uv.name || "") + "」の " + Number(um.slice(5)) + "月のスキップ（" + p2SkipOf(uv, um) + "）を取り消しますか？")) p2SetSkip(uv.id, um, "", null);
+          return;
+        }
         // 月別の表はマス（td）に、一覧は行（tr）に台帳行の id を持たせてある
         var hit = ev.target && ev.target.closest ? ev.target.closest("[data-pid]") : null;
         var pid = hit ? hit.getAttribute("data-pid") : "";
@@ -732,12 +815,47 @@
     body.querySelectorAll("[data-remind]").forEach(function(b){
       b.addEventListener("click", function(ev){ ev.stopPropagation(); p2RemindDraft(b.getAttribute("data-remind"), b.getAttribute("data-month") || month, b); });
     });
+    body.querySelectorAll("[data-skip]").forEach(function(b){
+      b.addEventListener("click", function(ev){ ev.stopPropagation(); p2SkipPick(b); });
+    });
     p2WireSuggestions(body, sugg);
   }
   function p2CheckActs(v, month){
     return '<button type="button" class="pay2-mini-btn" data-find="' + escapeHtml(v.id) + '">メールを探す</button>' +
       '<button type="button" class="pay2-mini-btn" data-remind="' + escapeHtml(v.id) + '" data-month="' + escapeHtml(month) + '"' +
-        (p2VendorEmails(v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促メールを作成</button>";
+        (p2VendorEmails(v).length ? "" : ' disabled title="ベンダーのメールアドレスが未登録です"') + ">催促メールを作成</button>" +
+      '<button type="button" class="pay2-mini-btn" data-skip="' + escapeHtml(v.id) + '" data-month="' + escapeHtml(month) + '" title="この月は請求が来ない（稼働なし・翌月にまとめて など）">' + Number(month.slice(5)) + "月はなし</button>";
+  }
+  // 「N月はなし」: 操作欄を理由のボタンに置き換え、選んだらベンダーの skipMonths に足す（2026/09/15）
+  function p2SkipPick(btn){
+    var cell = btn.closest("td") || btn.parentNode;
+    var vid = btn.getAttribute("data-skip"), month = btn.getAttribute("data-month");
+    cell.innerHTML = '<span class="pay2-muted">' + Number(month.slice(5)) + "月はなし：</span>" +
+      P2_SKIP_REASONS.map(function(r){ return '<button type="button" class="pay2-mini-btn" data-skip-reason="' + escapeHtml(r) + '">' + escapeHtml(r) + "</button>"; }).join("") +
+      '<button type="button" class="pay2-mini-btn" data-skip-cancel="1">やめる</button>';
+    cell.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      var b = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+      if (!b) return;
+      if (b.hasAttribute("data-skip-cancel")){ p2RenderCheck(); return; }
+      var reason = b.getAttribute("data-skip-reason");
+      if (reason) p2SetSkip(vid, month, reason, b);
+    });
+  }
+  // スキップを保存（reason が空なら取り消し）。ベンダーは全項目を送る（PUT は sanitize なので欠けた項目が既定に戻る）
+  function p2SetSkip(vid, month, reason, btn){
+    var v = p2ById(p2.vendors, vid);
+    if (!v) return;
+    if (btn) btn.disabled = true;
+    var list = p2WithSkip(v.skipMonths, month, reason);
+    apiFetch("/api/payables/vendors/" + encodeURIComponent(vid), { method: "PUT", body: JSON.stringify(Object.assign({}, v, { skipMonths: list })) })
+      .then(function(res){
+        var saved = res && res.vendor;
+        p2.vendors = p2.vendors.map(function(x){ return x.id === vid ? (saved || Object.assign({}, x, { skipMonths: list })) : x; });
+        p2RenderAll();
+        p2Status("「" + (v.name || "") + "」の " + Number(month.slice(5)) + "月を" + (reason ? "「" + reason + "」でスキップにしました。" : "スキップから戻しました。"));
+      })
+      .catch(function(err){ if (btn) btn.disabled = false; p2Status(apiErrorMessage(err, "ベンダー"), "err"); });
   }
   // 一覧（選んだ支払月だけ・従来の表）
   function p2CheckListHtml(allRows, rows, month){
@@ -751,6 +869,7 @@
         var frac = need > 1 ? " " + got + "/" + need : "";
         var stHtml = r.st === "received" ? '<span class="pay2-flag ok">受領' + frac + "</span>"
           : r.st === "overdue" ? p2Badge((got ? "一部未着" : "未着") + frac, "err")
+          : r.st === "skipped" ? '<span class="pay2-mx-skip" data-unskip="' + escapeHtml(r.v.id) + '" data-month="' + escapeHtml(month) + '" title="押すとスキップを取り消す">休・' + escapeHtml(p2SkipOf(r.v, month)) + "</span>"
           : '<span class="pay2-muted">待機' + frac + "</span>";
         return '<tr data-vid="' + escapeHtml(r.v.id) + '"' + (rec && rec.payableId ? ' data-pid="' + escapeHtml(rec.payableId) + '"' : "") + ">" +
           '<td class="strong">' + escapeHtml(r.v.name || "") + "</td>" +
@@ -775,6 +894,7 @@
     var frac = need > 1 ? got + "/" + need : "";
     var pid = (e && e.byMonth[m] && e.byMonth[m].payableId) || "";
     if (st === "received" || (!st && got)) return { k: "ok", pid: pid, html: '<span class="pay2-mx-ok">✓' + (frac ? " " + frac : "") + "</span>" };
+    if (st === "skipped") return { k: "skip", pid: "", html: '<span class="pay2-mx-skip" data-unskip="' + escapeHtml(v.id) + '" data-month="' + m + '" title="' + escapeHtml(p2SkipOf(v, m)) + '（押すと取り消す）">休</span>' };
     if (st === "overdue") return { k: "late", pid: pid, html: p2Badge(got ? "一部 " + frac : "未着", "err") };
     if (st === "waiting") return { k: "wait", pid: pid, html: '<span class="pay2-mx-dim">待機' + (frac ? " " + frac : "") + "</span>" };
     return { k: "none", pid: "", html: '<span class="pay2-mx-dim">―</span>' };
@@ -789,7 +909,7 @@
   function p2CheckMatrixRows(month, useFilter){
     var months = p2CheckMonths(month);
     return p2.vendors
-      .filter(function(v){ return !v.excluded && p2CadenceOf(v) >= 1 && (!useFilter || p2CheckMatch(v)); })
+      .filter(function(v){ return p2CheckTarget(v) && (!useFilter || p2CheckMatch(v)); })
       .map(function(v){
         var cells = months.map(function(m){ return p2MxCell(v, m); });
         var lateIdx = -1;
@@ -922,7 +1042,7 @@
     var hide = p2SuggHidden();
     var out = [];
     p2.vendors.forEach(function(v){
-      if (v.excluded) return;
+      if (v.excluded || v.defaultMethod === "UPSIDER") return;   // UPSIDER は未着チェックの対象外（2026/09/15）
       var e = p2._recv[v.id];
       if (!e) return;
       var c = function(m){ return (e.count && e.count[m]) || 0; };
@@ -930,10 +1050,20 @@
       var s = null;
       if (cm === 0 && c(m0) && c(m1) && c(m2)){
         s = { type: "monthly", label: "毎月にする", done: "毎月にしました", why: +m2.slice(5) + "〜" + +m0.slice(5) + "月に毎月受領", patch: { cadenceMonths: 1 } };
+      } else if (cm === 1 && p2SkipOf(v, m1) && p2SkipOf(v, m2)){
+        s = { type: "spot", label: "スポットにする", done: "スポットにしました", why: +m2.slice(5) + "月・" + +m1.slice(5) + "月ともスキップ（停止・解約？）", patch: { cadenceMonths: 0 } };
       } else if (cm === 1 && e.last && e.last < m2){
         s = { type: "spot", label: "スポットにする", done: "スポットにしました", why: "最終受領 " + e.last + "・前月も前々月も受領なし（停止・解約？）", patch: { cadenceMonths: 0 } };
       } else if (cm >= 1 && c(m1) >= 2 && c(m1) <= 3 && c(m1) === c(m2) && p2ExpectCount(v) < c(m1)){ // 利用量で件数が変わる SaaS（月5件以上）は提案しない
         s = { type: "count", label: "月" + c(m1) + "件にする", done: "月" + c(m1) + "件にしました", why: +m2.slice(5) + "月・" + +m1.slice(5) + "月とも " + c(m1) + "件受領", patch: { expectCount: c(m1) } };
+      }
+      // 想定到着日が実際の到着日と合っていない（早すぎて届く前に未着と出る・遅すぎて未着に気づくのが遅い）
+      if (!s && cm >= 1){
+        var ad = p2ArrivalDay(p2DaySamples(v), m0), curDay = p2ExpectDay(v);
+        if (ad && (ad.day - curDay >= 3 || curDay - ad.day >= 5)){
+          s = { type: "day", label: "想定到着日を" + ad.day + "日にする", done: "想定到着日を" + ad.day + "日にしました",
+            why: "今は " + curDay + "日・直近の到着 " + ad.days.map(function(d){ return d ? d + "日" : "前月中"; }).join("／"), patch: { expectDay: ad.day } };
+        }
       }
       if (s && !hide[v.id + ":" + s.type + ":" + JSON.stringify(s.patch)]){ s.v = v; out.push(s); }
     });
@@ -1504,7 +1634,7 @@
       p2Field("p2f-invoiceNo", "請求書番号", "text", r.invoiceNo) +
       p2Field("p2f-invoiceDate", "請求日", "date", r.invoiceDate) +
       '<div class="pay2-fld"><label>請求月（何月分）</label><input type="month" id="p2f-periodMonth" value="' +
-        escapeHtml(p2Mkey(r.periodMonth) || p2Mkey(r.invoiceDate) || p2Mkey(r.receivedDate)) + '"></div>' +
+        escapeHtml(p2Mkey(r.periodMonth) || p2GuessPeriod(r.invoiceDate || r.receivedDate, p2PeriodHistory(p2VendorByName(r.vendorName) || p2ById(p2.vendors, r.vendorId), r.id))) + '"></div>' +
       p2Field("p2f-dueDate", "支払期日", "date", r.dueDate) +
       p2Field("p2f-scheduledDate", "支払予定日", "date", r.scheduledDate) +
       '<div class="pay2-fld wide pay2-payto-note" id="p2f-due-auto" hidden></div>' +
@@ -1571,7 +1701,17 @@
     }
     // 支払期日＝ベンダーの支払サイト＋何月分（口座と同じく 空欄 か 自動で入れたままの欄だけ書き換える）。
     // fill=false は説明を出すだけ（支払済の行を開いたとき・期日を手で変えたとき）。UPSIDER はカードの決済日なので入れない。
+    // 何月分が空か自動で入れたままなら、請求日（無ければ受領日）とベンダーの過去の行から入れ直す（2026/09/15。手で入れた月は触らない）
+    var autoPm = p2Mkey(r.periodMonth) ? null : p2El("p2f-periodMonth").value;
+    function p2AutoPeriod(v){
+      var el = p2El("p2f-periodMonth");
+      if (el.value && el.value !== autoPm) return;
+      var g = p2GuessPeriod(p2El("p2f-invoiceDate").value || p2El("p2f-receivedDate").value, p2PeriodHistory(v, p2.editId));
+      el.value = g;
+      autoPm = g;
+    }
     function p2ApplyVendorDue(v, fill){
+      if (fill) p2AutoPeriod(v);
       var terms = v ? String(v.paymentTerms || "").trim() : "";
       var upsider = p2El("p2f-method").value === "UPSIDER";
       var pm = p2El("p2f-periodMonth").value, inv = p2El("p2f-invoiceDate").value;
@@ -1622,7 +1762,7 @@
       p2ApplyVendorPayTo(p2CurVendor());
       p2ApplyVendorDue(p2CurVendor(), true);
     });
-    ["p2f-periodMonth", "p2f-invoiceDate"].forEach(function(id){
+    ["p2f-periodMonth", "p2f-invoiceDate", "p2f-receivedDate"].forEach(function(id){
       ["input", "change"].forEach(function(ev){
         p2El(id).addEventListener(ev, function(){ p2ApplyVendorDue(p2CurVendor(), true); });
       });
@@ -1825,8 +1965,9 @@
         '<input type="number" id="p2v-cadence-n" min="2" max="60" value="' + (nOn ? cm : 3) + '"' + (nOn ? "" : " hidden") + ">" +
         '<span class="pay2-cad-unit" id="p2v-cadence-unit"' + (nOn ? "" : " hidden") + ">ヶ月ごと</span>" +
       "</div></div>" +
-      p2Field("p2v-expectDay", "想定到着日（1〜28・未着判定に使用）", "number", d.expectDay == null ? 25 : d.expectDay) +
+      p2Field("p2v-expectDay", "想定到着日（支払月の1〜28日・この日を過ぎて届かなければ未着）", "number", d.expectDay == null ? PAY_EXPECT_DAY_FALLBACK : d.expectDay) +
       p2Field("p2v-expectCount", "月あたりの件数（同じ月に届く請求書の数・既定1）", "number", d.expectCount == null ? 1 : d.expectCount) +
+      '<div class="pay2-fld wide"><label>請求の来ない月（未着チェックで「休」にする・支払月）</label><div class="pay2-skip-edit" id="p2v-skips"></div></div>' +
       p2Field("p2v-statementKeys", "カード明細の照合キー（UPSIDER 明細の利用先に含まれる語・, 区切り・社名の英字は自動）", "text", d.statementKeys, true) +
       '<div class="pay2-fld wide"><button type="button" class="pay2-payto-toggle" id="p2v-payto-toggle" data-title="いつもの振込先（口座変更の検知に使用）" aria-expanded="true">▼ いつもの振込先（口座変更の検知に使用）</button></div>' +
       p2PayToFields("p2v-", d) +
@@ -1855,6 +1996,29 @@
     termsEl.setAttribute("list", "p2v-terms-list");
     termsEl.addEventListener("input", termsHint);
     termsHint();
+    // 請求の来ない月（スキップ）の編集。保存で skipMonths ごと送る
+    p2.vendSkips = (d.skipMonths || []).slice();
+    var skipBox = p2El("p2v-skips");
+    function renderSkips(){
+      skipBox.innerHTML = (p2.vendSkips.length ? p2.vendSkips.map(function(x){
+        return '<span class="ui-chip pay2-skip-chip">' + escapeHtml(x.month + (x.reason ? " " + x.reason : "")) +
+          '<button type="button" class="pay2-skip-del" data-month="' + escapeHtml(x.month) + '" aria-label="' + escapeHtml(x.month) + ' を取り消す">×</button></span>';
+      }).join("") : '<span class="pay2-muted">なし</span>') +
+        '<span class="pay2-skip-add"><input type="month" id="p2v-skip-month" aria-label="スキップする月（支払月）">' +
+        '<select id="p2v-skip-reason" aria-label="理由">' + P2_SKIP_REASONS.map(function(s){ return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + "</option>"; }).join("") + "</select>" +
+        '<button type="button" class="pay2-mini-btn" id="p2v-skip-add">追加</button></span>';
+    }
+    skipBox.addEventListener("click", function(ev){
+      var del = ev.target && ev.target.closest ? ev.target.closest(".pay2-skip-del") : null;
+      if (del){ p2.vendSkips = p2WithSkip(p2.vendSkips, del.getAttribute("data-month"), ""); renderSkips(); return; }
+      if (ev.target && ev.target.id === "p2v-skip-add"){
+        var sm = p2El("p2v-skip-month").value;
+        if (!/^\d{4}-\d{2}$/.test(sm)) return;
+        p2.vendSkips = p2WithSkip(p2.vendSkips, sm, p2El("p2v-skip-reason").value);
+        renderSkips();
+      }
+    });
+    renderSkips();
     var cadEl = p2El("p2v-cadence");
     cadEl.addEventListener("change", function(){
       var on = this.value === "everyN";
@@ -1868,7 +2032,7 @@
     var cad = p2El("p2v-cadence").value;
     var cadN = Math.max(2, Math.min(60, parseInt(p2El("p2v-cadence-n").value, 10) || 3));
     var cadenceMonths = cad === "monthly" ? 1 : cad === "yearly" ? 12 : cad === "spot" ? 0 : cadN;
-    var expectDay = Math.max(1, Math.min(28, parseInt(p2El("p2v-expectDay").value, 10) || 25));
+    var expectDay = Math.max(1, Math.min(28, parseInt(p2El("p2v-expectDay").value, 10) || PAY_EXPECT_DAY_FALLBACK));
     var vals = {
       name: p2El("p2v-name").value.trim(),
       contact: p2El("p2v-contact").value.trim(),
@@ -1882,7 +2046,8 @@
       expectCount: Math.max(1, Math.min(10, parseInt(p2El("p2v-expectCount").value, 10) || 1)),
       statementKeys: p2El("p2v-statementKeys").value.trim(),
       note: p2El("p2v-note").value.trim(),
-      excluded: p2El("p2v-excluded").checked
+      excluded: p2El("p2v-excluded").checked,
+      skipMonths: (p2.vendSkips || []).slice()
     };
     Object.assign(vals, p2PayToValues("p2v-"));
     if (!vals.name) return p2FormErr("pay2-vendor", "ベンダー名は必須です。");
@@ -1980,6 +2145,8 @@
   function p2QueueCard(it, i){
     var sug = it.suggest || "new";
     var rows = it.threadRows || [];
+    // 件名に「N月分」が無ければ受領日とベンダーの過去の行から推定（ベンダーを選び直すと推定し直す）
+    var qGuess = it.periodMonth ? "" : p2GuessPeriod(it.receivedDate, p2PeriodHistory(p2VendorByName(it.vendorName)));
     var btn = function(act, label, cls){
       return '<button type="button" class="pay2-tool-btn' + (cls ? " " + cls : "") + (act === sug ? " is-suggest" : "") +
         '" data-act="' + act + '">' + label + "</button>";
@@ -2009,7 +2176,8 @@
       '<select class="pay2-q-method" aria-label="支払方式"><option value="">方式</option>' +
         P2Q_METHODS.map(function(m){ return '<option value="' + m + '"' + (m === it.method ? " selected" : "") + ">" + m + "</option>"; }).join("") +
       "</select>" +
-      '<input type="month" class="pay2-q-month" value="' + escapeHtml(it.periodMonth || "") + '" aria-label="何月分" title="何月分">' +
+      (it.periodMonth ? '<input type="month" class="pay2-q-month" value="' + escapeHtml(it.periodMonth) + '" aria-label="何月分" title="何月分（件名から）">'
+        : '<input type="month" class="pay2-q-month" value="' + escapeHtml(qGuess) + '" data-auto="' + escapeHtml(qGuess) + '" data-date="' + escapeHtml(it.receivedDate || "") + '" aria-label="何月分" title="何月分（受領日から推定）">') +
       '<input type="text" class="pay2-q-amount" inputmode="numeric" placeholder="税込（任意）" aria-label="税込金額">' +
       '<input type="date" class="pay2-q-due" aria-label="支払期日" title="支払期日（任意）">' +
       "</div>" +
@@ -2031,6 +2199,12 @@
     var vEl = card.querySelector(".pay2-q-vendor"), mEl = card.querySelector(".pay2-q-method"), pmEl = card.querySelector(".pay2-q-month");
     if (!dueEl || !vEl || !mEl || !pmEl) return;
     var v = p2VendorByName(vEl.value);
+    // 何月分を推定で入れたカードは、ベンダーを選び直したらそのベンダーの過去の行で推定し直す（手で変えた月は保つ）
+    var pmAuto = pmEl.getAttribute("data-auto");
+    if (pmAuto != null && pmEl.value === pmAuto){
+      var g = p2GuessPeriod(pmEl.getAttribute("data-date") || "", p2PeriodHistory(v));
+      if (g){ pmEl.value = g; pmEl.setAttribute("data-auto", g); }
+    }
     var due = v && v.paymentTerms && mEl.value !== "UPSIDER" ? p2DueFromTerms(v.paymentTerms, pmEl.value, "") : null;
     var auto = dueEl.getAttribute("data-auto") || "";
     if (dueEl.value && dueEl.value !== auto) return;

@@ -15,9 +15,11 @@ function cut(name){
   const end = src.indexOf("\n  }\n", start);
   return src.slice(start, end + 4);
 }
-const { p2DueFromTerms, p2DueLabel, p2PeriodCheck } = new Function(
-  cut("p2MonthAdd") + cut("p2TermsDays") + cut("p2DueFromTerms") + cut("p2DueLabel") + cut("p2CloseLimit") + cut("p2PeriodCheck") +
-  "\nreturn { p2DueFromTerms, p2DueLabel, p2PeriodCheck };"
+// p2Mkey は1行の関数なので cut で続く p2MonthsDiff まで一緒に切り出される（どちらも使う）
+const { p2DueFromTerms, p2DueLabel, p2PeriodCheck, p2PayMonthOf, p2GuessPeriod, p2ArrivalDay, p2WithSkip, p2SkipOf } = new Function(
+  cut("p2Mkey") + cut("p2MonthAdd") + cut("p2TermsDays") + cut("p2DueFromTerms") + cut("p2DueLabel") + cut("p2CloseLimit") + cut("p2PeriodCheck") +
+  cut("p2PayMonthOf") + cut("p2GuessPeriod") + cut("p2ArrivalDay") + cut("p2WithSkip") + cut("p2SkipOf") +
+  "\nreturn { p2DueFromTerms, p2DueLabel, p2PeriodCheck, p2PayMonthOf, p2GuessPeriod, p2ArrivalDay, p2WithSkip, p2SkipOf };"
 )();
 
 test("月末締め翌月末: 6月分 → 7月末", () => {
@@ -87,6 +89,54 @@ test("何月分を確認: 同じベンダーが締め前に当月分を出して
     { periodMonth: "2026-06", invoiceDate: "2026-06-30", dueDate: "2026-07-31" },
   ];
   assert.equal(p2PeriodCheck(T, "2026-08", "2026-08-15", "", noHabit), "warn");
+});
+
+test("未着チェックの支払月: 何月分＋支払サイトの期日の月（支払予定日は使わない）", () => {
+  const T = "月末締め翌月末";
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-07", method: "銀行振込", scheduledDate: "2026-07-31" }, T), "2026-08");
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-06", method: "銀行振込" }, "月末締め翌々月末"), "2026-08");
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-07", method: "銀行振込", invoiceDate: "2026-07-20" }, "請求書発行後30日"), "2026-08");
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-07", method: "銀行振込", dueDate: "2026-09-10" }, ""), "2026-09");
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-07", method: "口座振替" }, ""), "2026-08");
+  assert.equal(p2PayMonthOf({ periodMonth: "", method: "銀行振込", receivedDate: "2026-08-03" }, T), "2026-08");
+  assert.equal(p2PayMonthOf({ periodMonth: "2026-07", method: "UPSIDER", receivedDate: "2026-07-05" }, ""), "2026-07");
+});
+
+test("何月分の初期値: 月初着は前月分・25日以降はその月分・月中はベンダーの過去の行から", () => {
+  assert.equal(p2GuessPeriod("2026-08-03", []), "2026-07");
+  assert.equal(p2GuessPeriod("2026-07-31", []), "2026-07");
+  assert.equal(p2GuessPeriod("2026-07-25", []), "2026-07");
+  assert.equal(p2GuessPeriod("2026-01-05", []), "2025-12");
+  assert.equal(p2GuessPeriod("2026-08-14", []), "2026-07");
+  const rat = [{ periodMonth: "2026-07", date: "2026-07-22" }, { periodMonth: "2026-07", date: "2026-07-14" }];
+  assert.equal(p2GuessPeriod("2026-08-18", rat), "2026-08");
+  // 月初に出た行は月中の推定に使わない
+  assert.equal(p2GuessPeriod("2026-08-18", [{ periodMonth: "2026-07", date: "2026-08-03" }]), "2026-07");
+  assert.equal(p2GuessPeriod("", []), "");
+});
+
+test("想定到着日の提案: 支払月に届いた日の最大＋3日（前月着は0・遅れは数えない・2か月分未満は出さない）", () => {
+  const s = [{ pay: "2026-07", received: "2026-07-02" }, { pay: "2026-08", received: "2026-08-04" }, { pay: "2026-09", received: "2026-08-31" }];
+  assert.deepEqual(p2ArrivalDay(s, "2026-09"), { day: 7, days: [2, 4, 0] });
+  assert.equal(p2ArrivalDay([{ pay: "2026-08", received: "2026-08-02" }], "2026-09"), null);
+  const late = [{ pay: "2026-07", received: "2026-08-06" }, { pay: "2026-08", received: "2026-08-10" }, { pay: "2026-09", received: "2026-09-15" }];
+  assert.deepEqual(p2ArrivalDay(late, "2026-09"), { day: 18, days: [10, 15] });
+  assert.deepEqual(p2ArrivalDay([{ pay: "2026-08", received: "2026-08-27" }, { pay: "2026-09", received: "2026-09-28" }], "2026-09"), { day: 28, days: [27, 28] });
+  // 先の支払月は数えない
+  assert.equal(p2ArrivalDay([{ pay: "2026-09", received: "2026-09-02" }, { pay: "2026-10", received: "2026-10-01" }], "2026-09"), null);
+});
+
+test("スキップ: 月を足す・置き換える・外す／理由を引く", () => {
+  let list = p2WithSkip([], "2026-08", "稼働なし");
+  list = p2WithSkip(list, "2026-06", "停止・解約");
+  assert.deepEqual(list.map(x => x.month), ["2026-06", "2026-08"]);
+  list = p2WithSkip(list, "2026-08", "翌月にまとめて請求");
+  assert.equal(p2SkipOf({ skipMonths: list }, "2026-08"), "翌月にまとめて請求");
+  list = p2WithSkip(list, "2026-06", "");
+  assert.deepEqual(list, [{ month: "2026-08", reason: "翌月にまとめて請求" }]);
+  assert.equal(p2SkipOf({ skipMonths: list }, "2026-07"), "");
+  assert.equal(p2SkipOf({}, "2026-07"), "");
+  assert.equal(p2SkipOf({ skipMonths: [{ month: "2026-07", reason: "" }] }, "2026-07"), "スキップ");
 });
 
 test("期日の表示に曜日と土日の注記", () => {

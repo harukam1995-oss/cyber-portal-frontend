@@ -3245,6 +3245,15 @@
 .pay2-mx th.is-cur{ color: var(--accent); }
 .pay2-mx-ok{ color: var(--ok); font-family: var(--font-mono); }
 .pay2-mx-dim{ color: var(--text-faint); font-family: var(--font-mono); font-size:10.5px; }
+/* 請求の来ない月（スキップ・2026/09/15） */
+.pay2-mx-skip{ color: var(--text-dim); font-family: var(--font-mono); font-size:10.5px; cursor:pointer; border-bottom:1px dotted var(--text-faint); }
+.pay2-mx-skip:hover{ color: var(--text); border-bottom-color: var(--accent); }
+.pay2-check-act .pay2-muted{ margin-right:4px; }
+.pay2-skip-edit{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.pay2-skip-chip{ display:inline-flex; align-items:center; gap:4px; }
+.pay2-skip-del{ border:0; background:none; color: var(--text-faint); cursor:pointer; padding:0 2px; font-size:12px; line-height:1; }
+.pay2-skip-del:hover{ color: var(--err); }
+.pay2-skip-add{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; }
 .pay2-st-err{ color: var(--err); }
 .pay2-st-warn{ color: var(--warn); }
 .pay2-st-mute{ color: var(--text-faint); }
