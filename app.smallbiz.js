@@ -47,6 +47,25 @@
     });
     return best;
   }
+  // 前回との差。値は "37点" "¥0" "$0.00" "38,046" のような文字なので、最初の数字だけ取り出して比べる。
+  // 増減の良し悪しは項目による（却下が増えるのは悪い）ので、色は付けずに数字だけ出す。
+  function numOf(v){
+    var m = String(v == null ? "" : v).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    return m ? Number(m[0]) : null;
+  }
+  function deltaOf(b, m){
+    var prev = b.prev && b.prev.metrics ? b.prev.metrics[m.label] : null;
+    if (prev == null) return null;
+    var was = numOf(prev), now = numOf(m.value);
+    if (was === null || now === null || was === now) return null;
+    var d = Math.round((now - was) * 100) / 100;
+    return { text: (d > 0 ? "+" : "−") + Math.abs(d).toLocaleString("ja-JP"), was: prev };
+  }
+  function prevStamp(b){
+    if (!b.prev || !b.prev.at) return "";
+    var d = new Date(b.prev.at);
+    return isFinite(d) ? fmtStamp(b.prev.at).slice(0, 10) : "";
+  }
   function fmtStamp(ms){
     if (!ms) return "";
     // 端末のタイムゾーンではなく日本時間で出す（他の画面と揃える）
@@ -90,7 +109,7 @@
         '<p class="sb-faint">Claude が各事業の INDEX（Obsidian）から内容を登録します。</p></section>';
       return;
     }
-    host.innerHTML = renderSummary(biz) + biz.map(renderBusiness).join("") +
+    host.innerHTML = renderSummary(biz) + renderJumps(biz) + biz.map(renderBusiness).join("") +
       (S.state.note ? '<p class="sb-footnote">' + escapeHtml(S.state.note) + '</p>' : "");
   }
 
@@ -124,6 +143,18 @@
       (soonest ? '<p class="sb-footnote">次の判定：' + escapeHtml(dueText(soonest.due)) + '　' + escapeHtml(soonest.name) + '</p>' : "");
   }
 
+  // 事業名のジャンプ行。hash は showView() のルーティングが使っているので、
+  // <a href="#..."> ではなくボタン＋scrollIntoView にする（hash を書くと画面が切り替わってしまう）。
+  function renderJumps(biz){
+    if (biz.length < 3) return "";
+    return '<nav class="sb-jumps">' + biz.map(function(b, i){
+      var key = b.id || String(i);
+      var tone = STATUS_TONE.hasOwnProperty(b.status) ? STATUS_TONE[b.status] : "";
+      return '<button type="button" class="sb-jump' + (tone ? " is-" + tone : "") + '" data-key="' + escapeHtml(key) +
+        '">' + escapeHtml(b.name) + '</button>';
+    }).join("") + '</nav>';
+  }
+
   function renderBusiness(b, idx){
     var tone = STATUS_TONE.hasOwnProperty(b.status) ? STATUS_TONE[b.status] : "";
     var goal = isNum(b.goalMonthlyProfit) ? b.goalMonthlyProfit : null;
@@ -132,10 +163,14 @@
     var segs = "";
     for (var i = 0; i < 10; i++) segs += '<i class="' + (i < Math.round(pct * 10) ? "on" : "") + '"></i>';
 
+    var pstamp = prevStamp(b);
     var metrics = (b.metrics || []).map(function(m){
+      var d = deltaOf(b, m);
       return '<div class="sb-metric' + (m.tone ? " is-" + m.tone : "") + '">' +
         '<span class="sb-metric-label">' + escapeHtml(m.label) + '</span>' +
-        '<span class="sb-metric-value">' + escapeHtml(m.value) + '</span>' +
+        '<span class="sb-metric-value">' + escapeHtml(m.value) +
+          (d ? '<span class="sb-delta" title="' + escapeHtml(pstamp + " は " + d.was) + '">' + escapeHtml(d.text) + '</span>' : "") +
+        '</span>' +
         (m.note ? '<span class="sb-metric-note">' + escapeHtml(m.note) + '</span>' : "") + '</div>';
     }).join("");
 
@@ -167,13 +202,14 @@
     }).join("");
 
     var key = b.id || String(idx);
-    return '<section class="panel sb-card">' +
+    return '<section class="panel sb-card" id="sb-card-' + escapeHtml(key) + '">' +
       '<div class="card-head sb-head">' +
         '<h2>' + escapeHtml(b.name) + '</h2>' +
         '<span class="sb-status' + (tone ? " is-" + tone : "") + '">[ ' + escapeHtml(b.status || "—") + ' ]</span>' +
         (b.phase ? '<span class="sb-phase">' + escapeHtml(b.phase) + '</span>' : "") +
         (nd ? '<span class="sb-judge">次の判定 ' + escapeHtml(dueText(nd.e.due)) + '</span>' : "") +
-        '<span class="sb-updated">' + (b.updated ? escapeHtml(b.updated.replace(/-/g, "/")) + " 時点" : "") + '</span>' +
+        '<span class="sb-updated">' + (b.updated ? escapeHtml(b.updated.replace(/-/g, "/")) + " 時点" : "") +
+          (pstamp ? '　<span class="sb-faint">差は ' + escapeHtml(pstamp) + ' との比較</span>' : "") + '</span>' +
       '</div>' +
       '<div class="card-body sb-body">' +
         (b.summary ? '<p class="sb-summary">' + escapeHtml(b.summary) + '</p>' : "") +
@@ -201,6 +237,12 @@
       var d = e.target;
       if (d && d.classList && d.classList.contains("sb-exits")) S.openExits[d.getAttribute("data-key")] = d.open;
     }, true);
+    if (host) host.addEventListener("click", function(e){
+      var jump = e.target && e.target.closest ? e.target.closest(".sb-jump") : null;
+      if (!jump) return;
+      var card = $("sb-card-" + jump.getAttribute("data-key"));
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   CP.initSmallbiz = function(){ wire(); load(); };
