@@ -3273,6 +3273,12 @@
   .sb-wrap .kpi-band{ margin-bottom:0; }
   .kpi-value.sb-warn{ color: var(--warn); }
   .sb-kpis .kpi-value{ font-size:18px; white-space:nowrap; }
+  /* スモビジは「次の判定」を足して5枚。既定の .kpi-band は4列なので、ここだけ5列にする。 */
+  .sb-kpis{ grid-template-columns: repeat(5, 1fr); }
+  @media (max-width: 1000px){
+    .sb-kpis{ grid-template-columns: repeat(2, 1fr); }
+    .sb-kpis .kpi:nth-child(5){ border-left:none; }
+  }
   @media (max-width: 600px){ .sb-kpis .kpi-value{ font-size:15px; } .sb-kpis .kpi-label{ letter-spacing:.5px; } }
   .sb-empty{ padding:28px 20px; text-align:center; color: var(--text-dim); }
   .sb-faint{ color: var(--text-faint); font-size:12px; }
@@ -3283,6 +3289,7 @@
   .sb-status.is-warn{ color: var(--warn); }
   .sb-status.is-err{ color: var(--err); }
   .sb-phase{ font-size:12px; color: var(--text-dim); }
+  .sb-judge{ font-family: var(--font-mono); font-size:10.5px; color: var(--warn); border:1px solid var(--hairline); border-radius:2px; padding:0 6px; white-space:nowrap; }
   .sb-updated{ margin-left:auto; font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); white-space:nowrap; }
   .sb-body{ display:flex; flex-direction:column; gap:14px; }
   .sb-summary{ margin:0; font-size:13px; line-height:1.7; color: var(--text); }
@@ -3317,6 +3324,7 @@
   .sb-table{ width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
   .sb-table td{ padding:5px 8px; border-top:1px solid var(--hairline); vertical-align:top; color: var(--text-dim); }
   .sb-code{ font-family: var(--font-mono); color: var(--text-faint); white-space:nowrap; }
+  .sb-due-cell{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); white-space:nowrap; }
   .sb-foot{ display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; border-top:1px solid var(--hairline); padding-top:10px; }
   .sb-link{ font-size:12px; color: var(--text-dim); text-decoration:none; border:1px solid var(--panel-border); border-radius:2px; padding:3px 9px; }
   .sb-link:hover{ color: var(--text); border-color: var(--accent); }

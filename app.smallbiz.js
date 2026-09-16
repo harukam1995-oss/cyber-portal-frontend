@@ -4,8 +4,10 @@
 
    データの置き場所
    ・/api/smallbiz（Firestore users/{uid}/smallbiz/state）… 事業ごとの状態・数字・次にやること・判断待ち・撤退基準・リンク
-   ・正は Obsidian の各事業 INDEX（03_仕事/個人事業/…）。Claude がセッションの終わりにオーナーのブラウザから
-     __CP.smallbizPut(state) で丸ごと置き換える。事業の数字は公開の GitHub Pages（このファイル）には書かない。
+   ・正は Obsidian の各事業 INDEX（03_仕事/個人事業/…）。Claude が丸ごと置き換える。経路は2つ：
+       PUT /api/smallbiz/ingest/state（X-Ingest-Token。Claude のセッションから直接。ふだんはこちら）
+       __CP.smallbizPut(state)（オーナーのブラウザから。手当て用に残す）
+     事業の数字は公開の GitHub Pages（このファイル）には書かない。
    ・画面からの編集は持たない（オーナーは読んで判断するだけ、という運用のため）。 */
 (function(){
   "use strict";
@@ -18,13 +20,33 @@
   var S = { loading: false, loaded: false, err: null, state: null, updatedAt: null, openExits: {} };
 
   // 状態の表示。色は意味色だけ（デザイン方針「色を増やさない」）。
-  var STATUS_TONE = { "稼働中": "ok", "検証中": "ok", "準備中": "", "検討中": "", "保留": "warn", "撤退": "err" };
+  var STATUS_TONE = { "稼働中": "ok", "検証中": "ok", "準備中": "", "検討中": "", "保留": "warn", "凍結": "warn", "撤退": "err" };
+  // 「稼働中」として数えるものは許可リストで持つ。除外リスト方式だと、新しい状態（凍結など）を
+  // 足したときに黙って稼働中へ数えられ、目標の合計まで膨らむ（2026-09-16 修正）。
+  var ACTIVE_STATUS = { "稼働中": 1, "検証中": 1, "準備中": 1, "検討中": 1 };
+  function isActive(b){ return ACTIVE_STATUS[String(b && b.status || "")] === 1; }
 
   function $(id){ return document.getElementById(id); }
   function setStatus(text){ var el = $("sb-status"); if (el) el.textContent = text; }
   function yen(n){ return (n < 0 ? "−¥" : "¥") + Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
   function isNum(n){ return typeof n === "number" && isFinite(n); }
   function safeUrl(u){ u = String(u || ""); return /^(https?:\/\/|obsidian:\/\/)/i.test(u) ? u : ""; }
+  // 判定日。"YYYY-MM-DD" だけを日付として扱う（「提出日＋60日」等はそのまま文字で出す）。
+  function dueDate(v){
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ""));
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  function dueText(v){ return String(v || "").replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$1/$2/$3"); }
+  // その事業でいちばん近い「これから来る判定日」。過ぎたものは出さない。
+  function nextDue(b){
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var best = null;
+    (b.exits || []).forEach(function(e){
+      var d = dueDate(e.due);
+      if (d && d >= today && (!best || d < best.d)) best = { d: d, e: e };
+    });
+    return best;
+  }
   function fmtStamp(ms){
     if (!ms) return "";
     // 端末のタイムゾーンではなく日本時間で出す（他の画面と揃える）
@@ -73,26 +95,33 @@
   }
 
   function renderSummary(biz){
-    var active = biz.filter(function(b){ return b.status !== "保留" && b.status !== "撤退"; }).length;
+    var active = biz.filter(isActive).length;
     var profit = 0, goal = 0, hasProfit = false;
-    var decisions = 0, ownerNext = 0;
+    var decisions = 0, ownerNext = 0, soonest = null;
     biz.forEach(function(b){
       if (isNum(b.profitThisMonth)){ profit += b.profitThisMonth; hasProfit = true; }
-      // 目標の合計は動いている事業だけ（保留・撤退の目標を足すと実態より大きく見えるため）。
-      if (isNum(b.goalMonthlyProfit) && b.status !== "保留" && b.status !== "撤退") goal += b.goalMonthlyProfit;
+      // 目標の合計は動いている事業だけ（保留・凍結・撤退の目標を足すと実態より大きく見えるため）。
+      if (isNum(b.goalMonthlyProfit) && isActive(b)) goal += b.goalMonthlyProfit;
       decisions += (b.decisions || []).length;
       ownerNext += (b.next || []).filter(function(n){ return /オーナー/.test(n.owner || ""); }).length;
+      var nd = nextDue(b);
+      if (nd && (!soonest || nd.d < soonest.d)) soonest = { d: nd.d, due: nd.e.due, name: b.name };
     });
     function kpi(label, value, cls){
       return '<div class="kpi"><span class="kpi-label">' + escapeHtml(label) + '</span><span class="kpi-value' +
         (cls ? " " + cls : "") + '">' + escapeHtml(value) + '</span></div>';
     }
+    // 「次の判定」＝全事業でいちばん近い判定日（Obsidian の判定カレンダーと同じもの）。
+    // 撤退・変更ルールは条件式だけだと「いつ見るか」が決まらないので、日付を1枚目に出す。
+    var judge = soonest ? dueText(soonest.due) : "—";
     return '<section class="panel kpi-band sb-kpis">' +
       kpi("稼働中の事業", active + " / " + biz.length) +
-      kpi("今月の利益（合計）", hasProfit ? yen(profit) : "—", profit > 0 ? "is-income" : "") +
+      kpi("今月の入り（合計）", hasProfit ? yen(profit) : "—", profit > 0 ? "is-income" : "") +
       kpi("目標（稼働中・月）", goal ? yen(goal) : "—") +
+      kpi("次の判定", judge, soonest ? "sb-warn" : "") +
       kpi("判断待ち / オーナー作業", decisions + " / " + ownerNext, decisions ? "sb-warn" : "") +
-      '</section>';
+      '</section>' +
+      (soonest ? '<p class="sb-footnote">次の判定：' + escapeHtml(dueText(soonest.due)) + '　' + escapeHtml(soonest.name) + '</p>' : "");
   }
 
   function renderBusiness(b, idx){
@@ -123,9 +152,11 @@
     }).join("");
 
     var exits = (b.exits || []).map(function(e){
-      return '<tr><td class="sb-code">' + escapeHtml(e.code || "") + '</td><td>' + escapeHtml(e.cond) + '</td><td>' +
+      return '<tr><td class="sb-code">' + escapeHtml(e.code || "") + '</td><td class="sb-due-cell">' +
+        escapeHtml(dueText(e.due)) + '</td><td>' + escapeHtml(e.cond) + '</td><td>' +
         escapeHtml(e.action || "") + '</td></tr>';
     }).join("");
+    var nd = nextDue(b);
 
     var links = (b.links || []).map(function(l){
       var url = safeUrl(l.url);
@@ -141,6 +172,7 @@
         '<h2>' + escapeHtml(b.name) + '</h2>' +
         '<span class="sb-status' + (tone ? " is-" + tone : "") + '">[ ' + escapeHtml(b.status || "—") + ' ]</span>' +
         (b.phase ? '<span class="sb-phase">' + escapeHtml(b.phase) + '</span>' : "") +
+        (nd ? '<span class="sb-judge">次の判定 ' + escapeHtml(dueText(nd.e.due)) + '</span>' : "") +
         '<span class="sb-updated">' + (b.updated ? escapeHtml(b.updated.replace(/-/g, "/")) + " 時点" : "") + '</span>' +
       '</div>' +
       '<div class="card-body sb-body">' +
@@ -174,7 +206,7 @@
   CP.initSmallbiz = function(){ wire(); load(); };
   // 開き直すたびに取り直す（Claude が別の場所で更新しているため）。
   CP.renderSmallbiz = function(){ load(); };
-  // Claude がオーナーのブラウザから内容を丸ごと置き換える入口。成功したら読み直す。
+  // オーナーのブラウザから内容を丸ごと置き換える入口（手当て用）。ふだんは ingest 経路を使う。成功したら読み直す。
   CP.smallbizPut = async function(state){
     var r = await apiFetch("/api/smallbiz/state", { method: "PUT", body: JSON.stringify({ state: state }) });
     await load();
