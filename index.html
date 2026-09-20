@@ -255,7 +255,7 @@
     <div>© 2026 CYBER PORTAL All Rights Reserved.</div>
     <div class="right">
       <span id="last-sync">LAST SYNC --:--</span>
-      <span>v2.33.97</span>
+      <span>v2.33.98</span>
     </div>
   </footer>
 </div>
@@ -1979,6 +1979,26 @@
         <p class="settings-hint" id="settings-backup-state">Drive バックアップ: 確認中…</p>
         <p class="settings-hint" id="settings-db-usage">データベース使用量: 確認中…</p>
         <p class="settings-hint" id="settings-export-status" hidden></p>
+        <div class="settings-btn-row">
+          <label class="ev-btn settings-file-btn">JSONから復元<input type="file" id="settings-restore-file" accept=".json,application/json" hidden></label>
+        </div>
+        <p class="settings-hint">書き出した JSON を Firestore へ書き戻します。家計簿・サブスク（スプレッドシートが正）と Google 連携は対象外です。</p>
+        <div id="settings-restore-box" hidden>
+          <p class="settings-hint" id="settings-restore-file-name"></p>
+          <p class="settings-hint" id="settings-restore-preview">確認中…</p>
+          <label class="settings-check"><input type="radio" name="restore-mode" value="merge" checked> 追加・上書き（バックアップにある分だけ戻す。バックアップに無い今のデータは残す）</label>
+          <label class="settings-check"><input type="radio" name="restore-mode" value="replace"> 完全復元（バックアップに無い今のデータを削除。危険）</label>
+          <div id="settings-restore-replace-confirm" hidden>
+            <label>確認のため「復元」と入力
+              <input type="text" id="settings-restore-word" autocomplete="off" placeholder="復元">
+            </label>
+          </div>
+          <div class="settings-btn-row">
+            <button type="button" class="ev-btn" id="settings-restore-cancel-btn">やめる</button>
+            <button type="button" class="ev-btn ev-btn-primary" id="settings-restore-apply-btn" disabled>復元する</button>
+          </div>
+          <p class="settings-hint" id="settings-restore-result" hidden></p>
+        </div>
       </div>
 
       <div class="settings-section">

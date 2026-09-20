@@ -6,7 +6,10 @@
 // このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
 // install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
 // (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
-const CACHE = "cyber-portal-shell-v178";
+const CACHE = "cyber-portal-shell-v179";
+// HTML はネットワーク優先だが、通信が詰まったまま返らないと起動が止まる。
+// この時間で見切りをつけてキャッシュのシェルを先に出す（取得自体は続け、次回に間に合わせる）。
+const HTML_TIMEOUT_MS = 2500;
 // ヒーロー画像はここに入れない。install 時に全部(4枚)を事前DLしていたが、
 // 実際は1枚しか使わない(スマホは0枚)。fetch ハンドラの stale-while-revalidate
 // で、実際に表示されたものだけ実行時にキャッシュされる。
@@ -60,19 +63,24 @@ self.addEventListener("fetch", (e) => {
     req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
 
   if (isHTML) {
+    // 既定の HTTP キャッシュ(Pages の max-age=600)に当たると、デプロイ直後に古い index.html が
+    // 返って新しい app.js と食い違う。no-cache で毎回再検証する(変わっていなければ 304 で軽い)。
+    const network = fetch(new Request(req, { cache: "no-cache" })).then((res) => {
+      // エラーページはキャッシュしない。SPA なので保存先は index.html 1つに正規化する。
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put("./index.html", copy)).catch(() => {});
+      }
+      return res;
+    });
+    const shell = () => caches.match("./index.html").then((m) => m || caches.match("./"));
     e.respondWith(
-      // 既定の HTTP キャッシュ(Pages の max-age=600)に当たると、デプロイ直後に古い index.html が
-      // 返って新しい app.js と食い違う。no-cache で毎回再検証する(変わっていなければ 304 で軽い)。
-      fetch(new Request(req, { cache: "no-cache" }))
-        .then((res) => {
-          // エラーページはキャッシュしない。SPA なので保存先は index.html 1つに正規化する。
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put("./index.html", copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match("./index.html").then((m) => m || caches.match("./")))
+      // 先に返った方を使う。タイムアウトか通信失敗ならキャッシュのシェル。
+      // キャッシュがまだ無い初回は、時間が過ぎてもネットワークを待つ(待つしかない)。
+      Promise.race([
+        network.catch(() => null),
+        new Promise((r) => setTimeout(() => r(null), HTML_TIMEOUT_MS)),
+      ]).then((res) => res || shell().then((m) => m || network))
     );
     return;
   }

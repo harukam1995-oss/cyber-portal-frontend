@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 178;
+  var BUILD_V = 179;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -6445,7 +6445,7 @@
         statusEl.classList.add("is-err");
       }
     } finally {
-      if (btn){ btn.disabled = false; btn.textContent = "全データをJSONでダウンロード"; }
+      if (btn){ btn.disabled = false; btn.textContent = "JSONでダウンロード"; }
     }
   }
 
@@ -6653,6 +6653,139 @@
     } finally {
       csvApplyBtn.textContent = "取り込む";
       csvUpdateApplyEnabled();
+    }
+  });
+
+  /* ---- データ: JSON フル復元（2026/09/20）----
+     「JSONでダウンロード」で作った JSON をそのまま渡し、Firestore へ書き戻す。
+     CSV 取り込みと同じ流れで、必ず一度 dryRun（件数の確認）を通してから適用する。
+     完全復元は今あるデータを消すので、確認語の入力を求める。 */
+  var restoreData = null;   // 選んだ JSON（パース済み）
+  var restoreDryRun = null; // 直近のプレビュー結果
+
+  function restoreReset(){
+    var box = document.getElementById("settings-restore-box");
+    if (box) box.hidden = true;
+    restoreData = null; restoreDryRun = null;
+    var f = document.getElementById("settings-restore-file"); if (f) f.value = "";
+    var w = document.getElementById("settings-restore-word"); if (w) w.value = "";
+    var m = document.querySelector('#settings-modal input[name="restore-mode"][value="merge"]'); if (m) m.checked = true;
+    var rc = document.getElementById("settings-restore-replace-confirm"); if (rc) rc.hidden = true;
+    var rs = document.getElementById("settings-restore-result"); if (rs){ rs.hidden = true; rs.textContent = ""; }
+    var ap = document.getElementById("settings-restore-apply-btn"); if (ap) ap.disabled = true;
+  }
+  function restoreSelectedMode(){
+    var r = document.querySelector('#settings-modal input[name="restore-mode"]:checked');
+    return r && r.value === "replace" ? "replace" : "merge";
+  }
+  function restoreUpdateApplyEnabled(){
+    var btn = document.getElementById("settings-restore-apply-btn");
+    if (!btn) return;
+    var ok = !!restoreDryRun;
+    if (restoreSelectedMode() === "replace"){
+      var w = document.getElementById("settings-restore-word");
+      ok = ok && !!w && w.value.trim() === "復元";
+    }
+    btn.disabled = !ok;
+  }
+  // サーバーが返した件数を1行に。0 のものは並べない。
+  function restoreTotalsText(res){
+    var t = (res && res.totals) || {};
+    var parts = [];
+    if (t.create) parts.push("新規 " + t.create);
+    if (t.overwrite) parts.push("上書き " + t.overwrite);
+    if (t.unchanged) parts.push("変更なし " + t.unchanged);
+    if (t.delete) parts.push("削除 " + t.delete);
+    if (t.skipped) parts.push("スキップ " + t.skipped);
+    return parts.length ? parts.join(" ・ ") : "差分はありません";
+  }
+  async function restoreRunPreview(){
+    var pv = document.getElementById("settings-restore-preview");
+    var mode = restoreSelectedMode();
+    restoreDryRun = null; restoreUpdateApplyEnabled();
+    if (!restoreData){ if (pv) pv.textContent = "ファイルを読み込めませんでした。"; return; }
+    if (pv) pv.textContent = "確認中…";
+    try {
+      var res = await apiFetch("/api/import/restore", {
+        method: "POST",
+        body: JSON.stringify({ data: restoreData, mode: mode, dryRun: true })
+      });
+      restoreDryRun = res;
+      var when = res.exportedAt ? "書き出し " + res.exportedAt.slice(0, 16).replace("T", " ") + "（UTC）・ " : "";
+      var names = Object.keys(res.counts || {}).filter(function(k){
+        var c = res.counts[k];
+        return c.create || c.overwrite || c.delete;
+      });
+      if (pv) pv.textContent = when + restoreTotalsText(res)
+        + (names.length ? "\n対象: " + names.join(" / ") : "");
+    } catch(e){
+      restoreDryRun = null;
+      if (pv) pv.textContent = "エラー: " + apiErrorMessage(e, "復元");
+    }
+    restoreUpdateApplyEnabled();
+  }
+
+  var restoreFileInput = document.getElementById("settings-restore-file");
+  if (restoreFileInput) restoreFileInput.addEventListener("change", async function(){
+    var file = restoreFileInput.files && restoreFileInput.files[0];
+    if (!file) return;
+    var box = document.getElementById("settings-restore-box");
+    var nameEl = document.getElementById("settings-restore-file-name");
+    var rs = document.getElementById("settings-restore-result");
+    var pv = document.getElementById("settings-restore-preview");
+    if (rs){ rs.hidden = true; rs.textContent = ""; }
+    if (nameEl) nameEl.textContent = "ファイル: " + file.name + "（" + Math.max(1, Math.round(file.size / 1024)) + "KB）";
+    if (box) box.hidden = false;
+    restoreData = null;
+    try { restoreData = JSON.parse(await file.text()); }
+    catch(e){
+      if (pv) pv.textContent = "JSON として読めませんでした。「JSONでダウンロード」で作ったファイルを選んでください。";
+      restoreUpdateApplyEnabled();
+      return;
+    }
+    restoreRunPreview();
+  });
+  document.querySelectorAll('#settings-modal input[name="restore-mode"]').forEach(function(r){
+    r.addEventListener("change", function(){
+      var rc = document.getElementById("settings-restore-replace-confirm");
+      if (rc) rc.hidden = restoreSelectedMode() !== "replace";
+      if (restoreData) restoreRunPreview(); else restoreUpdateApplyEnabled();
+    });
+  });
+  var restoreWord = document.getElementById("settings-restore-word");
+  if (restoreWord) restoreWord.addEventListener("input", restoreUpdateApplyEnabled);
+  var restoreCancelBtn = document.getElementById("settings-restore-cancel-btn");
+  if (restoreCancelBtn) restoreCancelBtn.addEventListener("click", restoreReset);
+
+  var restoreApplyBtn = document.getElementById("settings-restore-apply-btn");
+  if (restoreApplyBtn) restoreApplyBtn.addEventListener("click", async function(){
+    var mode = restoreSelectedMode();
+    var rs = document.getElementById("settings-restore-result");
+    if (mode === "replace" && !(await askConfirm("バックアップに無い今のデータを削除して、この時点に戻します。よろしいですか?"))) return;
+    restoreApplyBtn.disabled = true; restoreApplyBtn.textContent = "復元中…";
+    try {
+      var res = await apiFetch("/api/import/restore", {
+        method: "POST",
+        body: JSON.stringify({ data: restoreData, mode: mode, dryRun: false })
+      });
+      if (rs){
+        rs.hidden = false;
+        rs.textContent = "復元しました: " + restoreTotalsText(res)
+          + " ・ 画面全体を合わせるには再読み込みしてください";
+      }
+      // すぐ反映できるものは読み直す（残りは再読み込みで揃う）。
+      if (tasksInitialized) initTasks();
+      if (notesInitialized) initNotes();
+      if (window.__CP && window.__CP.loadContracts) window.__CP.loadContracts();
+      if (window.__CP && window.__CP.loadEventTrackers) window.__CP.loadEventTrackers();
+      loadSettings();
+      var f = document.getElementById("settings-restore-file"); if (f) f.value = "";
+      restoreData = null; restoreDryRun = null;
+    } catch(e){
+      if (rs){ rs.hidden = false; rs.textContent = "失敗: " + apiErrorMessage(e, "復元"); }
+    } finally {
+      restoreApplyBtn.textContent = "復元する";
+      restoreUpdateApplyEnabled();
     }
   });
 
