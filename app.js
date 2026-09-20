@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 177;
+  var BUILD_V = 178;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -162,7 +162,9 @@
             // バックエンド自身が返した 5xx(X-Portal-App 付き)は起動待ちではないので待たずに返す。
             // 付いていない＝Render の前段が返した(アプリに届いていない)ときだけ起動待ちとして再送する。
             if (res.headers.get("X-Portal-App") === "1") return res;
-            if (!retrySafe && res.status === 504) return res;
+            // POST/PATCH/DELETE はサーバーに届いた可能性があるので、前段の 5xx でも待たずに返す
+            // (再送すると家計簿の行・台帳の行・下書きが二重に作られうる)。
+            if (!retrySafe) return res;
             lastErr = new Error("APIエラー: " + res.status);
             lastErr.code = "http_" + res.status;
             if (!counted){ counted = true; setWarming(1); }
@@ -191,12 +193,17 @@
   // までは自動の読み込み（ログイン直後の先読み・個別ロードへの切り替え）を止め、画面下に理由を出す。手で押した操作はそのまま送る。
   var dbQuotaUntil = 0;
   var dbQuotaToastEl = null;
+  // 太平洋時間の次の0時までのミリ秒。toLocaleString の結果を new Date() で読み直す方式は、
+  // ブラウザによって AM/PM の前が U+202F になりパースできないことがあるので formatToParts で組む。
+  var laClockFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
   function nextPacificMidnight(){
-    var now = new Date();
-    var la = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
-    var next = new Date(la.getTime());
-    next.setHours(24, 0, 0, 0);
-    return now.getTime() + (next.getTime() - la.getTime());
+    var p = {};
+    laClockFmt.formatToParts(new Date()).forEach(function(x){ p[x.type] = x.value; });
+    // hour12:false は 0時を "24" と出す環境があるので 24 を 0 に畳む。
+    var msIntoDay = (((Number(p.hour) % 24) * 60 + Number(p.minute)) * 60 + Number(p.second)) * 1000;
+    return Date.now() + (86400000 - msIntoDay);
   }
   function dbQuotaPaused(){ return Date.now() < dbQuotaUntil; }
   function noteDbQuotaExceeded(){
@@ -702,16 +709,13 @@
      view routing より前に実行する。 */
   Array.prototype.forEach.call(
     document.querySelectorAll("header.topbar[data-subhead]"),
-    function(h, i){
-      var gid = "brandGrad" + i;
+    function(h){
       h.innerHTML =
         '<div class="brand">' +
           '<div class="brand-mark">' +
             '<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-              '<path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="url(#' + gid + ')" stroke-width="2.4"/>' +
-              '<path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="url(#' + gid + ')" opacity="0.85"/>' +
-              '<defs><linearGradient id="' + gid + '" x1="4" y1="3" x2="36" y2="37">' +
-                '<stop stop-color="#ff2f92"/><stop offset="1" stop-color="#2ce3ff"/></linearGradient></defs>' +
+              '<path d="M20 3 L36 12 V28 L20 37 L4 28 V12 Z" stroke="currentColor" stroke-width="2.4"/>' +
+              '<path d="M20 12 L28 17 V27 L20 32 L12 27 V17 Z" fill="currentColor" opacity="0.85"/>' +
             '</svg>' +
           '</div>' +
           '<div class="brand-text"><div class="name"></div><div class="tag"></div></div>' +
@@ -7435,7 +7439,12 @@
     applyHomeBackup(b.backup);
   }
 
-  async function warmOnAuthReady(){
+  // 同じログインで authready が二度飛んでも /api/bootstrap/home を二度取らない。
+  var warmedUid = null;
+  async function warmOnAuthReady(e){
+    var evUid = (e && e.detail && e.detail.uid) || "";
+    if (evUid && evUid === warmedUid) return;
+    warmedUid = evUid;
     applyInitialRoute();
     refreshNotifCenter();
     try {
@@ -7468,11 +7477,9 @@
     if (document.visibilityState !== "visible") return;
     if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser) loadGmailUnreadCount();
   }, 3 * 60 * 1000);
-  // 既にログイン済みの状態でこのスクリプトが後から評価されるケース
-  // (モジュールスクリプトの実行順は保証されないため)にも対応する。
-  if (window.__cyberPortalAuth && window.__cyberPortalAuth.currentUser){
-    warmOnAuthReady();
-  }
+  // 以前ここに「既にログイン済みなら即実行」のフォールバックがあったが、index.html は
+  // app.js(classic) → auth.js(module) の順に評価するので __cyberPortalAuth は必ず未定義で、
+  // 一度も通らない死にコードだった(2026/09/20 に撤去。二重発火は上の warmedUid で弾く)。
 
   /* ================= 分離モジュールへのブリッジ =================
      app.payables.js(#view-payables・請求書管理)と app.business.js(契約書トラッカー /

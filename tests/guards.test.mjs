@@ -85,6 +85,21 @@ const CSS_LIMITS = {
   "border-radius > 3px": 0,
 };
 
+/* インライン SVG / HTML の生 hex も B/アンバーの対象にする。
+   上のラチェットは style.css しか見ないため、index.html と app*.js に書いた旧パレット
+   （六角ロゴの マゼンタ→シアン グラデ）が 2026/09/20 まで素通りしていた。
+   色は CSS トークン（--accent / currentColor）から取り、markup に直書きしない。 */
+const RETIRED_HEX = [/#ff2f92/gi, /#2ce3ff/gi, /#7c3aed/gi, /#8b5cf6/gi, /#a855f7/gi];
+
+test("no retired neon palette hex in markup or JS-built markup", () => {
+  const files = { "index.html": html, ...Object.fromEntries(JS_FILES.filter((f) => existsSync(dir + f)).map((f) => [f, read(f)])) };
+  const hits = [];
+  for (const [name, src] of Object.entries(files)) {
+    for (const re of RETIRED_HEX) for (const m of src.matchAll(re)) hits.push(name + ": " + m[0]);
+  }
+  assert.deepEqual(hits, [], "旧パレットの生 hex が残っています（--accent / currentColor を使う）: " + hits.join(", "));
+});
+
 test("design-policy CSS counts do not grow (ratchet)", () => {
   const css = read("style.css").replace(/\/\*[\s\S]*?\*\//g, "");
   const count = (re) => (css.match(re) || []).length;

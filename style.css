@@ -2000,8 +2000,9 @@
 
   /* --- トップバー --- */
   .topbar{ border-radius: 3px; padding: 11px 18px; }
-  .brand-mark svg path{ stroke: var(--accent); }
-  .brand-mark svg path[fill^="url"]{ fill: var(--accent); }
+  /* ロゴは currentColor。旧マゼンタ→シアンの <defs> は 2026/09/20 に撤去した(デザイン方針「やらないこと」)。 */
+  .brand-mark svg{ color: var(--accent); }
+  .brand-mark svg path{ stroke: currentColor; }
   .brand-text .name{
     font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: 2.5px;
     background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--text);

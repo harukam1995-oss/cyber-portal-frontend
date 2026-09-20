@@ -803,8 +803,12 @@
     var rows = (financeData && financeData.rows) || [];
     if (card) card.hidden = false;
     var editable = rows.length && rows[0].row;
+    // サーバーは明細を 600 件で打ち切る(合計額は全件で計算済み)。切れたことを隠さない。
+    var total = financeData && financeData.count != null ? financeData.count : rows.length;
+    var cut = financeData && financeData.truncated;
     if (countEl) countEl.textContent = rows.length
-      ? rows.length + "件" + (editable ? " ・ 行をクリックで編集" : "")
+      ? (cut ? total + "件中 " + rows.length + "件を表示" : rows.length + "件")
+        + (editable ? " ・ 行をクリックで編集" : "")
       : "";
     listEl.innerHTML = "";
     if (!rows.length){
