@@ -52,6 +52,10 @@
   var subsRows = [];            // 「まとめて編集」モーダルの作業コピー
   var subsFinanceRows = null;   // 家計簿との突合用（当月の明細。取れなければ null）
   var subRowEditIndex = -1;     // 1件編集モーダルが編集中の subsState インデックス（-1 = 新規）
+  // 直前の読み込みが成功したか（2026/09/22）。保存はシートの全置換なので、読めていない（古い・空の）一覧で
+  // 保存するとシートの行を消してしまう。失敗中は まとめて編集・＋追加・行の編集 を止め、保存も断る（contractsLoadOk と同じ考え方）
+  var subsLoadOk = false;
+  var SUBS_LOAD_NG_MSG = "読み込みに失敗しているため保存できません。再読み込みしてください。";
 
   // 一覧（次回課金日順）。行クリックで「その1件だけ」の編集モーダルを開く。
   function renderSubsList(active){
@@ -325,6 +329,7 @@
     try {
       var res = await apiFetch("/api/sheets/subscriptions");
       if (!res || res.configured === false){
+        subsLoadOk = false;
         subsState = [];
         if (kpis) kpis.hidden = true;
         if (body) body.hidden = true;
@@ -334,9 +339,10 @@
         subsSetStatus("設定 → 家計簿スプレッドシート に共有 URL を登録すると使えます。");
         return;
       }
+      subsState = res.subscriptions || [];
+      subsLoadOk = true;
       if (mngBtn) mngBtn.hidden = false;
       if (addBtn) addBtn.hidden = false;
-      subsState = res.subscriptions || [];
       // 突合用に家計簿の当月明細も取る（失敗しても本体は出す）
       try {
         var fin = await apiFetch("/api/sheets/finance");
@@ -345,7 +351,10 @@
       renderSubs();
       subsSetStatus("");
     } catch(err){
-      if (mngBtn) mngBtn.hidden = false;
+      // 以前はここで まとめて編集 を出していて、空・古い一覧のまま保存するとシートを消せた
+      subsLoadOk = false;
+      if (mngBtn) mngBtn.hidden = true;
+      if (addBtn) addBtn.hidden = true;
       subsSetStatus(apiErrorMessage(err, "サブスク") || "取得に失敗しました", true);
     }
   }
@@ -418,7 +427,7 @@
       catIn.setAttribute("list", "sub-category-options");
       catIn.addEventListener("input", function(){ r.category = catIn.value; });
       var note = document.createElement("input");
-      note.type = "text"; note.maxLength = 200; note.placeholder = "備考(任意)"; note.value = r.note || "";
+      note.type = "text"; note.maxLength = 500; note.placeholder = "備考(任意)"; note.value = r.note || "";
       note.className = "subs-in subs-in-note";
       note.addEventListener("input", function(){ r.note = note.value; });
       l3.appendChild(catIn); l3.appendChild(note);
@@ -429,6 +438,7 @@
   function openSubsModal(){
     var modal = document.getElementById("subs-modal");
     if (!modal) return;
+    if (!subsLoadOk){ subsSetStatus(SUBS_LOAD_NG_MSG, true); return; }
     subsRows = subsState.map(function(s){
       return {
         name: s.name || "",
@@ -465,14 +475,18 @@
       every: every,
       day: Math.min(31, Math.max(1, Number(r.day) || 1)),
       month: needMonth ? Math.min(12, Math.max(1, Number(r.month) || (new Date().getMonth() + 1))) : null,
-      note: String(r.note || "").trim().slice(0, 200),
+      note: String(r.note || "").trim().slice(0, 500),   // サーバーの上限に合わせる（以前は 200 で切っていた）
       category: String(r.category || "").trim().slice(0, 40)
     };
   }
-  // シートは全置換なので、1件編集でも常に全件を送る
-  async function putSubs(list){
+  // シートは全置換なので、1件編集でも常に全件を送る。
+  // 読み込みに失敗している間は送らない。空の一覧はサーバーが 400 で断るので、
+  // 利用者が最後の1件を消したとき（allowEmpty）だけ X-Allow-Empty: 1 を付ける
+  async function putSubs(list, allowEmpty){
+    if (!subsLoadOk) throw new Error(SUBS_LOAD_NG_MSG);
     await apiFetch("/api/sheets/subscriptions", {
       method: "PUT",
+      headers: (!list.length && allowEmpty) ? { "X-Allow-Empty": "1" } : {},
       body: JSON.stringify({ subscriptions: list })
     });
     await loadSubs(); // シート(正)から取り直す
@@ -483,10 +497,16 @@
     var cleaned = subsRows
       .filter(function(r){ return (r.name || "").trim(); })
       .map(cleanSubRow);
+    if (!subsLoadOk){ if (err){ err.hidden = false; err.textContent = SUBS_LOAD_NG_MSG; } return; }
+    // 全部の行を消して保存＝全件削除。元が空なら送るものは無い。元に行があるなら確かめてから空で送る
+    if (!cleaned.length){
+      if (!subsState.length){ closeSubsModal(); return; }
+      if (!window.confirm("サブスクをすべて削除します（" + subsState.length + "件）。よろしいですか？")) return;
+    }
     var saveBtn = document.getElementById("subs-save");
     if (saveBtn) saveBtn.disabled = true;
     try {
-      await putSubs(cleaned);
+      await putSubs(cleaned, true);
       closeSubsModal();
     } catch(e){
       if (err){ err.hidden = false; err.textContent = apiErrorMessage(e, "サブスク") || "保存に失敗しました"; }
@@ -518,7 +538,10 @@
   function openSubRowModal(index){
     var modal = document.getElementById("sub-row-modal");
     if (!modal) return;
+    if (!subsLoadOk){ subsSetStatus(SUBS_LOAD_NG_MSG, true); return; }   // 読み込み失敗中は行を押しても開かない
     subRowEditIndex = (index != null && index >= 0) ? index : -1;
+    var noteEl = document.getElementById("sub-row-note");
+    if (noteEl) noteEl.maxLength = 500;   // index.html の maxlength=200 をサーバーの上限に合わせる
     var s = subRowEditIndex >= 0 ? subsState[subRowEditIndex] : null;
     var nowMonth = subTodayParts()[1];
     var moSel = document.getElementById("sub-row-month");
@@ -557,6 +580,7 @@
     var delBtn = document.getElementById("sub-row-delete");
     function showErr(msg){ if (err){ err.hidden = false; err.textContent = msg; } }
     if (err){ err.hidden = true; err.textContent = ""; }
+    if (!subsLoadOk){ showErr(SUBS_LOAD_NG_MSG); return; }
 
     var list = subsState.map(cleanSubRow);
     if (remove){
@@ -580,7 +604,7 @@
     if (saveBtn) saveBtn.disabled = true;
     if (delBtn) delBtn.disabled = true;
     try {
-      await putSubs(list);
+      await putSubs(list, !!remove);   // 削除ボタンで最後の1件を消したときだけ空の一覧を送ってよい
       closeSubRowModal();
     } catch(e){
       showErr(apiErrorMessage(e, "サブスク") || "保存に失敗しました");

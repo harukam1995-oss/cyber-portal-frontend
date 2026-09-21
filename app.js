@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 179;
+  var BUILD_V = 180;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -151,8 +151,9 @@
     var counted = false;
     // POST / PATCH / DELETE は「サーバーに届いたか分からない」失敗(ネットワークエラー・504)で
     // 送り直すと二重作成(家計簿の行・台帳の行・下書き)になりうるので再送しない。
+    // idempotent: true を付けた POST（復元の dryRun のように、何度送っても結果が同じもの）は送り直してよい。
     var method = String((init && init.method) || "GET").toUpperCase();
-    var retrySafe = method !== "POST" && method !== "PATCH" && method !== "DELETE";
+    var retrySafe = !!(init && init.idempotent) || (method !== "POST" && method !== "PATCH" && method !== "DELETE");
     try {
       for (var i = 0; i < delays.length; i++){
         if (delays[i]) await sleep(delays[i]);
@@ -238,6 +239,7 @@
       try { body = await res.json(); } catch(e){}
       var err = new Error((body && body.message) || ("APIエラー: " + res.status));
       err.code = (body && body.error) || ("http_" + res.status);
+      err.body = body;
       if (err.code === "db_quota_exceeded") noteDbQuotaExceeded();
       throw err;
     }
@@ -3496,7 +3498,11 @@
     return p.m + "/" + p.d;
   }
 
+  // 取得の通し番号。アカウントやラベルを切り替えたあとに着いた古い応答を捨てる
+  // （捨てないと、見出しは SYSLEA・中身ははるかのメール、のように混ざる）。
+  var mailPageSeq = 0;
   function fetchMailPage(){
+    var seq = ++mailPageSeq;
     harukaMailLoading = true;
     harukaMailError = null;
     renderMailList();
@@ -3507,6 +3513,7 @@
     if (mailState.labelId && mailState.labelId !== "INBOX") params += "&labelId=" + encodeURIComponent(mailState.labelId);
     if (mailState.query) params += "&q=" + encodeURIComponent(mailState.query);
     apiFetch(acctPath("/api/google/gmail/messages" + params, mailState.account)).then(function(res){
+      if (seq !== mailPageSeq) return;
       var messages = res.messages || [];
       harukaMailItems = messages.map(function(m){
         return {
@@ -3527,8 +3534,10 @@
       }
       harukaMailError = null;
     }).catch(function(err){
+      if (seq !== mailPageSeq) return;
       harukaMailError = err;
     }).then(function(){
+      if (seq !== mailPageSeq) return;
       harukaMailLoading = false;
       renderMailList();
     });
@@ -3586,19 +3595,27 @@
       mailLabelListEl.appendChild(li);
     });
   }
+  var mailLabelsFor = null; // 取得中（または取得済み）のラベルがどのアカウントのものか
   function loadMailLabels(){
-    if (!mailLabelListEl || mailLabelsLoading) return;
+    // 取得中でも、別のアカウントの分なら取り直す（前のアカウントのラベルが残らないように）。
+    if (!mailLabelListEl || (mailLabelsLoading && mailLabelsFor === mailState.account)) return;
+    var account = mailState.account;
+    mailLabelsFor = account;
     mailLabelsLoading = true;
+    mailLabels = null;
     renderMailLabels();
-    apiFetch(acctPath("/api/google/gmail/labels", mailState.account)).then(function(res){
+    apiFetch(acctPath("/api/google/gmail/labels", account)).then(function(res){
+      if (account !== mailState.account || account !== mailLabelsFor) return;
       mailLabels = res.labels || [];
       // 選択中ラベルがこのアカウントに無ければ受信トレイへ戻す
       if (!mailLabels.some(function(l){ return l.id === mailState.labelId; })){
         mailState.labelId = "INBOX"; mailState.labelName = "受信トレイ";
       }
     }).catch(function(){
+      if (account !== mailState.account || account !== mailLabelsFor) return;
       mailLabels = null; // renderMailLabels がフォールバックで INBOX のみ出す
     }).then(function(){
+      if (account !== mailState.account || account !== mailLabelsFor) return;
       mailLabelsLoading = false;
       renderMailLabels();
     });
@@ -6417,6 +6434,7 @@
     fillSettingsConnState();
     refreshBackupState();
     csvImportReset();
+    restoreReset();
   }
   function closeSettings(){ if (settingsModal) settingsModal.hidden = true; }
 
@@ -6662,10 +6680,12 @@
      完全復元は今あるデータを消すので、確認語の入力を求める。 */
   var restoreData = null;   // 選んだ JSON（パース済み）
   var restoreDryRun = null; // 直近のプレビュー結果
+  var restoreSeq = 0;       // 確認の通し番号。後から着いた古い応答（前のファイル・前のモード）を捨てる
 
   function restoreReset(){
     var box = document.getElementById("settings-restore-box");
     if (box) box.hidden = true;
+    restoreSeq++;
     restoreData = null; restoreDryRun = null;
     var f = document.getElementById("settings-restore-file"); if (f) f.value = "";
     var w = document.getElementById("settings-restore-word"); if (w) w.value = "";
@@ -6681,7 +6701,7 @@
   function restoreUpdateApplyEnabled(){
     var btn = document.getElementById("settings-restore-apply-btn");
     if (!btn) return;
-    var ok = !!restoreDryRun;
+    var ok = !!restoreDryRun && !restoreDryRun.overBudget;
     if (restoreSelectedMode() === "replace"){
       var w = document.getElementById("settings-restore-word");
       ok = ok && !!w && w.value.trim() === "復元";
@@ -6702,14 +6722,17 @@
   async function restoreRunPreview(){
     var pv = document.getElementById("settings-restore-preview");
     var mode = restoreSelectedMode();
+    var seq = ++restoreSeq;
     restoreDryRun = null; restoreUpdateApplyEnabled();
     if (!restoreData){ if (pv) pv.textContent = "ファイルを読み込めませんでした。"; return; }
     if (pv) pv.textContent = "確認中…";
     try {
       var res = await apiFetch("/api/import/restore", {
         method: "POST",
+        idempotent: true, // dryRun は書き込まないので、起動待ちの 502/503 で送り直してよい
         body: JSON.stringify({ data: restoreData, mode: mode, dryRun: true })
       });
+      if (seq !== restoreSeq) return;
       restoreDryRun = res;
       var when = res.exportedAt ? "書き出し " + res.exportedAt.slice(0, 16).replace("T", " ") + "（UTC）・ " : "";
       var names = Object.keys(res.counts || {}).filter(function(k){
@@ -6717,8 +6740,10 @@
         return c.create || c.overwrite || c.delete;
       });
       if (pv) pv.textContent = when + restoreTotalsText(res)
-        + (names.length ? "\n対象: " + names.join(" / ") : "");
+        + (names.length ? "\n対象: " + names.join(" / ") : "")
+        + (res.overBudget ? "\n" + (res.budgetMessage || "書き込み・削除の件数が1日の上限を超えるため、このままでは復元できません。") : "");
     } catch(e){
+      if (seq !== restoreSeq) return;
       restoreDryRun = null;
       if (pv) pv.textContent = "エラー: " + apiErrorMessage(e, "復元");
     }
@@ -6754,6 +6779,11 @@
   });
   var restoreWord = document.getElementById("settings-restore-word");
   if (restoreWord) restoreWord.addEventListener("input", restoreUpdateApplyEnabled);
+  // 確認語の欄は #settings-form の中にあるので、Enter で設定の保存（フォーム送信）が走らないようにする。
+  ["settings-restore-word", "settings-csv-replace-word"].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.isComposing) e.preventDefault(); });
+  });
   var restoreCancelBtn = document.getElementById("settings-restore-cancel-btn");
   if (restoreCancelBtn) restoreCancelBtn.addEventListener("click", restoreReset);
 
@@ -6768,21 +6798,25 @@
         method: "POST",
         body: JSON.stringify({ data: restoreData, mode: mode, dryRun: false })
       });
+      var warn = (res && Array.isArray(res.warnings) && res.warnings.length) ? "\n注意: " + res.warnings.join(" / ") : "";
       if (rs){
         rs.hidden = false;
-        rs.textContent = "復元しました: " + restoreTotalsText(res)
-          + " ・ 画面全体を合わせるには再読み込みしてください";
+        rs.textContent = "復元しました: " + restoreTotalsText(res) + warn + "\nまもなく画面を読み込み直します…";
       }
-      // すぐ反映できるものは読み直す（残りは再読み込みで揃う）。
-      if (tasksInitialized) initTasks();
-      if (notesInitialized) initNotes();
-      if (window.__CP && window.__CP.loadContracts) window.__CP.loadContracts();
-      if (window.__CP && window.__CP.loadEventTrackers) window.__CP.loadEventTrackers();
-      loadSettings();
-      var f = document.getElementById("settings-restore-file"); if (f) f.value = "";
+      // 画面の一部だけ読み直すと、読み直していない画面（習慣・PLAN・事務ハック・スモビジ・取引先）が
+      // 復元前の中身を持ったまま残り、次の全置換の保存で戻した分を消してしまう。必ずページごと読み直す。
       restoreData = null; restoreDryRun = null;
+      setTimeout(function(){ location.reload(); }, warn ? 4000 : 1500);
+      return;
     } catch(e){
-      if (rs){ rs.hidden = false; rs.textContent = "失敗: " + apiErrorMessage(e, "復元"); }
+      var b = e && e.body;
+      var msg = "失敗: " + apiErrorMessage(e, "復元");
+      if (b && b.partial){
+        msg = "途中で止まりました（書き込み " + (b.committedWrites || 0) + " 件・削除 " + (b.committedDeletes || 0)
+          + " 件は反映済み）。同じファイルでもう一度「確認」からやり直すと、反映済みの分は「変更なし」になります。\n" + msg;
+      }
+      if (rs){ rs.hidden = false; rs.textContent = msg; }
+      if (b && b.partial && restoreData) restoreRunPreview();
     } finally {
       restoreApplyBtn.textContent = "復元する";
       restoreUpdateApplyEnabled();

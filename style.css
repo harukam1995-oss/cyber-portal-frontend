@@ -972,7 +972,7 @@
   .settings-btn-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:2px; }
   .settings-file-btn{ cursor:pointer; display:inline-flex; align-items:center; }
   #settings-csv-import-box{ margin-top:10px; padding-left:10px; border-left:2px solid var(--panel-border); display:flex; flex-direction:column; gap:8px; }
-  #settings-csv-preview, #settings-csv-result{ white-space:pre-line; }
+  #settings-csv-preview, #settings-csv-result, #settings-restore-preview, #settings-restore-result{ white-space:pre-line; }
   #settings-csv-result{ color: var(--text-dim); }
 
   /* ---------- メール検索ボックス ---------- */

@@ -6,7 +6,7 @@
 // このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
 // install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
 // (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
-const CACHE = "cyber-portal-shell-v179";
+const CACHE = "cyber-portal-shell-v180";
 // HTML はネットワーク優先だが、通信が詰まったまま返らないと起動が止まる。
 // この時間で見切りをつけてキャッシュのシェルを先に出す（取得自体は続け、次回に間に合わせる）。
 const HTML_TIMEOUT_MS = 2500;
@@ -65,20 +65,23 @@ self.addEventListener("fetch", (e) => {
   if (isHTML) {
     // 既定の HTTP キャッシュ(Pages の max-age=600)に当たると、デプロイ直後に古い index.html が
     // 返って新しい app.js と食い違う。no-cache で毎回再検証する(変わっていなければ 304 で軽い)。
+    let saved = null;
     const network = fetch(new Request(req, { cache: "no-cache" })).then((res) => {
       // エラーページはキャッシュしない。SPA なので保存先は index.html 1つに正規化する。
       if (res.ok) {
         const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put("./index.html", copy)).catch(() => {});
+        saved = caches.open(CACHE).then((c) => c.put("./index.html", copy)).catch(() => {});
       }
       return res;
     });
+    // タイムアウトでシェルを先に返したあとも、取得とキャッシュ更新を最後まで終わらせる（SW が途中で止められないように）。
+    e.waitUntil(network.then(() => saved).catch(() => {}));
     const shell = () => caches.match("./index.html").then((m) => m || caches.match("./"));
     e.respondWith(
-      // 先に返った方を使う。タイムアウトか通信失敗ならキャッシュのシェル。
-      // キャッシュがまだ無い初回は、時間が過ぎてもネットワークを待つ(待つしかない)。
+      // 先に返った方を使う。タイムアウト・通信失敗・エラー応答（404 や Pages の 5xx）ならキャッシュのシェル。
+      // キャッシュがまだ無い初回は、時間が過ぎてもネットワークを待つ(待つしかない。エラー応答ならそのまま出す)。
       Promise.race([
-        network.catch(() => null),
+        network.then((res) => (res.ok ? res : null)).catch(() => null),
         new Promise((r) => setTimeout(() => r(null), HTML_TIMEOUT_MS)),
       ]).then((res) => res || shell().then((m) => m || network))
     );

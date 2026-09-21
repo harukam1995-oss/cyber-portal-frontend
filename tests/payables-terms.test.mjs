@@ -46,6 +46,16 @@ test("月末締め翌々月: 日が無ければ翌々月末", () => {
   assert.equal(p2DueFromTerms("月末締め翌月払い", "2026-06", ""), "2026-07-31");
 });
 
+test("〆 は 締め と同じ・「支払日」でも区切る", () => {
+  assert.equal(p2DueFromTerms("月末〆翌月10日払い", "2026-06", ""), "2026-07-10");
+  assert.equal(p2DueFromTerms("20日〆翌月5日", "2026-06", ""), "2026-07-05");
+  assert.equal(p2DueFromTerms("締日：月末、支払日：翌月25日", "2026-06", ""), "2026-07-25");
+  assert.equal(p2DueFromTerms("締日: 月末 / 支払日: 翌々月末", "2026-06", ""), "2026-08-31");
+  assert.equal(p2DueFromTerms("月末締め、翌月末支払", "2026-06", ""), "2026-07-31");
+  assert.equal(p2DueFromTerms("月末締め翌月20日支払い", "2026-06", ""), "2026-07-20");
+  assert.equal(p2DueFromTerms("月末〆", "2026-06", ""), null);
+});
+
 test("請求書発行後N日は請求日から数える", () => {
   assert.equal(p2DueFromTerms("請求書発行後30日", "2026-06", "2026-07-15"), "2026-08-14");
   assert.equal(p2DueFromTerms("請求日から14日以内", "", "2026-12-25"), "2027-01-08");

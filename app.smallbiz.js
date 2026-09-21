@@ -49,8 +49,11 @@
   }
   // 前回との差。値は "37点" "¥0" "$0.00" "38,046" のような文字なので、最初の数字だけ取り出して比べる。
   // 増減の良し悪しは項目による（却下が増えるのは悪い）ので、色は付けずに数字だけ出す。
+  // NFKC（全角数字・全角マイナス「－」）のあと、− ▲ △ もマイナスとして読む（"−¥1,200" "▲500"）。¥ $ は数字の前でも外す
   function numOf(v){
-    var m = String(v == null ? "" : v).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    var s = String(v == null ? "" : v).normalize("NFKC")
+      .replace(/[−‐‒–▲△]/g, "-").replace(/[,¥$]/g, "");
+    var m = s.match(/-?\d+(\.\d+)?/);
     return m ? Number(m[0]) : null;
   }
   function deltaOf(b, m){

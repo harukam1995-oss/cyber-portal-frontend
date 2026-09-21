@@ -78,7 +78,12 @@
       statusEl.textContent = "ログインに失敗しました(" + (err.code || err.message) + ")。もう一度お試しください。";
     });
 
+  let hadUser = false;
   onAuthStateChanged(auth, (user) => {
+    // ログイン中からログアウトに変わったら、ページごと読み直す。
+    // メール本文・タスクなどの中身や保存待ちのタイマーを、ゲートの裏に残さないため。
+    if (!user && hadUser) { location.reload(); return; }
+    hadUser = !!user;
     if (user) {
       // 注意: #auth-gate は style="display:flex" をインライン指定しているため、
       // hidden属性だけではUAスタイルシート([hidden]{display:none})が

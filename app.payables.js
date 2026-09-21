@@ -429,8 +429,10 @@
 
   // Promise を返す(p2SheetPull などが p2Load().then で完了を待つ。返していなかったので
   // スプシ取り込みが成功しても TypeError でエラー表示になっていた)。
-  function p2Load(){
-    p2Status("読み込み中…");
+  // quiet＝保存・削除のあとの読み直し（2026/09/22）。受領実績（未着チェック）と口座の照合（payToMismatch）はサーバーが作るので、
+  // 台帳を変えたら読み直す。「読み込み中…」は出さず、未処理メールの件数も取り直さない。絞り込み・タブ・スクロールは p2 の状態のまま描き直す
+  function p2Load(quiet){
+    if (!quiet) p2Status("読み込み中…");
     return apiFetch("/api/payables").then(function(res){
       p2.payables = (res && res.payables) || [];
       p2.vendors = (res && res.vendors) || [];
@@ -438,7 +440,7 @@
       p2RenderAll();
       p2El("pay2-summary").hidden = (p2.tab !== "detail");
       p2CountStatus();
-      p2QueueSummaryLoad();
+      if (!quiet) p2QueueSummaryLoad();
     }).catch(function(err){
       p2Status(apiErrorMessage(err, "請求書管理"), "err");
     });
@@ -523,7 +525,7 @@
   }
 
   function p2Filtered(){
-    var q = (p2.fQ || "").trim().toLowerCase();
+    var q = p2.fQ || "";
     return p2.payables.filter(function(r){
       if (!p2.fExcluded && r.excluded) return false;
       if (p2.fMonth && p2Ym(r.receivedDate) !== p2.fMonth) return false;
@@ -532,10 +534,7 @@
       if (p2.fQueue && (r.paid || r.excluded)) return false;
       if (p2.fNeedInput && !p2NeedsInput(r)) return false;
       if (p2.fMismatch && !p2PayToAlert(r)) return false;
-      if (q){
-        var hay = [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo].join(" ").toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
-      }
+      if (q && !p2Match(q, [r.vendorName, r.fromEmail, r.invoiceNo, r.payTo, r.note, r.regNo])) return false;
       return true;
     });
   }
@@ -667,7 +666,7 @@
   }
 
   function p2VendorFiltered(){
-    var q = (p2.vq || "").trim().toLowerCase();
+    var q = p2.vq || "";
     return p2.vendors.filter(function(v){
       if (p2.vFex === "hide" && v.excluded === true) return false;
       if (p2.vFex === "only" && v.excluded !== true) return false;
@@ -675,11 +674,7 @@
       if (p2.vFcat && (v.category || "その他") !== p2.vFcat) return false;
       if (p2.vNoEmail && String(v.emails || "").trim()) return false;
       if (p2.vOverdue && !p2VendorLate(v)) return false;
-      if (q){
-        var hay = [v.name, v.contact, v.aliases, v.emails, v.paymentTerms, v.category, v.note]
-          .join(" ").toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
-      }
+      if (q && !p2Match(q, [v.name, v.contact, v.aliases, v.emails, v.paymentTerms, v.category, v.note])) return false;
       return true;
     });
   }
@@ -842,16 +837,28 @@
       if (reason) p2SetSkip(vid, month, reason, b);
     });
   }
-  // スキップを保存（reason が空なら取り消し）。ベンダーは全項目を送る（PUT は sanitize なので欠けた項目が既定に戻る）
+  // ベンダーの更新はここに集める（2026/09/22）。PUT は sanitize なので欠けた項目が既定に戻る＝手元の全項目に patch を重ねて送り、
+  // 返ってきた行も手元の行に重ねる（返らない項目を落とさない）。重ねた行を返す
+  function p2PutVendor(v, patch){
+    return apiFetch("/api/payables/vendors/" + encodeURIComponent(v.id), { method: "PUT", body: JSON.stringify(Object.assign({}, v, patch)) })
+      .then(function(res){
+        var merged = null;
+        p2.vendors = p2.vendors.map(function(x){
+          if (x.id !== v.id) return x;
+          merged = Object.assign({}, x, patch, (res && res.vendor) || {});
+          return merged;
+        });
+        return merged || Object.assign({}, v, patch, (res && res.vendor) || {});
+      });
+  }
+  // スキップを保存（reason が空なら取り消し）
   function p2SetSkip(vid, month, reason, btn){
     var v = p2ById(p2.vendors, vid);
     if (!v) return;
     if (btn) btn.disabled = true;
     var list = p2WithSkip(v.skipMonths, month, reason);
-    apiFetch("/api/payables/vendors/" + encodeURIComponent(vid), { method: "PUT", body: JSON.stringify(Object.assign({}, v, { skipMonths: list })) })
-      .then(function(res){
-        var saved = res && res.vendor;
-        p2.vendors = p2.vendors.map(function(x){ return x.id === vid ? (saved || Object.assign({}, x, { skipMonths: list })) : x; });
+    p2PutVendor(v, { skipMonths: list })
+      .then(function(){
         p2RenderAll();
         p2Status("「" + (v.name || "") + "」の " + Number(month.slice(5)) + "月を" + (reason ? "「" + reason + "」でスキップにしました。" : "スキップから戻しました。"));
       })
@@ -971,10 +978,20 @@
       var c = p2CadenceOf(v);
       if (p2.checkCad === "n" ? (c < 2 || c === 12) : c !== Number(p2.checkCad)) return false;
     }
-    var q = String(p2.checkQ || "").normalize("NFKC").trim().toLowerCase();
-    if (!q) return true;
-    var hay = [v.name, v.aliases, v.contact, v.emails, v.paymentTerms, v.note].join(" ").normalize("NFKC").toLowerCase();
-    return q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
+    return p2Match(p2.checkQ, [v.name, v.aliases, v.contact, v.emails, v.paymentTerms, v.note]);
+  }
+  // 検索の正規化（2026/09/22）: NFKC（全角英数・半角カナをそろえる）＋小文字＋ひらがな→カタカナ（かな/カナを区別しない）
+  function p2Fold(s){
+    return String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[ぁ-ゖ]/g, function(c){
+      return String.fromCharCode(c.charCodeAt(0) + 0x60);
+    });
+  }
+  // 検索語 q（空白区切りの AND）が fields のどれかに含まれるか。台帳・ベンダー・未着チェックの検索で共用する
+  function p2Match(q, fields){
+    var words = p2Fold(q).trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    var hay = p2Fold((fields || []).join(" "));
+    return words.every(function(w){ return hay.indexOf(w) !== -1; });
   }
 
   /* ---- 支払サイト → 支払期日（2026/09/14）----
@@ -987,7 +1004,7 @@
      読めない書き方は null。土日祝の前倒し・後ろ倒しはしない。 */
   // 「請求書発行後30日」「請求日から14日以内」のように請求日から数える書き方なら日数、それ以外は null
   function p2TermsDays(terms){
-    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "");
+    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "").replace(/〆/g, "締め");
     if (s.indexOf("締") !== -1) return null;
     var m = s.match(/(?:後|から)(\d{1,3})日|(\d{1,3})日(?:後|以内)/);
     return m ? Number(m[1] || m[2]) : null;
@@ -995,7 +1012,8 @@
   // ベンダーの支払サイト欄の候補（2026/09/15：翌々月末を追加。登録済みの書き方も候補に足す）
   var P2_TERMS_PRESETS = ["月末締め翌月末", "月末締め翌々月末", "月末締め20日"];
   function p2DueFromTerms(terms, periodMonth, invoiceDate){
-    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "");
+    // 〆 は 締め と同じ（「月末〆翌月10日払い」）
+    var s = String(terms || "").normalize("NFKC").replace(/\s+/g, "").replace(/〆/g, "締め");
     if (!s) return null;
     var days = p2TermsDays(s);
     if (days != null){
@@ -1003,7 +1021,12 @@
       return new Date(Date.UTC(+invoiceDate.slice(0, 4), +invoiceDate.slice(5, 7) - 1, +invoiceDate.slice(8, 10) + days)).toISOString().slice(0, 10);
     }
     if (!/^\d{4}-\d{2}$/.test(periodMonth || "")) return null;
-    var pay = s.replace(/^.*締め?/, "");   // 締めの後ろ＝払う日
+    // 締めの後ろ＝払う日。「締日：月末、支払日：翌月25日」のように 支払日 と書く形もあるので 締め・支払日 で区切り、
+    // 日付の書いてある最後の区切りを使う（「月末締め、翌月末支払」の末尾の空の区切りは飛ばす）
+    var parts = s.split(/締め?|支払日?/), pay = parts.length > 1 ? "" : s;
+    for (var i = parts.length - 1; i >= (parts.length > 1 ? 1 : 0); i--){
+      if (/[0-9末月]/.test(parts[i])){ pay = parts[i]; break; }
+    }
     var ym = p2MonthAdd(periodMonth, /翌々月/.test(pay) ? 2 : /当月|同月/.test(pay) ? 0 : 1);
     var last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
     var d = pay.match(/(\d{1,2})日/);
@@ -1087,10 +1110,8 @@
         var s = list[+b.getAttribute("data-sugg-apply")];
         if (!s) return;
         b.disabled = true;
-        apiFetch("/api/payables/vendors/" + encodeURIComponent(s.v.id), { method: "PUT", body: JSON.stringify(Object.assign({}, s.v, s.patch)) })
-          .then(function(res){
-            var saved = res && res.vendor;
-            if (saved) p2.vendors = p2.vendors.map(function(x){ return x.id === s.v.id ? saved : x; });
+        p2PutVendor(s.v, s.patch)
+          .then(function(){
             p2RenderAll();
             p2Status("「" + (s.v.name || "") + "」を" + s.done);
           })
@@ -1439,21 +1460,42 @@
       sum.textContent = (err && err.message && !err.code) ? err.message : apiErrorMessage(err, "明細");
     });
   }
+  // 金額の文字列 → 数値（2026/09/22・金額欄と明細の取り込みで共用）。読めなければ null。
+  // NFKC（全角数字・全角カンマ）のあと ¥ ￥ 円 $ , 空白 を外す。先頭の △ ▲ − - と (…) はマイナス。小数も読む（丸めは呼ぶ側）
+  function p2ParseAmount(s){
+    if (s == null) return null;
+    if (typeof s === "number") return isFinite(s) ? s : null;
+    var c = String(s).normalize("NFKC").replace(/[¥￥円$,\s]/g, "");
+    var neg = false, m = c.match(/^\((.*)\)$/);
+    if (m){ neg = true; c = m[1]; }
+    if (/^[△▲−‐‒–\-]/.test(c)){ neg = true; c = c.slice(1); }
+    else if (c.charAt(0) === "+") c = c.slice(1);
+    if (!/^(\d+(\.\d*)?|\.\d+)$/.test(c)) return null;
+    var n = Number(c);
+    return neg ? -n : n;
+  }
   function p2StmtNum(v, frac){
-    if (v === "" || v == null) return null;
-    var n = Number(String(v).replace(/[,¥￥\s]/g, ""));
-    if (!isFinite(n)) return null;
+    var n = p2ParseAmount(v);
+    if (n == null) return null;
     return frac ? n : Math.round(n);
   }
+  // 明細の日付 → "YYYY-MM-DD"。20260901・Excel のシリアル値・2026/09/01・2026-9-1・2026年9月1日・R8.9.1・令和8年9月1日（R1＝2019）
   function p2StmtDate(v){
-    var c = String(v == null ? "" : v).trim();
+    var c = String(v == null ? "" : v).normalize("NFKC").trim();
     if (/^\d{8}$/.test(c)) return c.slice(0, 4) + "-" + c.slice(4, 6) + "-" + c.slice(6, 8);
     if (typeof v === "number" || /^\d{5}(\.\d+)?$/.test(c)){
-      var n = Number(v);
+      var n = Number(c);
       return (n > 20000 && n < 80000) ? new Date(Math.round((n - 25569) * 864e5)).toISOString().slice(0, 10) : "";
     }
-    var m = c.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/);
-    return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
+    var y, mo, d, m = c.match(/(\d{4})\s*[\/\-年.]\s*(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})/);
+    if (m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else {
+      m = c.match(/(?:^|[^a-z])(?:r|令和)\s*(\d{1,2}|元)\s*[\/\-年.]\s*(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})/i);
+      if (!m) return "";
+      y = 2018 + (m[1] === "元" ? 1 : +m[1]); mo = +m[2]; d = +m[3];
+    }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+    return y + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
   }
   // シート／CSV の行配列 → { source, rows }。ヘッダ行（UPSIDER か GMO あおぞら）を探してから読む。シートごとに探し直す。
   function p2StmtRowsFromGrid(grid, acc){
@@ -1807,10 +1849,9 @@
     function p2SavePayToToVendor(vid){
       var vv = p2ById(p2.vendors, vid);
       if (!vv) return;
-      var body = Object.assign({}, vv, p2PayToValues("p2f-"));
       p2Status("ベンダーの口座を更新中…");
-      apiFetch("/api/payables/vendors/" + encodeURIComponent(vid), { method: "PUT", body: JSON.stringify(body) })
-        .then(function(){ return p2Load(); })
+      p2PutVendor(vv, p2PayToValues("p2f-"))
+        .then(function(){ return p2Load(true); })   // 台帳の行の口座照合（payToMismatch）はサーバーが作り直す
         .then(function(){ p2Status("ベンダーの口座を更新しました。"); })
         .catch(function(err){ p2Status(apiErrorMessage(err, "ベンダー口座"), "err"); });
     }
@@ -1839,10 +1880,17 @@
   function p2CloseEdit(){ p2CloseModal("pay2-edit"); }
 
   function p2NumOrNull(id){
-    var v = p2El(id).value;
-    if (v === "" || v == null) return null;
-    var n = Math.round(Number(String(v).replace(/[,\s¥]/g, "")));
-    return isFinite(n) ? n : null;
+    var n = p2ParseAmount(p2El(id).value);
+    return n == null ? null : Math.round(n);
+  }
+  // 金額欄に入っているのに数字として読めない欄の名前（空欄は対象外）。
+  // type="number" の欄は読めない入力だと value が "" になるので validity.badInput も見る（黙って空で保存しない）
+  function p2BadAmountFields(ids){
+    return ids.filter(function(id){
+      var el = p2El(id), v = String(el.value || "").trim();
+      if (el.validity && el.validity.badInput) return true;
+      return v !== "" && p2ParseAmount(v) == null;
+    }).map(p2FieldLabel);
   }
   function p2EditValues(){
     // 確認済・済フォルダ移動・SYSLEA照合は画面から外した（2026/09/14・運用で使っていない）。PUT は全項目を送る前提なので既存値を保つ
@@ -1885,6 +1933,8 @@
   function p2SaveEdit(){
     var vals = p2EditValues();
     if (!vals.vendorName && !vals.invoiceNo) return p2FormErr("pay2-edit", "ベンダー名か請求書番号のどちらかは入力してください。");
+    var badAmt = p2BadAmountFields(["p2f-amountExcl", "p2f-tax", "p2f-amountIncl"]);
+    if (badAmt.length) return p2FormErr("pay2-edit", badAmt.join("・") + " が数字として読めません（例：12345／-500）。");
     var codeErr = p2PayToCodeErr("p2f-");
     if (codeErr) return p2FormErr("pay2-edit", codeErr);
     p2SaveDoc("payable", vals);
@@ -1911,14 +1961,22 @@
     var k = P2_KINDS[kind], id = p2[k.idKey];
     var btn = p2El(k.modal + "-save");
     btn.disabled = true; btn.textContent = "保存中…";
-    apiFetch(k.path + (id ? "/" + encodeURIComponent(id) : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(vals) }).then(function(res){
-      var saved = res && res[k.res];
-      if (id) p2[k.list] = p2[k.list].map(function(x){ return x.id === id ? saved : x; });
-      else if (k.addFront) p2[k.list].unshift(saved);
-      else p2[k.list].push(saved);
+    var old = id ? p2ById(p2[k.list], id) : null;
+    // ベンダーの更新は p2PutVendor（手元の全項目に重ねて送る）。それ以外の PUT も返ってきた行を手元の行に重ねる：
+    // PUT は整形した項目だけを返し threadId・messageId・relatedMessageIds・createdAt・payToMismatch などが無いので、
+    // 置き換えると口座変更の警告や「済」の確認が消えていた（2026/09/22）
+    var req = (kind === "vendor" && old) ? p2PutVendor(old, vals)
+      : apiFetch(k.path + (id ? "/" + encodeURIComponent(id) : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(vals) }).then(function(res){
+        var saved = (res && res[k.res]) || {};
+        if (id) p2[k.list] = p2[k.list].map(function(x){ return x.id === id ? Object.assign({}, x, saved) : x; });
+        else if (k.addFront) p2[k.list].unshift(saved);
+        else p2[k.list].push(saved);
+      });
+    req.then(function(){
       p2CloseModal(k.modal);
       p2RenderAll();
       p2CountStatus();
+      p2Load(true);   // 受領実績（未着チェック）と口座の照合はサーバーが台帳から作るので読み直す
     }).catch(function(err){
       p2FormErr(k.modal, apiErrorMessage(err, "請求書管理"));
     }).finally(function(){ btn.disabled = false; btn.textContent = "保存"; });
@@ -1928,9 +1986,11 @@
     if (!id || !window.confirm(k.delMsg)) return;
     apiFetch(k.path + "/" + encodeURIComponent(id), { method: "DELETE" }).then(function(){
       p2[k.list] = p2[k.list].filter(function(x){ return x.id !== id; });
+      if (kind === "payable") p2.receipts = (p2.receipts || []).filter(function(r){ return r.payableId !== id; });
       p2CloseModal(k.modal);
       p2RenderAll();
       p2CountStatus();
+      p2Load(true);
     }).catch(function(err){
       p2FormErr(k.modal, apiErrorMessage(err, "請求書管理"));
     });
@@ -2287,11 +2347,18 @@
         return Promise.resolve();
       }
       var v = p2VendorByName(vname);
-      var amt = card.querySelector(".pay2-q-amount").value.replace(/[^\d]/g, "");
+      // 以前は数字以外を全部消していて「¥12,345.00」が 1,234,500 になっていた（2026/09/22）。読めなければ止めて知らせる
+      var amtRaw = String(card.querySelector(".pay2-q-amount").value || "").trim();
+      var amt = amtRaw ? p2ParseAmount(amtRaw) : null;
+      if (amtRaw && amt == null){
+        msg.className = "pay2-q-msg err";
+        msg.textContent = "税込金額「" + amtRaw + "」が数字として読めません（例：12,345／¥12,345）。";
+        return Promise.resolve();
+      }
       body.payable = {
         vendorId: v ? v.id : "", vendorName: vname, method: method, fromEmail: it.fromEmail,
         receivedDate: it.receivedDate, periodMonth: card.querySelector(".pay2-q-month").value,
-        dueDate: card.querySelector(".pay2-q-due").value, amountIncl: amt ? Number(amt) : null,
+        dueDate: card.querySelector(".pay2-q-due").value, amountIncl: amt == null ? null : Math.round(amt),
         note: it.subject, sourceLink: it.sourceLink
       };
     } else if (act === "link"){
@@ -2312,7 +2379,7 @@
       if (saved){
         var ix = -1;
         p2.payables.forEach(function(r, j){ if (r.id === saved.id) ix = j; });
-        if (ix === -1) p2.payables.unshift(saved); else p2.payables[ix] = saved;
+        if (ix === -1) p2.payables.unshift(saved); else p2.payables[ix] = Object.assign({}, p2.payables[ix], saved);
       }
       if (res && res.vendorEmailAdded && res.vendorId){
         // 次のカードの照合にもすぐ効くように手元のベンダーにも足しておく
@@ -2501,19 +2568,20 @@
     };
     var filled = 0;
     var conflicts = [];
+    var changed = [];
     Object.keys(map).forEach(function(id){
       var v = map[id];
       if (v == null || v === "") return;
       var el = p2El(id);
       if (!el) return;
-      if (!el.value){ el.value = v; filled++; }
+      if (!el.value){ el.value = v; filled++; changed.push(el); }
       else if (String(el.value) !== String(v)){
         conflicts.push(p2FieldLabel(id) + "：現在 " + el.value + " ／ 抽出 " + v);
       }
     });
     if (f.method){
       var mEl = p2El("p2f-method");
-      if (mEl && (!mEl.value || mEl.value === "その他")) mEl.value = f.method;
+      if (mEl && (!mEl.value || mEl.value === "その他") && mEl.value !== f.method){ mEl.value = f.method; changed.push(mEl); }
     }
     if (f.qualified === "適格"){
       var qEl = p2El("p2f-qualified");
@@ -2521,6 +2589,15 @@
     }
     var ae = p2El("p2f-amountExcl");
     if (ae) ae.dispatchEvent(new Event("input"));
+    // 手で入れたときと同じ input/change を流す（2026/09/22）。ベンダー名 → 方式・支払サイト・口座・期日・何月分、
+    // 請求日 → 何月分・期日 の自動入力と、期日 → 支払サイトとの照合の表示が動く。値を全部入れてから流す
+    // （ベンダーより先に請求日を流すと期日の計算にベンダーが間に合わない）
+    ["p2f-method", "p2f-vendorName", "p2f-invoiceDate", "p2f-dueDate"].forEach(function(id){
+      var el = p2El(id);
+      if (!el || changed.indexOf(el) === -1) return;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
 
     var conf = (res && typeof res.confidence === "number") ? res.confidence : 0.5;
     var confLabel = conf >= 0.8 ? "高" : (conf >= 0.5 ? "中" : "低");
