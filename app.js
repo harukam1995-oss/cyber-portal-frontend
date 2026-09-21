@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 180;
+  var BUILD_V = 181;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -423,7 +423,7 @@
     setTextIfChanged(elProgressPct, pct + "%");
     if (elProgressFill.style.width !== pct + "%") elProgressFill.style.width = pct + "%";
 
-    setTextIfChanged(elSync, "LAST SYNC " + timeFmt.format(now));
+    setTextIfChanged(elSync, "最終同期 " + timeFmt.format(now));
   }
   tick();
   setInterval(tick, 1000);
@@ -1900,7 +1900,7 @@
       planItems = [];
       if (!planTemplatesLoadOk) planTemplates = []; // 読めていたテンプレは残す（空にすると次の保存で全消し）
       renderPlan();
-      planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true);
+      planSetStatus(apiErrorMessage(err, "今日の段取り"), true);
     } finally {
       list.classList.remove("is-loading");
     }
@@ -1981,7 +1981,7 @@
       apiFetch("/api/plan/day", {
         method: "PUT",
         body: JSON.stringify({ date: date, items: items })
-      }).catch(function(err){ planSetStatus(apiErrorMessage(err, "TODAY'S PLAN"), true); });
+      }).catch(function(err){ planSetStatus(apiErrorMessage(err, "今日の段取り"), true); });
     };
     planSaveTimer = setTimeout(planSaveFlush, 500);
   }
@@ -2081,7 +2081,7 @@
     prefix: "plan",
     titles: ["テンプレートの管理", "テンプレートの設定"],
     emptyHtml: '<div class="habit-edit-empty">テンプレートがありません。「＋ 新規作成」から追加してください。</div>',
-    label: "TODAY'S PLAN",
+    label: "今日の段取り",
     toRow: function(t){
       return {
         id: t.id,
@@ -3284,6 +3284,8 @@
     var n = pq && typeof pq.parent === "number" ? pq.parent : 0;
     homePayQueueBtn.hidden = n <= 0;
     if (homePayQueueNum) homePayQueueNum.textContent = String(n);
+    glancePayQueue = n;
+    renderGlance();
   }
   if (homePayQueueBtn) homePayQueueBtn.addEventListener("click", function(){ showView("payables"); });
 
@@ -3301,6 +3303,69 @@
   }
   if (homeBackupBtn) homeBackupBtn.addEventListener("click", function(){ openSettings(); });
 
+  /* ---- ひと目で分かる情報（2026/09/22 デザイン点検①）----
+     3タブのヒーロー画像に「次の予定」と未処理の件数を重ね、「よく使う」のタイルに件数を添える。
+     値はすでに読み込んだ状態（schedEventsToday / tasksState / 未読件数 / 請求書キュー）から数えるだけで、
+     取得は増やさない。呼び出し元は refreshNotifCenter・renderHomeTaskOverdue・applyHomePayQueue と1分ごとの更新。 */
+  var glancePayQueue = 0;
+  function glanceUntil(ms){
+    var min = Math.round(ms / 60000);
+    if (min <= 0) return "まもなく";
+    if (min < 60) return "あと" + min + "分";
+    var h = Math.floor(min / 60), m = min % 60;
+    return "あと" + h + "時間" + (m ? m + "分" : "");
+  }
+  function glanceSetTile(key, n, title){
+    ["quick-", "pv-quick-", "biz-quick-"].forEach(function(prefix){
+      var tile = document.getElementById(prefix + key);
+      if (!tile) return;
+      var badge = tile.querySelector(".tile-count");
+      if (!n){ if (badge) badge.remove(); return; }
+      if (!badge){ badge = document.createElement("span"); badge.className = "tile-count"; tile.appendChild(badge); }
+      var text = String(n);
+      if (badge.textContent !== text) badge.textContent = text;
+      badge.title = title + " " + n + "件";
+    });
+  }
+  function renderGlance(){
+    var todayKey = jstDateKey(new Date());
+    var tasks = Array.isArray(tasksState) ? tasksState : [];
+    var open = tasks.filter(function(t){ return !t.done; });
+    var overdue = open.filter(function(t){ return t.due && t.due < todayKey; }).length;
+    var events = Array.isArray(schedEventsToday) ? schedEventsToday : [];
+    var unread = totalUnread();
+
+    glanceSetTile("tasks", open.length, "未完了のタスク");
+    glanceSetTile("calendar", events.length, "今日の予定");
+    glanceSetTile("mail", unread, "未読メール");
+    glanceSetTile("payables", glancePayQueue, "未処理の請求書");
+
+    var next = null;
+    var now = Date.now();
+    upcomingTodayEvents().some(function(ev){
+      if (ev.start && ev.start.date) return false; // 終日は「次の予定」にしない
+      next = ev; return true;
+    });
+    var sub = [];
+    if (glancePayQueue) sub.push("未処理の請求書 " + glancePayQueue + "件");
+    if (overdue) sub.push("期限切れのタスク " + overdue + "件");
+    ["home", "private", "business"].forEach(function(k){
+      var box = document.getElementById("hero-next-" + k);
+      if (!box) return;
+      var t = box.querySelector(".hero-next-t"), s2 = box.querySelector(".hero-next-s");
+      if (next){
+        var start = new Date(next.start.dateTime).getTime();
+        t.innerHTML = '<b>' + escapeHtml(fmtEventTime(next.start)) + '</b>' + escapeHtml(next.summary || "(タイトルなし)");
+        s2.textContent = [start > now ? glanceUntil(start - now) : "開催中"].concat(sub).join(" ・ ");
+      } else {
+        t.textContent = events.length ? "今日の予定はもうありません" : "今日の予定はありません";
+        s2.textContent = sub.join(" ・ ");
+      }
+      box.hidden = !next && !sub.length && !events.length;
+    });
+  }
+  setInterval(function(){ if (document.visibilityState === "visible") renderGlance(); }, 60 * 1000);
+
   /* ---- HOME の INBOX に出す「期限切れタスク」行 ----
      タスク管理タブを開かないと期限切れに気づけなかったため。件数は tasksState から
      直に数えるので、タスクを触った瞬間に HOME 側も正しくなる（再取得なし）。 */
@@ -3315,6 +3380,7 @@
     });
     homeTaskOverdueBtn.hidden = over.length === 0;
     if (homeTaskOverdueNum) homeTaskOverdueNum.textContent = String(over.length);
+    renderGlance();
     if (homeTaskOverdueAcct){
       // 全部が同じアカウントならその名前、混在なら「両方」
       var tags = {};
@@ -7294,6 +7360,7 @@
 
     if (notifDot) notifDot.hidden = !(unread > 0 || reauthActive);
     updateNotifPermBtn();
+    renderGlance();
   }
 
   function updateNotifPermBtn(){

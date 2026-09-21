@@ -6,7 +6,7 @@
 // このバージョン番号を上げるだけでデプロイ反映が完結する(index.html 側の ?v= は廃止)。
 // install で {cache:"reload"} 指定の fetch を使い、GitHub Pages の CDN エッジキャッシュ
 // (max-age=600)を貫通して常に最新のシェルを取り込む。フッターの vX.Y.Z は表示用。
-const CACHE = "cyber-portal-shell-v180";
+const CACHE = "cyber-portal-shell-v181";
 // HTML はネットワーク優先だが、通信が詰まったまま返らないと起動が止まる。
 // この時間で見切りをつけてキャッシュのシェルを先に出す（取得自体は続け、次回に間に合わせる）。
 const HTML_TIMEOUT_MS = 2500;

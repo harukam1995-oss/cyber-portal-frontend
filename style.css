@@ -85,15 +85,15 @@
 
   /*  ui-btn-accent … 強調ボタン（＋ 新規 / 管理）  */
 
-  .ui-btn-accent, .pv-habit-manage, .pv-card-head-add, .task-add-btn, .note-add-btn, .cal-new-btn{ cursor: pointer; border: 1px solid var(--panel-border); border-radius: 2px; background: rgba(255,143,63,0.08); color: var(--accent); font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; transition: background .15s ease, border-color .15s ease; }
+  .ui-btn-accent, .pv-habit-manage, .pv-card-head-add, .task-add-btn, .note-add-btn, .cal-new-btn{ cursor: pointer; border: 1px solid var(--panel-border); border-radius: 2px; background: transparent; color: var(--text-dim); font-family: var(--font-body); font-size: 11px; letter-spacing: 0; transition: background .15s ease, border-color .15s ease, color .15s ease; }
 
-  .ui-btn-accent:hover, .pv-habit-manage:hover, .pv-card-head-add:hover, .task-add-btn:hover, .note-add-btn:hover, .cal-new-btn:hover{ background: rgba(255,143,63,0.16); border-color: var(--accent); }
+  .ui-btn-accent:hover, .pv-habit-manage:hover, .pv-card-head-add:hover, .task-add-btn:hover, .note-add-btn:hover, .cal-new-btn:hover{ background: rgba(255,143,63,0.08); border-color: var(--accent); color: var(--accent); }
   /* 折り返さないのは元から nowrap だった3つだけ（管理・＋新規予定まで nowrap にすると狭い幅でカード見出しが潰れる） */
   .pv-card-head-add, .task-add-btn, .note-add-btn{ white-space: nowrap; }
 
   /*  ui-chip … チップ（押して絞り込む・選ぶ）  */
 
-  .ui-chip, .pv-contract-chip, .cal-layer-chip, .jh-chip{ cursor: pointer; border: 1px solid var(--panel-border); border-radius: 2px; background: transparent; color: var(--text-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; padding: 3px 10px; transition: color .15s ease, border-color .15s ease, background .15s ease; }
+  .ui-chip, .pv-contract-chip, .cal-layer-chip, .jh-chip{ cursor: pointer; border: 1px solid var(--panel-border); border-radius: 2px; background: transparent; color: var(--text-faint); font-family: var(--font-body); font-size: 11px; letter-spacing: 0; padding: 3px 10px; transition: color .15s ease, border-color .15s ease, background .15s ease; }
 
   .ui-chip:hover, .pv-contract-chip:hover, .cal-layer-chip:hover, .jh-chip:hover{ color: var(--text); border-color: var(--accent-dim); }
 
@@ -101,15 +101,15 @@
 
   /*  ui-tag … タグ（押せない小さなラベル）  */
 
-  .ui-tag, .jh-tag, .pay2-q-tag, .task-project-chip{ font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .3px; padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 2px; color: var(--text-dim); white-space: nowrap; }
+  .ui-tag, .jh-tag, .pay2-q-tag, .task-project-chip{ font-family: var(--font-body); font-size: 11px; letter-spacing: 0; padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 2px; color: var(--text-dim); white-space: nowrap; }
 
   /*  ui-badge … バッジ（状態を色で示す枠つきラベル。色は各クラス）  */
 
-  .ui-badge, .tag-badge, .pv-case-status-badge, .pv-contract-slack-badge, .cal-ov-badge{ flex: none; display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .5px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 2px; }
+  .ui-badge, .tag-badge, .pv-case-status-badge, .pv-contract-slack-badge, .cal-ov-badge{ flex: none; display: inline-flex; align-items: center; font-family: var(--font-body); font-size: 11px; letter-spacing: 0; padding: 2px 7px; border: 1px solid currentColor; border-radius: 2px; }
 
   /*  ui-kpi-label … KPI の見出しラベル  */
 
-  .ui-kpi-label, .kpi-label, .contracts-kpi-label{ font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.5px; color: var(--text-faint); }
+  .ui-kpi-label, .kpi-label, .contracts-kpi-label{ font-family: var(--font-body); font-size: 11px; letter-spacing: 0; color: var(--text-faint); }
 
   .frame{
     max-width: 1400px;
@@ -213,7 +213,7 @@
     font-family: var(--font-mono); font-size:12px; font-weight:500;
     border: 1px solid var(--panel-border); border-radius: 2px;
   }
-  .profile-meta .status{ display:flex; align-items:center; gap:5px; margin-top:2px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--text-faint); }
+  .profile-meta .status{ display:flex; align-items:center; gap:5px; margin-top:2px; font-family: var(--font-body); font-size: 11px; letter-spacing: 0; color: var(--text-faint); }
   .status::before{ content:""; width:6px; height:6px; border-radius:50%; background: var(--ok); }
   .profile:hover .avatar, .profile:focus-visible .avatar{ border-color: var(--accent); }
   .profile-menu{
@@ -224,8 +224,8 @@
     overflow:hidden;
   }
   .profile-menu-head{
-    padding:11px 14px; font-family: var(--font-mono); font-size:10.5px;
-    letter-spacing:.5px; color: var(--text-faint); border-bottom:1px solid var(--hairline);
+    padding:11px 14px; font-family: var(--font-body); font-size:11px;
+    letter-spacing: 0; color: var(--text-faint); border-bottom:1px solid var(--hairline);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .profile-menu-btn{
@@ -250,8 +250,6 @@
     font-size: clamp(30px, 4vw, 40px);
   }
 
-  .hud-tz{ text-align:center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; color: var(--text-faint); margin-top: 2px; }
-  .hud-tz b{ color: var(--text-dim); font-weight: 500; }
 
   .hud-quote{
     font-size: 13px; color: var(--text-dim); border-top: 1px solid var(--hairline); padding-top:14px;
@@ -261,7 +259,7 @@
   .hud-weather{ align-items:center; justify-content:space-between; padding-top:14px; margin-top:auto; border-top: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px;
   }
   .hud-weather .range{ color: var(--text-faint); font-size:11.5px; text-align:right; }
-  .weather-note{ letter-spacing: .5px; font-size: 9px; color: var(--text-faint); margin-top: 2px; text-align: center; }
+  .weather-note{ letter-spacing: .5px; font-size: 11px; color: var(--text-faint); margin-top: 2px; text-align: center; }
 
   /* ---------- hero scene（ユーザー提供の実写ヒーロー画像） ---------- */
   .scene{ position: relative; overflow:hidden; }
@@ -279,10 +277,10 @@
     padding: 16px 18px 12px;
   }
   .card-head h2{
-    margin:0; font-family: var(--font-display); font-size:13px; letter-spacing:2px;
+    margin:0; font-family: var(--font-body); font-size:14px; letter-spacing:0;
     display:flex; align-items:center; gap:10px; font-weight:600;
   }
-  .card-head h2 .ico{ width:16px; height:16px; stroke: var(--magenta); }
+  .card-head h2 .ico{ width:16px; height:16px; stroke: var(--text-faint); }
   .card-head .more{ font-size:11.5px; color: var(--text-faint); display:flex; align-items:center; gap:4px; }
   .card-body{ padding: 4px 18px 18px; }
 
@@ -296,7 +294,7 @@
   .sched-title{ color: var(--text); flex:1; }
   .sched-empty, .sched-error{ font-size: 13px; color: var(--text-faint); padding: 6px 0; }
   .sched-error{ color: var(--err); }
-  .sched-source{ font-size: 10px; color: var(--text-faint); letter-spacing: .5px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); display:flex; justify-content:space-between; align-items:center; }
+  .sched-source{ font-size: 11px; color: var(--text-faint); letter-spacing: .5px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); display:flex; justify-content:space-between; align-items:center; }
   .sched-source .live{ color: var(--ok); }
   .sched-source-right{ display:flex; align-items:center; gap:8px; }
   .sched-refresh-btn{
@@ -327,9 +325,11 @@
     position:relative;
   }
   .quick-tile:hover{ border-color: var(--accent); background: rgba(255,143,63,0.05); }
-  .quick-tile svg{ width:22px; height:22px; stroke: var(--accent); }
+  .quick-tile svg{ width:22px; height:22px; stroke: var(--text-dim); transition: stroke .15s ease; }
+  .quick-tile:hover svg{ stroke: var(--accent); }
   .quick-tile span{ font-size:12px; color: var(--text-dim); letter-spacing:.5px; }
-  .quick-tile .tile-dot{ position:absolute; top:8px; right:8px; width:6px; height:6px; border-radius:50%; background: var(--accent); }
+  /* 8 タイルの件数（app.js の renderGlance）。固定表示だった .tile-dot の代わり */
+  .quick-tile .tile-count{ position:absolute; top:5px; right:7px; font-family: var(--font-mono); font-size:11px; font-variant-numeric: tabular-nums; color: var(--accent); letter-spacing:0; }
 
   /* inbox — simple unread-count tile, click through to the full メール page */
   .inbox-count-btn{
@@ -344,7 +344,7 @@
     color: var(--text);
   }
   .inbox-count-label{ font-size: 13px; color: var(--text-dim); }
-  .inbox-count-acct{ margin-left:auto; font-size: 10px; letter-spacing:1px; color: var(--text-faint); border:1px solid var(--hairline); border-radius:3px; padding:1px 6px; }
+  .inbox-count-acct{ margin-left:auto; font-size: 11px; letter-spacing:1px; color: var(--text-faint); border:1px solid var(--hairline); border-radius:3px; padding:1px 6px; }
   .inbox-reconnect{
     display:block; margin-top: 8px; font-size: 11px; padding: 5px 12px; border-radius: 3px;
     border: 1px solid var(--hairline); background: rgba(255,255,255,0.02);
@@ -367,7 +367,7 @@
     border-right:1px solid var(--panel-border); padding:10px 4px 12px 12px;
     position:sticky; top:8px; max-height:78vh; overflow-y:auto;
   }
-  .mail-sidebar-head{ font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); padding:2px 6px 8px; }
+  .mail-sidebar-head{ font-size:11px; letter-spacing:1.5px; color: var(--text-faint); padding:2px 6px 8px; }
   .mail-label-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px; }
   .mail-label-loading{ font-size:11px; color: var(--text-faint); padding:8px 6px; }
   .mail-label-item{
@@ -378,7 +378,7 @@
   .mail-label-item.is-active{ background: rgba(255,143,63,0.12); color: var(--cyan); }
   .mail-label-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mail-label-badge{
-    flex:none; font-family: var(--font-mono); font-size:10px; color: var(--text-faint);
+    flex:none; font-family: var(--font-body); font-size:11px; color: var(--text-faint);
     background: rgba(255,255,255,0.07); border-radius:3px; padding:1px 6px;
   }
   .mail-label-item.is-active .mail-label-badge{ color: var(--cyan); background: rgba(255,143,63,0.18); }
@@ -418,7 +418,7 @@
   .mail-snippet{ font-size:12px; color: var(--text-faint); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mail-unread-dot{ width:8px; height:8px; border-radius:50%; flex:none; margin-top:6px; background: var(--accent); }
   .mail-pager{ display:flex; align-items:center; justify-content:center; gap:16px; padding:12px 20px 16px; border-top:1px solid var(--hairline); }
-  .mail-pager .cal-nav-btn{ width:auto; height:auto; padding:7px 16px; font-size:10px; font-family: var(--font-mono); letter-spacing:.5px; white-space:nowrap; }
+  .mail-pager .cal-nav-btn{ width:auto; height:auto; padding:7px 16px; font-size:11px; font-family: var(--font-mono); letter-spacing:.5px; white-space:nowrap; }
   .mail-pager-info{ font-size:11px; color: var(--text-faint); letter-spacing:.5px; font-family: var(--font-mono); white-space:nowrap; }
   .cal-nav-btn:disabled{ opacity:.35; cursor:default; }
 
@@ -466,7 +466,7 @@
   .task-item:last-child .task-detail{ border-bottom:none; }
   .task-item:not(.expanded) .task-detail{ display:none; }
   .task-repeat-badge{
-    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color: var(--violet); border:1px solid rgba(255,181,121,0.4);
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; color: var(--violet); border:1px solid rgba(255,181,121,0.4);
     background: rgba(255,181,121,0.08); padding:3px 10px; width:fit-content;
   }
   .task-repeat-badge svg{ width:11px; height:11px; stroke: var(--violet); flex:none; }
@@ -488,9 +488,9 @@
   .task-due-inline input{ min-width:0; }
   .task-tags-chips{ display:flex; flex-wrap:wrap; gap:6px; }
   .task-freetag{
-    display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-family: var(--font-mono);
+    display:inline-flex; align-items:center; gap:4px; font-size:11px; font-family: var(--font-body);
     color: var(--text-dim); border:1px solid var(--panel-border); background: rgba(255,255,255,0.03);
-    border-radius:3px; padding:2px 7px; letter-spacing:.3px;
+    border-radius:3px; padding:2px 7px; letter-spacing: 0;
   }
   .task-tags-chips .task-freetag{ cursor:default; }
   .task-tags-chips .task-freetag button{
@@ -502,23 +502,23 @@
   /* ---- タスク管理: サイドバー＋2カラム ---- */
   .task-layout{ display:grid; grid-template-columns: 190px 1fr; padding:0; overflow:hidden; }
   .task-sidebar{ border-right:1px solid var(--hairline); padding:14px 12px; display:flex; flex-direction:column; gap:16px; overflow-y:auto; }
-  .task-side-title{ font-family: var(--font-mono); font-size:9px; letter-spacing:1.5px; color: var(--text-faint); margin-bottom:6px; }
+  .task-side-title{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); margin-bottom:6px; }
   .task-side-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px; }
   .task-side-item{ display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 8px; border-radius:3px; cursor:pointer; font-size:12px; color: var(--text-dim); }
   .task-side-item:hover{ background: rgba(255,255,255,0.03); color: var(--text); }
   .task-side-item.is-active{ background: rgba(255,143,63,0.10); color: var(--accent); }
   .task-side-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .task-side-count{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; }
+  .task-side-count{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; }
   .task-side-item.is-active .task-side-count{ color: var(--accent); }
   .task-main{ padding:14px 14px 18px; min-width:0; }
   .task-status-tabs{ display:flex; gap:2px; border-bottom:1px solid var(--panel-border); margin-bottom:10px; }
-  .task-status-tab{ font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; cursor:pointer; color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent; padding:6px 12px; }
+  .task-status-tab{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; cursor:pointer; color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent; padding:6px 12px; }
   .task-status-tab span{ color: var(--text-faint); }
   .task-status-tab.is-active{ color: var(--accent); border-bottom-color: var(--accent); }
   .task-status-tab.is-active span{ color: var(--accent); }
   .task-tree{ list-style:none; margin:0; padding:0; }
   .task-item.is-child{ margin-left:22px; border-left:1px solid var(--hairline); padding-left:8px; }
-  .task-kid-count{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); border:1px solid var(--panel-border); border-radius:3px; padding:1px 5px; flex:none; }
+  .task-kid-count{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); border:1px solid var(--panel-border); border-radius:3px; padding:1px 5px; flex:none; }
   .task-detail-btns{ display:flex; gap:8px; flex-wrap:wrap; }
   .task-subtask-btn{ font-family: var(--font-body); font-size:11.5px; padding:5px 12px; border-radius:3px; border:1px solid var(--panel-border); background:transparent; color: var(--text-dim); cursor:pointer; }
   .task-subtask-btn:hover{ border-color: var(--accent); color: var(--text); }
@@ -655,13 +655,13 @@
   .p2-paid-cb{ width:auto; cursor:pointer; }
 
   .pay2-badge{
-    display:inline-block; padding:1px 7px; border-radius:3px; font-size:10px; letter-spacing:.3px;
+    display:inline-block; padding:1px 7px; border-radius:3px; font-size:11px; letter-spacing:.3px;
   }
   .pay2-b-furikomi{ color: var(--accent); background: rgba(255,143,63,.10); }
   .pay2-b-upsider{ color: var(--ok); background: rgba(94,201,138,.10); }
   .pay2-b-furikae{ color: var(--warn); background: rgba(216,194,74,.10); }
   .pay2-b-other{ color: var(--text-faint); background: rgba(255,255,255,.05); }
-  .pay2-flag{ font-size:10px; color: var(--warn); }
+  .pay2-flag{ font-size:11px; color: var(--warn); }
   .pay2-flag.ok{ color: var(--ok); }
   .pay2-empty{ padding:26px 6px; text-align:center; font-size:12.5px; color: var(--text-dim); }
 
@@ -669,7 +669,7 @@
   .pay2-form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
   .pay2-fld{ display:flex; flex-direction:column; gap:3px; }
   .pay2-fld.wide{ grid-column:1 / -1; }
-  .pay2-fld label{ font-size:10.5px; color: var(--text-faint); letter-spacing:.3px; }
+  .pay2-fld label{ font-size:11px; color: var(--text-faint); letter-spacing:.3px; }
   .pay2-fld input, .pay2-fld select, .pay2-fld textarea{
     padding:6px 8px; font-size:12px; border-radius:3px;
     border:1px solid var(--panel-border); background: var(--panel-solid); color: var(--text);
@@ -682,14 +682,14 @@
   .pay2-fld-checks{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:14px; padding-top:2px; }
   .pay2-fld-checks label{ display:inline-flex; flex-direction:row; align-items:center; gap:5px; font-size:11.5px; color: var(--text-dim); }
   .pay2-fld-checks input{ width:auto; }
-  .pay2-calc{ grid-column:1 / -1; font-size:10.5px; color: var(--text-faint); font-family: var(--font-mono); }
+  .pay2-calc{ grid-column:1 / -1; font-size:11px; color: var(--text-faint); font-family: var(--font-mono); }
   .pay2-calc.bad{ color: var(--err); }
 
   /* 口座チェック（明細モーダル内） */
   #p2f-payto-check:empty{ display:none; }
   .pay2-payto-note{ font-size:11px; color: var(--text-dim); line-height:1.6; }
   /* 振込先の見出し（銀行振込以外は畳む。▼/▶ で開閉） */
-  .pay2-payto-toggle{ align-self:flex-start; padding:0; border:0; background:none; font:inherit; font-size:10.5px; letter-spacing:.3px; color: var(--text-faint); cursor:pointer; text-align:left; }
+  .pay2-payto-toggle{ align-self:flex-start; padding:0; border:0; background:none; font:inherit; font-size:11px; letter-spacing:.3px; color: var(--text-faint); cursor:pointer; text-align:left; }
   .pay2-payto-toggle:hover, .pay2-payto-toggle:focus-visible{ color: var(--accent); }
   .pay2-form-grid .pay2-payto-off{ display:none; }
   .pay2-payto-ok{ font-size:11px; color: var(--ok); }
@@ -719,7 +719,7 @@
   .pay2-import-hint code{ font-family: var(--font-mono); font-size:11px; color: var(--text); }
   .pay2-import-list{ display:flex; flex-direction:column; gap:6px; max-height:46vh; overflow-y:auto; }
   .pay2-import-from{ font-size:12px; color: var(--text); }
-  .pay2-import-date{ font-size:10.5px; color: var(--text-faint); font-family: var(--font-mono); }
+  .pay2-import-date{ font-size:11px; color: var(--text-faint); font-family: var(--font-mono); }
 
   @media (max-width:640px){
     .pay2-form-grid{ grid-template-columns:1fr; }
@@ -727,10 +727,8 @@
 
   /* footer bar */
   .statusbar{
-    display:flex; align-items:center; justify-content:space-between; border-radius: 3px; padding: 10px 18px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1px; color: var(--text-faint);
+    display:flex; align-items:center; justify-content:flex-end; border-radius: 3px; padding: 10px 18px; font-family: var(--font-body); font-size: 11px; letter-spacing: 0; color: var(--text-faint);
   }
-  .statusbar .sys{ display:flex; align-items:center; gap:8px; color: var(--text-dim); }
-  .statusbar .sys::before{ content:""; width:6px; height:6px; border-radius:50%; background: var(--ok); }
   .statusbar .right{ display:flex; align-items:center; gap: 14px; }
 
   /* ================= CALENDAR PAGE ================= */
@@ -743,7 +741,7 @@
     padding:7px 12px; font-size:12.5px;
   }
   .cal-today-btn{
-    padding:7px 14px; font-family: var(--font-display); letter-spacing:1px; font-size: 10px;
+    padding:7px 14px; font-family: var(--font-display); letter-spacing:1px; font-size: 11px;
   }
   .cal-nav-btn{
     width:32px; height:32px; border-radius:3px; border:1px solid var(--panel-border);
@@ -755,13 +753,13 @@
   .cal-toolbar-right{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .acct-tabs{ display:flex; border:1px solid var(--panel-border); border-radius:2px; overflow:hidden; }
   .acct-tab{
-    padding:6px 13px; background:transparent; border:none; font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
+    padding:6px 13px; background:transparent; border:none; font-family: var(--font-body); font-size:11px; letter-spacing: 0;
     color: var(--text-dim); cursor:pointer; border-right:1px solid var(--panel-border);
   }
   .acct-tab:last-child{ border-right:none; }
   .acct-tab:hover:not(.active){ color: var(--text); background: rgba(255,255,255,.03); }
   .acct-tab.active{ background: rgba(255,143,63,0.15); color: var(--accent); }
-  .acct-tabs.sm .acct-tab{ padding:4px 9px; font-size:9px; flex:1; text-align:center; }
+  .acct-tabs.sm .acct-tab{ padding:4px 9px; font-size:11px; flex:1; text-align:center; }
 
   .cal-view-switch{ display:flex; border:1px solid var(--panel-border); border-radius:3px; overflow:hidden; }
   .cal-view-btn{
@@ -793,7 +791,7 @@
   .cal-col-header.today{ color: var(--magenta); }
 
   .cal-allday-row{ display:flex; border-bottom:1px solid var(--hairline); padding: 0 0 8px; margin: 0 0 8px; gap:0; }
-  .cal-allday-gutter{ width:46px; flex:none; font-size:10px; color: var(--text-faint); padding-top:2px; }
+  .cal-allday-gutter{ width:46px; flex:none; font-size:11px; color: var(--text-faint); padding-top:2px; }
   .cal-allday-cols{ flex:1; display:grid; gap:4px; min-height:6px; }
   .cal-allday-cols > div{ display:flex; flex-direction:column; gap:3px; padding: 0 4px; min-width:0; }
   .cal-allday-chip{
@@ -806,7 +804,7 @@
   .cal-timeline-scroll{ max-height: 560px; overflow-y:auto; position:relative; }
   .cal-timeline{ display:flex; position:relative; }
   .cal-hour-gutter{ width:46px; flex:none; position:relative; }
-  .cal-hour-label{ position:absolute; right:8px; transform:translateY(-50%); font-size:10px; color: var(--text-faint); font-family: var(--font-mono); }
+  .cal-hour-label{ position:absolute; right:8px; transform:translateY(-50%); font-size:11px; color: var(--text-faint); font-family: var(--font-mono); }
   .cal-day-cols{ flex:1; display:grid; position:relative; }
   .cal-day-col{ position:relative; border-left:1px solid var(--hairline); cursor:crosshair; }
   .cal-hour-line{ position:absolute; left:0; right:0; border-top:1px solid var(--hairline); pointer-events:none; }
@@ -819,23 +817,23 @@
   }
   /* One line, time-then-title, so a long title is never pushed off the bottom of a
      short block — it just truncates with an ellipsis instead. */
-  .cal-event-block .t{ font-family: var(--font-mono); font-size:9.5px; opacity:.85; margin-right:5px; }
+  .cal-event-block .t{ font-family: var(--font-mono); font-size:11px; opacity:.85; margin-right:5px; }
   .cal-event-block:hover{ z-index:6; filter: brightness(1.12); }
 
   .cal-month-grid{ display:grid; grid-template-columns:repeat(7,1fr); border-top:1px solid var(--hairline); border-left:1px solid var(--hairline); }
-  .cal-month-dow{ text-align:center; font-family: var(--font-display); font-size:10.5px; letter-spacing:1px; color: var(--text-faint); padding:8px 0; border-right:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
+  .cal-month-dow{ text-align:center; font-family: var(--font-display); font-size:11px; letter-spacing:1px; color: var(--text-faint); padding:8px 0; border-right:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
   .cal-month-cell{ min-height:96px; min-width:0; border-right:1px solid var(--hairline); border-bottom:1px solid var(--hairline); padding:6px; display:flex; flex-direction:column; gap:3px; cursor:pointer; overflow:hidden; }
   .cal-month-cell.outside{ opacity:.35; }
   .cal-month-cell.today{ background: rgba(255,143,63,0.07); }
   .cal-month-date{ font-family: var(--font-mono); font-size:12px; color: var(--text-dim); }
   .cal-month-cell.today .cal-month-date{ font-weight:700; color: var(--accent); }
   .cal-month-chip{
-    font-size:10.5px; padding:1px 5px; border-radius:3px; color: var(--text);
+    font-size:11px; padding:1px 5px; border-radius:3px; color: var(--text);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; border:1px solid;
     min-width:0; max-width:100%; box-sizing:border-box;
   }
   .cal-month-chip:hover{ filter:brightness(1.2); }
-  .cal-month-more{ font-size:10px; color: var(--text-faint); }
+  .cal-month-more{ font-size:11px; color: var(--text-faint); }
 
   @media (max-width: 720px){
     .cal-timeline-scroll{ max-height: 440px; }
@@ -1087,7 +1085,7 @@
     position:absolute; inset:0; display:flex; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; gap:2px;
   }
-  .pv-fin-donut-label{ font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
+  .pv-fin-donut-label{ font-size:11px; letter-spacing:1px; color: var(--text-faint); }
   .pv-fin-donut-value{ font-family: var(--font-mono); font-size:13px; font-weight:700; color: var(--text); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
   .pv-fin-donut-value.is-neg{ color: var(--err); }
   .pv-fin-donut-value.is-pos{ color: var(--ok); }
@@ -1124,8 +1122,8 @@
     font-size:12.5px; color: var(--text); display:flex; align-items:baseline; gap:6px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .pv-habit-target{ font-family: var(--font-mono); font-size:10px; color: var(--text-faint); flex:none; }
-  .pv-habit-cad{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-dim); flex:none; letter-spacing:1px; }
+  .pv-habit-target{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; }
+  .pv-habit-cad{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); flex:none; letter-spacing:1px; }
   .pv-habit-cells{ display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; }
   .pv-habit-cell{
     aspect-ratio:1 / 1; min-height:26px; cursor:pointer;
@@ -1145,8 +1143,8 @@
   .pv-habit-meta{ display:flex; align-items:center; gap:8px; }
   .pv-habit-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
   .pv-habit-bar span{ display:block; height:100%; border-radius:2px; background: var(--habit-accent, var(--accent)); }
-  .pv-habit-streak{ font-family: var(--font-mono); font-size:10.5px; color: var(--warn); flex:none; }
-  .pv-habit-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
+  .pv-habit-streak{ font-family: var(--font-mono); font-size:11px; color: var(--warn); flex:none; }
+  .pv-habit-frac{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
   .pv-habit-paused-note{ font-size:11px; color: var(--text-faint); margin-top:2px; line-height:1.6; }
   .pv-habit-status{ font-size:11.5px; color: var(--text-faint); margin:10px 0 0; line-height:1.6; }
   .pv-habit-status.is-err{ color: var(--err); }
@@ -1190,7 +1188,7 @@
   .habit-list-dot.none{ background: repeating-linear-gradient(45deg, rgba(255,255,255,0.12) 0 2px, transparent 2px 4px); }
   .habit-list-txt{ flex:1 1 auto; min-width:0; }
   .habit-list-name{ font-size:13px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .habit-list-hint{ font-size:10.5px; color: var(--text-faint); letter-spacing:.3px; margin-top:2px; }
+  .habit-list-hint{ font-size:11px; color: var(--text-faint); letter-spacing:.3px; margin-top:2px; }
   .habit-list-chev{ flex:none; color: var(--text-faint); font-size:18px; line-height:1; }
 
   /* 詳細ビュー */
@@ -1237,11 +1235,11 @@
   /* ---------- プライベート: TODAY'S PLAN (v1d) ---------- */
   .pv-plan .card-head{ display:flex; align-items:center; justify-content:space-between; }
   .pv-plan-tpl-btn{
-    font-size:10.5px; letter-spacing:1px; padding:3px 9px;
+    font-size:11px; letter-spacing:1px; padding:3px 9px;
   }
   .pv-plan-head{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
   .pv-plan-date{
-    font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint);
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint);
     flex:none; letter-spacing:.5px; min-width:92px; text-align:center;
   }
   .pv-plan-date.is-other{ color: var(--warn); }
@@ -1254,14 +1252,14 @@
   .pv-plan-nav-btn:disabled{ opacity:.3; cursor:default; }
   .pv-plan-nav-btn:disabled:hover{ border-color: var(--panel-border); color: var(--text-dim); }
   .pv-plan-today{
-    flex:none; font-family: var(--font-body); font-size:10.5px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-body); font-size:11px; letter-spacing:.3px;
     color: var(--cyan); background: rgba(255,143,63,0.06);
     border:1px solid var(--panel-border); border-radius:3px; padding:2px 8px; cursor:pointer;
   }
   .pv-plan-today:hover{ border-color: var(--cyan); }
   .pv-plan-bar{ flex:1 1 auto; height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
   .pv-plan-bar span{ display:block; height:100%; border-radius:2px; background: var(--accent); transition: width .2s ease; }
-  .pv-plan-frac{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
+  .pv-plan-frac{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; min-width:26px; text-align:right; }
   .pv-plan-list{ display:flex; flex-direction:column; gap:2px; }
   .pv-plan-empty{ font-size:12px; color: var(--text-faint); line-height:1.6; padding:6px 0; }
   .pv-plan-item{ display:flex; align-items:center; gap:8px; padding:5px 4px; border-radius:3px; }
@@ -1274,7 +1272,7 @@
   .pv-plan-check:hover{ border-color: var(--cyan); }
   .pv-plan-check svg{ width:12px; height:12px; }
   .pv-plan-item.is-done .pv-plan-check{ background: var(--accent); border-color:transparent; color: var(--bg-deep); }
-  .pv-plan-time{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; min-width:34px; }
+  .pv-plan-time{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; min-width:34px; }
   .pv-plan-text{ flex:1 1 auto; min-width:0; font-size:12.5px; color: var(--text); cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pv-plan-item.is-done .pv-plan-text{ color: var(--text-faint); text-decoration: line-through; }
   .pv-plan-edit{
@@ -1340,7 +1338,7 @@
   /* ---------- ビジネス: 契約書トラッカー ---------- */
   .pv-contracts-tabs{ display:flex; gap:2px; margin-bottom:8px; border-bottom:1px solid var(--panel-border); }
   .pv-contracts-tab{
-    font-family: var(--font-mono); font-size:10.5px; letter-spacing:.3px; cursor:pointer;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; cursor:pointer;
     color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent;
     padding:5px 8px; transition: color .15s, border-color .15s;
   }
@@ -1408,7 +1406,7 @@
   /* 行内の Slack スレッドリンク（カード・一覧ページ共通） */
   .pv-contract-slack-link{
     flex:none; display:inline-flex; align-items:center; gap:3px;
-    font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    font-family: var(--font-mono); font-size:11px; letter-spacing:.3px;
     color: var(--accent); text-decoration:none;
     border:1px solid var(--panel-border); border-radius:3px; padding:2px 6px;
   }
@@ -1451,18 +1449,18 @@
   .pv-contract-step.is-done .pv-contract-step-bar{ background: var(--accent); }
   .pv-contract-step.is-overdue .pv-contract-step-bar{ background: var(--err); }
   .pv-contract-step-label{
-    font-family: var(--font-mono); font-size:9px; letter-spacing:1px; color: var(--text-faint);
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint);
   }
   .pv-contract-step.is-current .pv-contract-step-label{ color: var(--text-dim); }
   /* 日付は mono ＋ tabular-nums で桁を揃える（方針: 数値・日付は mono）。 */
   .pv-contract-step-date{
-    font-family: var(--font-mono); font-size:10.5px; font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono); font-size:11px; font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
   .pv-contract-step.is-done .pv-contract-step-date{ color: var(--text-dim); }
   /* 依頼者・期限の行（日付3つはステッパーへ移した残り）。 */
   .pv-contract-meta{
-    font-family: var(--font-mono); font-size:10.5px; font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono); font-size:11px; font-variant-numeric: tabular-nums;
     letter-spacing:.2px; color: var(--text-faint);
   }
 
@@ -1477,7 +1475,7 @@
     flex:1 1 auto; min-width:0; font-size:11.5px; line-height:1.6; color: var(--text-dim);
   }
   .contracts-auto-ack{
-    flex:none; font-family: var(--font-mono); font-size:10px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-body); font-size:11px; letter-spacing: 0;
     color: var(--accent); background:transparent; cursor:pointer;
     border:1px solid var(--accent-dim); border-radius:3px; padding:3px 10px;
     transition: color .15s, background .15s, border-color .15s;
@@ -1502,18 +1500,18 @@
   }
   .pv-contract-row.is-compact .pv-case-name{ font-size: 12.5px; }
   .pv-contract-req{
-    flex: none; font-family: var(--font-mono); font-size: 10px;
-    color: var(--text-dim); letter-spacing: .3px; white-space: nowrap;
+    flex: none; font-family: var(--font-body); font-size: 11px;
+    color: var(--text-dim); letter-spacing: 0; white-space: nowrap;
   }
   .pv-contract-alert{
-    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-body); font-size:11px; letter-spacing: 0;
     color: var(--warn); border:1px solid rgba(216,194,74,0.4); padding:2px 6px; border-radius: 2px;
   }
   .pv-contract-alert.is-err{ color: var(--err); border-color: rgba(255,80,80,0.4); }
   /* Slack自動検知が status を進めた行の印。アラート(warn)とは別物なので
      アクセント色にする＝「要対応」ではなく「要確認」。 */
   .pv-contract-auto{
-    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-body); font-size:11px; letter-spacing: 0;
     color: var(--accent); border:1px solid var(--accent-dim); border-radius:3px; padding:2px 6px;
   }
   .pv-contract-slack-badge{
@@ -1522,7 +1520,7 @@
   /* 次の状態へ1タップで進めるボタン（行 → モーダル → select → 保存 の4手を1手にする）。
      行タップ＝管理モーダルと競合しないよう click / keydown は行へ伝播させていない。 */
   .pv-contract-advance{
-    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-mono); font-size:11px; letter-spacing:.3px;
     color: var(--text-dim); background:transparent; cursor:pointer;
     border:1px solid var(--panel-border); border-radius:3px; padding:2px 8px;
     transition: color .15s, border-color .15s, background .15s;
@@ -1532,7 +1530,7 @@
   .pv-contract-advance:disabled:hover{ color: var(--text-dim); background:transparent; border-color: var(--panel-border); }
   /* 同一会社の他契約に絞り込むチップ。補助情報なので破線で弱く出す。 */
   .pv-contract-same{
-    flex:none; font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px;
+    flex:none; font-family: var(--font-mono); font-size:11px; letter-spacing:.3px;
     color: var(--text-faint); background:transparent; cursor:pointer;
     border:1px dashed var(--panel-border); border-radius:3px; padding:2px 6px;
     transition: color .15s, border-color .15s;
@@ -1560,9 +1558,9 @@
   .pv-event-row:hover{ background: rgba(255,255,255,0.03); }
   .pv-event-row.is-done{ border-left-color: var(--ok); opacity:.8; }
   .pv-event-row.is-overdue{ border-left-color: var(--err); background: rgba(255,90,90,0.05); }
-  .pv-event-kind{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:.4px; color: var(--text-dim);
+  .pv-event-kind{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-dim);
     border:1px solid var(--panel-border); border-radius:3px; padding:1px 5px; flex:none; }
-  .pv-event-autooff{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint);
+  .pv-event-autooff{ font-family: var(--font-body); font-size:11px; color: var(--text-faint);
     border:1px dashed var(--panel-border); border-radius:3px; padding:1px 5px; flex:none; }
   .pv-event-progress{ height:5px; border-radius:3px; background: rgba(255,255,255,0.06); overflow:hidden; }
   .pv-event-progress-fill{ height:100%; background: var(--accent); border-radius:3px; transition: width .25s; }
@@ -1609,7 +1607,7 @@
 
   /* プロジェクトボード管理モーダル: タブ / アーカイブ / 照合条件の折りたたみ */
   .pb-tabs{ display:flex; gap:2px; margin:2px 0 10px; border-bottom:1px solid var(--panel-border); }
-  .pb-tab{ font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; cursor:pointer;
+  .pb-tab{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; cursor:pointer;
     color: var(--text-faint); background:transparent; border:none; border-bottom:2px solid transparent;
     padding:6px 12px; transition: color .15s, border-color .15s; }
   .pb-tab:hover{ color: var(--text); }
@@ -1647,7 +1645,7 @@
     transform:translateY(-70%) rotate(45deg); transition:transform .15s;
   }
   .pv-slack-item.is-open .pv-slack-head::after{ transform:translateY(-30%) rotate(225deg); }
-  .pv-slack-time{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); flex:none; }
+  .pv-slack-time{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); flex:none; }
   .pv-slack-headline{
     font-size:12px; color: var(--text-dim); min-width:0; flex:1;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -1658,22 +1656,22 @@
   .pv-slack-item.is-quiet .pv-slack-headline{ color: var(--text-faint); }
   /* この回に何件の記載があるか。0 件のときは JS 側で出さない。 */
   .pv-slack-count{
-    flex:none; font-family: var(--font-mono); font-size:9.5px; line-height:1;
+    flex:none; font-family: var(--font-mono); font-size:11px; line-height:1;
     color: var(--text-faint); border:1px solid var(--panel-border); border-radius:2px; padding:3px 4px;
   }
   .pv-slack-detail{ padding:2px 10px 10px; display:flex; flex-direction:column; gap:9px; } /* display:flex 指定が UA の [hidden]{display:none} を打ち消すため(このファイルの他所と同じ対応) */
   .pv-slack-channels{ display:flex; flex-wrap:wrap; gap:4px; }
   .pv-slack-chan{
-    font-family: var(--font-mono); font-size:9.5px; color: var(--text-dim);
+    font-family: var(--font-body); font-size:11px; color: var(--text-dim);
     border:1px solid var(--hairline); border-radius:2px; padding:2px 5px;
   }
   /* 「■Claudeからの一言」の1行。見出し行にも出るが、そこは1行省略なので全文はここで読む。 */
   .pv-slack-note{ font-size:12px; color: var(--text-dim); line-height:1.6; }
   .pv-slack-sec{ display:flex; flex-direction:column; gap:3px; }
-  .pv-slack-sec-title{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--accent); }
+  .pv-slack-sec-title{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--accent); }
   .pv-slack-sec-list{ margin:0; padding:0 0 0 15px; display:flex; flex-direction:column; gap:3px; }
   .pv-slack-sec-list li{ font-size:12px; color: var(--text); line-height:1.6; }
-  .pv-slack-sec-list li::marker{ color: var(--text-faint); font-size:10px; }
+  .pv-slack-sec-list li::marker{ color: var(--text-faint); font-size:11px; }
   /* 検索語ハイライト。UA 既定の黄色ベタを、発光させないアンバーの下地に置き換える。 */
   mark.slack-hl{ background: var(--accent-dim); color: var(--text); border-radius:2px; padding:0 1px; }
 
@@ -1685,7 +1683,7 @@
   }
   .slack-day{ display:flex; flex-direction:column; gap:8px; }
   .slack-day-head{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint);
+    font-family: var(--font-mono); font-size:11px; letter-spacing:1.5px; color: var(--text-faint);
     padding-bottom:5px; border-bottom:1px solid var(--hairline);
   }
   .slack-quiet-toggle{
@@ -1705,13 +1703,12 @@
   .pv-today-date{ display:flex; align-items:baseline; gap:10px; font-family: var(--font-display); font-size:15px; letter-spacing:1px; color: var(--text-dim); }
   .pv-today-date .yr{ color: var(--text-faint); font-size:12px; }
   .pv-today-clock{ font-family: var(--font-mono); font-size: clamp(30px, 3.6vw, 40px); font-weight:700; color: var(--text); margin:6px 0 4px; }
-  .pv-today-clock .sec{ font-size:0.5em; color: var(--cyan); margin-left:4px; }
-  .pv-today-tz{ font-size:11px; letter-spacing:2px; color: var(--text-faint); }
+  .pv-today-clock .sec{ font-size:0.5em; color: var(--text-faint); margin-left:4px; }
 
   /* WEATHER は HOME(.hud-weather)の寸法に揃える */
   .pv-weather-main{ font-size:13px; color: var(--text-dim); }
   .pv-weather-range{ font-family: var(--font-mono); font-size:14px; color: var(--text); margin-top:4px; }
-  .pv-weather-note{ font-size:9px; color: var(--text-faint); letter-spacing:.4px; margin-top:6px; text-align:center; }
+  .pv-weather-note{ font-size:11px; color: var(--text-faint); letter-spacing:.4px; margin-top:6px; text-align:center; }
 
   .pv-up-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
   .pv-up-item{ display:flex; align-items:center; gap:10px; font-size:13px; }
@@ -1761,6 +1758,22 @@
     background:transparent; color: var(--text-faint); cursor:pointer; font-size:12px;
   }
   .subs-row-del:hover{ color: var(--err); border-color: var(--err); }
+
+  /* 3 ヒーローの「次の予定」（3タブ共通。中身は app.js の renderGlance）。画像の下端フェードより上に重ねる */
+  .hero-next{
+    position:absolute; left:clamp(14px, 2vw, 28px); bottom:clamp(14px, 2vw, 24px); z-index:2; max-width:calc(100% - 28px);
+    background: rgba(7,9,12,.8); border-left: 2px solid var(--accent); padding: 12px 18px 12px 16px;
+  }
+  .hero-next-k{ font-size:12px; color: var(--text-dim); }
+  .hero-next-t{ font-size:20px; font-weight:600; color: var(--text); margin-top:2px; }
+  .hero-next-t b{ font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent); font-weight:600; margin-right:10px; }
+  .hero-next-s{ font-size:12px; color: var(--text-dim); margin-top:4px; }
+  .hero-next-s:empty{ display:none; }
+  /* 仕事タブの「よく使う」は7枚。3列だと最後の1枚だけが3行目に出るので、デスクトップ幅は4列にして最後を2枠ぶんに */
+  @media (min-width: 1081px){
+    #view-business .pv-bottom .quick-grid{ grid-template-columns: repeat(4, 1fr); }
+    #view-business .pv-bottom .quick-tile:last-child{ grid-column: span 2; }
+  }
 
   /* アイデア帳: 新規ノートモーダルの本文 */
   .idea-body-input{ min-height:220px; }
@@ -1939,7 +1952,7 @@
     .cal-toolbar{ padding: 10px 12px; gap: 8px; }
     .cal-view-switch{ display: none; }
     .cal-range-label{ font-size: 12px; letter-spacing: 0; }
-    .acct-tabs .acct-tab{ padding: 5px 10px; font-size: 10px; }
+    .acct-tabs .acct-tab{ padding: 5px 10px; font-size: 11px; }
     .cal-timeline-scroll{ max-height: 60vh; }
 
     .cal-toolbar-right{ width: 100%; }
@@ -2007,18 +2020,16 @@
     font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: 2.5px;
     background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--text);
   }
-  .brand-text .tag{
-    font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px;
-    text-transform: uppercase; color: var(--text-faint);
-  }
+  /* 下位ページの見出しの下の小さい説明（data-subtag）。HOME の標語は 2026/09/22 に削除 */
+  .brand-text .tag{ font-size: 11px; color: var(--text-faint); }
   .nav{ gap: 20px; }
   .nav a{
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px;
+    font-family: var(--font-body); font-size: 13px; letter-spacing: 0;
     color: var(--text-dim); padding: 4px 0;
   }
   .nav a.active{ color: var(--accent); }
   .icon-btn:hover{ border-color: var(--panel-border); background: rgba(255,255,255,.03); transform: none; }
-  .profile-meta .uname{ font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--text-dim); }
+  .profile-meta .uname{ font-family: var(--font-body); font-size: 11px; letter-spacing: 0; color: var(--text-dim); }
   .profile-meta .status::before{ background: var(--ok); }
 
   /* --- HOME ヒーロー: 左=TODAY/WEATHER カード列 / 右=横長の実写ヒーロー ---
@@ -2043,7 +2054,7 @@
     padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px;
   }
   .hud-label{
-    font-family: var(--font-display); font-size: 13px; letter-spacing: 2px; font-weight: 600;
+    font-family: var(--font-body); font-size: 14px; font-weight: 600;
     color: var(--text); padding-bottom: 10px; border-bottom: 1px solid var(--hairline);
   }
   /* TODAY は プライベート(.pv-today-*)の寸法・書体に揃える */
@@ -2058,7 +2069,7 @@
     font-size: clamp(30px, 3.6vw, 40px); font-weight: 700; letter-spacing: 1px; color: var(--text);
     display: flex; align-items: baseline; gap: 2px;
   }
-  .hud-clock .sec{ font-size: .5em; color: var(--accent); }
+  .hud-clock .sec{ font-size: .5em; color: var(--text-faint); }
   .hud-weather .place{ display: flex; align-items: center; gap: 7px; color: var(--text-dim); }
   .hud-weather svg{ stroke: var(--text-dim); }
   .hud-weather .temp{ font-family: var(--font-mono); font-size: 14px; color: var(--text); }
@@ -2096,7 +2107,7 @@
      ここは角丸とタブ下線の詰め。
      ===================================================================== */
   .pb-match-details, .pb-tpl-create, .pb-archive-btn{ border-radius: 3px; }
-  .pv-contracts-tab, .pb-tab{ font-family: var(--font-mono); }
+  .pv-contracts-tab, .pb-tab{ font-family: var(--font-body); }
   /* Slackダイジェスト: 数字・時刻は等幅で桁揃え(既に mono だが念のため) */
   .pv-slack-time, .pv-slack-channels{ font-variant-numeric: tabular-nums; }
 
@@ -2104,7 +2115,7 @@
      B / AMBER restyle · Phase 4 — 仕上げ(サブ画面 / モーダル / 細部)
      ===================================================================== */
   /* カレンダー */
-  .cal-today-btn, .cal-nav-btn{ border-radius: 2px; font-family: var(--font-mono); letter-spacing: .5px; }
+  .cal-today-btn, .cal-nav-btn{ border-radius: 2px; font-family: var(--font-body); letter-spacing: 0; }
   .cal-range-label{ font-family: var(--font-display); letter-spacing: .3px; }
   .cal-now-line, .cal-now-line::before{ box-shadow: none; background: var(--accent); }
   /* フォームのラベル/入力の角も詰める */
@@ -2253,15 +2264,15 @@
   }
   /* ステータス（●連携中 / エラー / 再連携の案内）。旧 .cal-status-bar の代替。 */
   .cal-status-chip{
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
+    font-family: var(--font-body); font-size: 11px; letter-spacing: 0;
     color: var(--text-faint); white-space: nowrap;
   }
   .cal-status-chip.err{ color: var(--err); }
   .cal-status-chip .live{ color: var(--ok); }
-  #view-calendar .cal-back-btn{ border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; }
+  #view-calendar .cal-back-btn{ border-radius: 2px; font-family: var(--font-body); font-size: 11px; letter-spacing: 0; }
   #view-calendar .cal-view-switch{ border-radius: 2px; }
   #view-calendar .cal-view-btn{
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px; padding: 7px 15px;
+    font-family: var(--font-body); font-size: 11px; letter-spacing: 0; padding: 7px 15px;
   }
   #view-calendar .cal-view-btn.active{ background: rgba(255,143,63,.15); color: var(--accent); }
 
@@ -2274,7 +2285,7 @@
   /* 日次はカラムが1本しかないので、幅いっぱいに引き伸ばさず中央に置く。 */
   #view-calendar .cal-grid.is-day .cal-allday-row,
   #view-calendar .cal-grid.is-day .cal-timeline-scroll{ width: 100%; max-width: 880px; margin-inline: auto; }
-  #view-calendar .cal-col-header{ font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .5px; }
+  #view-calendar .cal-col-header{ font-family: var(--font-mono); font-size: 11px; letter-spacing: .5px; }
   #view-calendar .cal-col-header.today{ color: var(--accent); }
   #view-calendar .cal-col-header.sun{ color: #c98b7a; }
   #view-calendar .cal-col-header.sat{ color: #8fa0b0; }
@@ -2349,14 +2360,14 @@
   .kpi-value.is-neg{ color: var(--err); }
   .kpi-value.is-pos{ color: var(--ok); }
   .kpi-sub{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; color: var(--text-faint);
+    font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
   .kpi-sub.is-good{ color: var(--ok); }
   .kpi-sub.is-bad{ color: var(--warn); }
 
-  .card-head-note{ font-family: var(--font-mono); font-size:10px; letter-spacing:1px; color: var(--text-faint); }
-  .fin-note{ margin:10px 0 0; font-size:10.5px; color: var(--text-faint); line-height:1.6; }
+  .card-head-note{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
+  .fin-note{ margin:10px 0 0; font-size:11px; color: var(--text-faint); line-height:1.6; }
 
   /* ---- 今月の収支 ---- */
   .fin-cols{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px; align-items:start; }
@@ -2377,7 +2388,7 @@
   .fin-cat-card .card-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .fin-cat-tabs{ display:flex; gap:4px; flex-wrap:wrap; }
   .fin-cat-tab{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; padding:3px 8px;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; padding:3px 8px;
     color: var(--text-faint); background:transparent; border:1px solid var(--panel-border);
     border-radius:2px; cursor:pointer;
   }
@@ -2393,7 +2404,7 @@
   .fin-cat-dot{ width:8px; height:8px; border-radius:1px; }
   .fin-cat-name{ font-size:12px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .fin-cat-pct{
-    font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); text-align:right;
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint); text-align:right;
     font-variant-numeric: tabular-nums;
   }
   .fin-cat-amount{
@@ -2411,7 +2422,7 @@
     font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums;
   }
   .fin-tx-type{
-    font-family: var(--font-mono); font-size:9.5px; letter-spacing:.5px; text-align:center; padding:2px 0;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; text-align:center; padding:2px 0;
     border:1px solid var(--hairline); border-radius:2px; color: var(--text-dim);
   }
   .fin-tx-type.is-income{ color: var(--accent); border-color: var(--accent-dim); }
@@ -2450,22 +2461,22 @@
   .pv-sub-date{
     font-family: var(--font-mono); font-size:12.5px; color: var(--text); font-variant-numeric: tabular-nums;
   }
-  .pv-sub-until{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:.3px; color: var(--text-faint); }
+  .pv-sub-until{ font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; color: var(--text-faint); }
   .pv-sub-until.is-soon{ color: var(--warn); }
   .pv-sub-main{ display:flex; flex-direction:column; gap:3px; min-width:0; }
   .pv-sub-line1{ display:flex; align-items:center; gap:7px; min-width:0; }
   #view-subs .pv-sub-name{ flex:0 1 auto; font-size:13px; }
   .pv-sub-cat{
-    font-family: var(--font-mono); font-size:9px; letter-spacing:.5px; padding:1px 6px; flex:none;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; padding:1px 6px; flex:none;
     border:1px solid var(--hairline); border-radius:2px; color: var(--text-faint);
   }
   .pv-sub-meta{
-    font-size:10.5px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:11px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .pv-sub-amtwrap{ display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
   #view-subs .pv-sub-amount{ font-size:13px; }
   .pv-sub-permonth{
-    font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums;
   }
 
   .subs-month-list{ display:flex; flex-direction:column; }
@@ -2497,10 +2508,10 @@
   }
   .subs-year-fill{ display:block; width:100%; background: var(--accent); opacity:.5; border-radius:1px; }
   .subs-year-col.is-current .subs-year-fill{ opacity:1; }
-  .subs-year-label{ font-family: var(--font-mono); font-size:9px; color: var(--text-faint); }
+  .subs-year-label{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); }
   .subs-year-col.is-current .subs-year-label{ color: var(--accent); }
   .subs-year-note{
-    grid-column: 1 / -1; margin-top:10px; font-family: var(--font-mono); font-size:10px; color: var(--text-faint);
+    grid-column: 1 / -1; margin-top:10px; font-family: var(--font-body); font-size:11px; color: var(--text-faint);
   }
 
   /* 家計簿との突合（登録漏れ・記帳漏れの気づき用。補助情報なので静かに） */
@@ -2510,7 +2521,7 @@
     font-variant-numeric: tabular-nums;
   }
   .subs-recon-block{ display:flex; flex-direction:column; gap:5px; }
-  .subs-recon-title{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); }
+  .subs-recon-title{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
   .subs-recon-row{
     font-size:12px; color: var(--text); padding:5px 8px;
     border-left:2px solid var(--warn); background: rgba(216,194,74,0.05);
@@ -2584,14 +2595,14 @@
     border-left-color: var(--err); background: rgba(255,92,92,.07); color: var(--text);
   }
   #view-calendar .cal-ov-chip.is-overdue:hover{ background: rgba(255,92,92,.13); }
-  .cal-ov-badge{ font-size: 8.5px;
+  .cal-ov-badge{ font-size: 11px;
     color: var(--warn); border: 1px solid rgba(216,194,74,.35); padding: 0 3px;
   }
   #view-calendar .cal-ov-chip.is-overdue .cal-ov-badge{ color: var(--err); border-color: rgba(255,92,92,.4); }
   .cal-ov-text{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #view-calendar .cal-ov-chip .t{ font-family: var(--font-mono); font-size: 9.5px; color: var(--text-faint); }
+  #view-calendar .cal-ov-chip .t{ font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
   /* 月セルの中では他のチップと同じ字送りに寄せる */
-  #view-calendar .cal-ov-chip.cal-month-chip{ font-size: 10.5px; padding: 1px 5px; }
+  #view-calendar .cal-ov-chip.cal-month-chip{ font-size: 11px; padding: 1px 5px; }
   /* 時刻つき（＝期限時刻を入れたタスク）は時間軸の右端に細く重ねる */
   #view-calendar .cal-day-col .cal-ov-chip.is-timed{
     position: absolute; right: 2px; left: auto; max-width: 76%;
@@ -2604,7 +2615,7 @@
     margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--hairline);
   }
   .cal-layers-label{
-    font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px;
+    font-family: var(--font-body); font-size: 11px; letter-spacing: 0;
     color: var(--text-faint); margin-right: 4px;
   }
   .cal-layer-chip.is-on{
@@ -2613,7 +2624,7 @@
   /* 「両方」のときだけ出すアカウント色の凡例 */
   .cal-acct-legend{
     display: flex; align-items: center; gap: 5px; margin-left: 6px;
-    font-family: var(--font-mono); font-size: 9.5px; color: var(--text-faint);
+    font-family: var(--font-body); font-size: 11px; color: var(--text-faint);
   }
   .cal-acct-legend i{ width: 8px; height: 8px; border-radius: 2px; background: var(--lg-color); }
   .cal-status-chip .warn{ color: var(--warn); }
@@ -2639,7 +2650,7 @@
 
   /* ---- タスク管理 / メモ ページ共通のツールバー ---- */
   #view-tasks .cal-back-btn, #view-notes .cal-back-btn{
-    border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .5px;
+    border-radius: 2px; font-family: var(--font-body); font-size: 11px; letter-spacing: 0;
   }
   .task-input{
     border-radius: 2px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .3px;
@@ -2678,7 +2689,7 @@
   }
   .note-card:hover{ border-color: var(--accent); background: rgba(255,143,63,0.04); transform: none; }
   .note-card .note-title{ font-size: 13px; letter-spacing: .3px; }
-  .note-card .note-meta{ font-size: 9px; letter-spacing: .5px; }
+  .note-card .note-meta{ font-size: 11px; letter-spacing: .5px; }
   .note-format-btn{ border-radius: 2px; }
   .note-body-editable{ border-radius: 2px; }
   .note-body-editable:focus{ border-color: var(--accent); box-shadow: none; }
@@ -2696,7 +2707,7 @@
   /* ---- 並べ替えセレクト ---- */
   .task-sort-select{
     background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:2px;
-    color: var(--text-dim); font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
+    color: var(--text-dim); font-family: var(--font-body); font-size:11px; letter-spacing: 0;
     padding:7px 8px; cursor:pointer; color-scheme: dark;
   }
   .task-sort-select:focus{ outline:none; border-color: var(--accent); }
@@ -2719,7 +2730,7 @@
   .task-prio-badge{
     display:inline-flex; align-items:center; justify-content:center; flex:none;
     width:18px; height:18px; border-radius:2px; border:1px solid;
-    font-family: var(--font-mono); font-size:9.5px; line-height:1;
+    font-family: var(--font-body); font-size:11px; line-height:1;
   }
   .task-prio-badge.is-high{ color: var(--err); border-color: rgba(255,92,92,.45); background: rgba(255,92,92,.10); }
   .task-prio-badge.is-mid { color: var(--warn); border-color: rgba(216,194,74,.45); background: rgba(216,194,74,.10); }
@@ -2729,7 +2740,7 @@
   .task-prio-picker{ display:flex; gap:2px; border:1px solid var(--panel-border); border-radius:2px; width:fit-content; }
   .task-prio-btn{
     background:transparent; border:none; cursor:pointer; padding:5px 12px;
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; color: var(--text-faint);
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint);
     border-right:1px solid var(--hairline);
   }
   .task-prio-btn:last-child{ border-right:none; }
@@ -2739,7 +2750,7 @@
 
   /* ---- 期限の相対表示 ---- */
   .task-due-rel{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; color: var(--text-faint);
+    font-family: var(--font-mono); font-size:11px; letter-spacing:.3px; color: var(--text-faint);
     white-space:nowrap; flex:none;
   }
   .task-due-rel.is-soon{ color: var(--warn); }
@@ -2750,7 +2761,7 @@
   .task-section-head{
     display:flex; align-items:center; gap:8px; padding:10px 8px 7px; cursor:pointer; user-select:none; width:100%;
     background:transparent; border:none; text-align:left;
-    font-family: var(--font-mono); font-size:10px; font-weight:400; letter-spacing:1.5px; color: var(--text-dim);
+    font-family: var(--font-body); font-size:11px; font-weight:400; letter-spacing: 0; color: var(--text-dim);
     border-bottom:1px solid var(--hairline);
   }
   .task-section-head:hover{ color: var(--text); }
@@ -2759,7 +2770,7 @@
   .task-section-head .chevron{ width:11px; height:11px; stroke: currentColor; transition: transform .2s ease; flex:none; }
   .task-section.collapsed .task-section-head .chevron{ transform: rotate(-90deg); }
   .task-section-count{
-    margin-left:auto; font-family: var(--font-mono); font-size:10px; letter-spacing:0; color: var(--text-faint);
+    margin-left:auto; font-family: var(--font-mono); font-size:11px; letter-spacing:0; color: var(--text-faint);
     border:1px solid var(--panel-border); border-radius:2px; padding:1px 6px;
   }
   .task-section.collapsed .task-tree{ display:none; }
@@ -2780,7 +2791,7 @@
   }
   .task-oldbar-msg{ font-size:11.5px; color: var(--text-dim); flex:1 1 200px; }
   .task-oldbar-btn{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; padding:4px 10px;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; padding:4px 10px;
     border:1px solid var(--panel-border); border-radius:2px; background:transparent;
     color: var(--text-dim); cursor:pointer; flex:none;
   }
@@ -2794,7 +2805,7 @@
   }
   .task-row{ position:relative; }
   .task-keyhint{
-    margin-top:auto; padding-top:14px; font-family: var(--font-mono); font-size:9px;
+    margin-top:auto; padding-top:14px; font-family: var(--font-mono); font-size:11px;
     letter-spacing:.5px; color: var(--text-faint); line-height:1.9;
   }
   .task-keyhint b{ color: var(--text-dim); font-weight:400; }
@@ -2820,9 +2831,9 @@
 
   /* ---- 自由タグのチップ列（ツールバー下段） ---- */
   .note-tagbar{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex-basis:100%; padding-top:9px; border-top:1px solid var(--hairline); }
-  .note-tagbar-label{ font-family: var(--font-mono); font-size:9px; letter-spacing:1.5px; color: var(--text-faint); margin-right:2px; }
+  .note-tagbar-label{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); margin-right:2px; }
   .note-tagchip{
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.3px; padding:3px 9px;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; padding:3px 9px;
     border:1px solid var(--panel-border); border-radius:2px; background: rgba(255,255,255,0.02);
     color: var(--text-dim); cursor:pointer;
   }
@@ -2843,7 +2854,7 @@
   .note-pin-btn.is-on{ color: var(--accent); }
   .note-pin-btn:hover{ color: var(--accent); }
   .note-card .note-meta{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .note-progress{ font-family: var(--font-mono); font-size:9.5px; color: var(--warn); flex:none; }
+  .note-progress{ font-family: var(--font-mono); font-size:11px; color: var(--warn); flex:none; }
   .note-progress.is-done{ color: var(--ok); }
   .note-card-tags{ display:flex; flex-wrap:wrap; gap:4px; }
 
@@ -2864,7 +2875,7 @@
     display:inline-flex; align-items:center; gap:6px; width:fit-content;
     background: rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:2px;
     color: var(--text-faint); cursor:pointer; padding:5px 11px;
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px;
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0;
   }
   .note-pin-toggle svg{ width:12px; height:12px; stroke: currentColor; }
   .note-pin-toggle.is-on{ background: rgba(255,143,63,0.12); color: var(--accent); border-color: rgba(255,143,63,0.4); }
@@ -2873,7 +2884,7 @@
   .note-mode-switch{ display:flex; border:1px solid var(--panel-border); border-radius:2px; }
   .note-mode-btn{
     background:transparent; border:none; cursor:pointer; padding:4px 11px;
-    font-family: var(--font-mono); font-size:10px; letter-spacing:.5px; color: var(--text-faint);
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint);
     border-right:1px solid var(--hairline);
   }
   .note-mode-btn:last-child{ border-right:none; }
@@ -2882,7 +2893,7 @@
     margin-top:6px; padding:8px 10px; border:1px solid var(--panel-border); border-radius:2px;
     background: rgba(255,255,255,0.02); font-size:11px; color: var(--text-faint); line-height:1.9;
   }
-  .note-md-help b{ color: var(--text-dim); font-weight:400; font-family: var(--font-mono); font-size:10.5px; }
+  .note-md-help b{ color: var(--text-dim); font-weight:400; font-family: var(--font-mono); font-size:11px; }
 
   /* ---- Markdown プレビュー ---- */
   .note-md{
@@ -2943,9 +2954,9 @@
   .jh-wrap .kpi-band{ margin-bottom:0; }
   .jh-grid2{ display:grid; grid-template-columns: 1.5fr 1fr; gap:12px; align-items:start; }
   .jh-grid2 > *{ min-width:0; }
-  .jh-card .card-head h2{ font-size:12px; letter-spacing:1.5px; }
+  .jh-card .card-head h2{ font-size:13px; }
   .jh-card .card-head{ gap:10px; flex-wrap:wrap; }
-  .jh-note{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); }
+  .jh-note{ font-family: var(--font-body); font-size:11px; color: var(--text-faint); }
   .jh-head-actions{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
   .jh-btn{
     font-family: var(--font-body); font-size:11.5px; padding:4px 10px; white-space:nowrap; text-decoration:none; display:inline-block;
@@ -2975,7 +2986,7 @@
   .jh-table{ width:100%; border-collapse:collapse; font-size:12px; }
   .jh-table th{
     position:sticky; top:0; z-index:1; background: var(--panel-solid); text-align:left; white-space:nowrap;
-    font-family: var(--font-mono); font-size:9.5px; letter-spacing:1px; font-weight:500; color: var(--text-faint);
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; font-weight:500; color: var(--text-faint);
     padding:7px 8px; border-bottom:1px solid var(--panel-border);
   }
   .jh-table th[data-act]{ cursor:pointer; user-select:none; }
@@ -2988,7 +2999,7 @@
   .jh-table tr.is-open td{ background: rgba(255,143,63,0.05); }
   .jh-table td.jh-detail{ background: rgba(255,255,255,0.015); padding:12px 14px; cursor:default; }
   .jh-cell-title{ display:block; max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .jh-cell-sub{ display:block; font-family: var(--font-mono); font-size:10px; color: var(--text-faint); margin-top:2px; }
+  .jh-cell-sub{ display:block; font-family: var(--font-mono); font-size:11px; color: var(--text-faint); margin-top:2px; }
   .jh-faint{ color: var(--text-faint); }
   .jh-ok{ color: var(--ok); }
   .jh-warn{ color: var(--warn); }
@@ -3000,13 +3011,13 @@
 
   /* 順位バッジ（3位以内=ok / 10位以内=アクセント / それ以下=控えめ）とスパークライン */
   .jh-rank{
-    display:inline-block; min-width:38px; text-align:center; font-family: var(--font-mono); font-size:10.5px;
+    display:inline-block; min-width:38px; text-align:center; font-family: var(--font-mono); font-size:11px;
     padding:1px 5px; border-radius:2px; border:1px solid var(--hairline); color: var(--text-faint);
   }
   .jh-rank.is-top{ color: var(--ok); border-color: rgba(94,201,138,.35); }
   .jh-rank.is-mid{ color: var(--accent); border-color: var(--accent-dim); }
   .jh-spark{ width:64px; height:18px; color: var(--accent); display:block; }
-  .jh-spark-none{ color: var(--text-faint); font-family: var(--font-mono); font-size:10px; }
+  .jh-spark-none{ color: var(--text-faint); font-family: var(--font-mono); font-size:11px; }
   .jh-tag.is-accent{ color: var(--accent); border-color: var(--accent-dim); }
   .jh-tag.is-warn{ color: var(--warn); border-color: rgba(216,194,74,.35); }
   .jh-tag.is-ok{ color: var(--ok); border-color: rgba(94,201,138,.35); }
@@ -3024,18 +3035,18 @@
   .jh-notice ul{ margin:4px 0 0; padding-left:18px; }
 
   /* 月次の棒（値は棒の上に mono。色はアクセント1色、手入力の月と途中月は薄く） */
-  .jh-bars-title{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); margin:6px 0 2px; }
+  .jh-bars-title{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); margin:6px 0 2px; }
   .jh-bars{ display:flex; align-items:flex-end; gap:6px; height:128px; padding:4px 2px 0; }
   .jh-bars.is-short{ height:92px; }
   .jh-bar-col{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; }
-  .jh-bar-val{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .jh-bar-val{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space:nowrap; }
   .jh-bar-track{ flex:1; width:100%; max-width:34px; display:flex; align-items:flex-end; }
   .jh-bar{ width:100%; background: var(--accent); border-radius:1px 1px 0 0; }
   .jh-bar.is-manual{ background: var(--accent-dim); }
   .jh-bar.is-partial{ opacity:.55; }
   .jh-bar.is-sub{ background: var(--text-dim); }
-  .jh-bar-lbl{ font-family: var(--font-mono); font-size:9.5px; color: var(--text-faint); }
-  .jh-legend{ font-size:10.5px; color: var(--text-faint); margin-top:6px; }
+  .jh-bar-lbl{ font-family: var(--font-body); font-size:11px; color: var(--text-faint); }
+  .jh-legend{ font-size:11px; color: var(--text-faint); margin-top:6px; }
 
   /* 目標のセグメント進捗（デザイン方針の「セグメント進捗」を事務ハックではここで1回だけ使う） */
   .jh-goal{ padding:8px 0; border-bottom:1px solid var(--hairline); }
@@ -3048,7 +3059,7 @@
   .jh-seg.is-done i.on{ background: var(--ok); }
 
   /* 計画（ポータルのタスク）・ネタ帳・収益化ステータス */
-  .jh-plan-group{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); padding:12px 0 4px; }
+  .jh-plan-group{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); padding:12px 0 4px; }
   .jh-plan-group.is-warn{ color: var(--err); }
   .jh-task{ display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid var(--hairline); }
   .jh-task-check{
@@ -3059,7 +3070,7 @@
   .jh-task-text{ flex:1; min-width:0; font-size:12.5px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .jh-task-text:hover{ color: var(--accent); }
   .jh-task.is-done .jh-task-text{ color: var(--text-faint); text-decoration:line-through; }
-  .jh-task-due{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); white-space:nowrap; }
+  .jh-task-due{ font-family: var(--font-mono); font-size:11px; color: var(--text-faint); white-space:nowrap; }
   .jh-task-due.is-over{ color: var(--err); }
   .jh-idea{ display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--hairline); }
   .jh-idea-title{ flex:1; min-width:0; font-size:12.5px; }
@@ -3075,10 +3086,10 @@
     padding:3px 6px; border-bottom:1px solid var(--hairline); text-align:right;
     font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   }
-  .jh-mini-table th{ font-size:9.5px; color: var(--text-faint); font-weight:500; }
+  .jh-mini-table th{ font-size:11px; color: var(--text-faint); font-weight:500; }
   .jh-mini-table td:first-child, .jh-mini-table th:first-child{ text-align:left; }
   .jh-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
-  .jh-sublabel{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); margin-bottom:6px; }
+  .jh-sublabel{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); margin-bottom:6px; }
 
   @media (max-width: 900px){
     .jh-grid2, .jh-detail-grid{ grid-template-columns: 1fr; }
@@ -3100,7 +3111,7 @@
   .jh-answers{ display:grid; grid-template-columns: 1fr 1.1fr 1.3fr; gap:12px; }
   .jh-answer{ padding:12px 14px; display:flex; flex-direction:column; gap:6px; min-width:0; }
   .jh-answer-q{ display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:22px;
-    font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); }
+    font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
   .jh-answer-big{ font-family: var(--font-mono); font-size:26px; line-height:1.1; color: var(--text); font-variant-numeric: tabular-nums; }
   .jh-answer-big small{ font-size:11px; color: var(--text-dim); margin-left:6px; letter-spacing:0; }
   .jh-answer-line{ font-size:12px; line-height:1.55; color: var(--text-dim); }
@@ -3108,7 +3119,7 @@
   .jh-answer .jh-spark{ width:100%; height:24px; margin-top:2px; }
   .jh-answer .jh-actions{ margin-top:4px; }
   .jh-answer-foot{ margin-top:auto; padding-top:8px; border-top:1px solid var(--hairline);
-    font-family: var(--font-mono); font-size:10.5px; line-height:1.7; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+    font-family: var(--font-body); font-size:11px; line-height:1.7; color: var(--text-faint); font-variant-numeric: tabular-nums; }
   .jh-answer-foot .is-warn, .jh-chronic .is-warn, .jh-datastrip .is-warn{ color: var(--warn); }
   .jh-delta{ font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .jh-delta.is-good{ color: var(--ok); }
@@ -3125,7 +3136,7 @@
   .jh-stack .k-yahoo{ background: rgba(154,147,138,.55); }
   .jh-stack .k-direct{ background: rgba(154,147,138,.35); }
   .jh-stack .k-other{ background: rgba(154,147,138,.2); }
-  .jh-stack-legend{ display:flex; flex-wrap:wrap; gap:2px 10px; font-family: var(--font-mono); font-size:10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .jh-stack-legend{ display:flex; flex-wrap:wrap; gap:2px 10px; font-family: var(--font-body); font-size:11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
   .jh-stack-legend span::before{ content:""; display:inline-block; width:7px; height:7px; margin-right:4px; background: rgba(154,147,138,.2); }
   .jh-stack-legend .k-bing::before{ background: var(--accent); }
   .jh-stack-legend .k-google::before{ background: var(--text-dim); }
@@ -3134,15 +3145,15 @@
   .jh-next-title{ font-size:14px; line-height:1.45; color: var(--text); }
   .jh-next-impact{ font-family: var(--font-mono); font-size:11px; color: var(--accent); font-variant-numeric: tabular-nums; }
   .jh-datastrip{ display:flex; flex-wrap:wrap; align-items:center; gap:2px 14px; padding:0 4px;
-    font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+    font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
   .jh-rank-no{ flex:none; width:14px; font-family: var(--font-mono); font-size:11px; color: var(--text-faint); align-self:flex-start; padding-top:1px; }
   .jh-todo-row.is-first .jh-rank-no{ color: var(--accent); }
   .jh-todo-main{ flex:1; min-width:0; }
   .jh-todo-title{ font-size:12.5px; line-height:1.45; }
-  .jh-todo-sub{ margin-top:2px; font-family: var(--font-mono); font-size:10.5px; line-height:1.5; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .jh-todo-sub{ margin-top:2px; font-family: var(--font-body); font-size:11px; line-height:1.5; color: var(--text-faint); font-variant-numeric: tabular-nums; }
   .jh-todo-impact{ color: var(--accent); }
   .jh-todo-acts{ flex:none; display:flex; gap:2px; align-items:center; }
-  .jh-more-toggle{ background:none; border:none; padding:8px 0 0; cursor:pointer; font-family: var(--font-mono); font-size:10.5px; color: var(--text-dim); }
+  .jh-more-toggle{ background:none; border:none; padding:8px 0 0; cursor:pointer; font-family: var(--font-body); font-size:11px; color: var(--text-dim); }
   .jh-more-toggle:hover{ color: var(--accent); }
   .jh-more-toggle + .jh-more-toggle{ margin-left:14px; }
   .jh-todo-doneform{ margin-top:6px; }
@@ -3168,7 +3179,7 @@
 .pay2-queue-list{ max-height:none; flex:1 1 auto; min-height:120px; padding:2px 18px 10px; gap:8px; }
 .pay2-queue-panel > .event-form-error{ margin:0 18px 8px; }
 .pay2-queue-foot{ padding:10px 18px 14px; margin-top:0; border-top:1px solid var(--hairline); flex:none; }
-.pay2-q-group{ padding:8px 0 0; font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint); }
+.pay2-q-group{ padding:8px 0 0; font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
 .pay2-q-item{ display:flex; flex-direction:column; gap:3px; padding:9px 11px; border:1px solid var(--panel-border); border-radius:3px; }
 .pay2-q-item.is-done > :not(.pay2-q-msg){ opacity:.4; }
 .pay2-q-head{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
@@ -3207,12 +3218,12 @@
 }
 /* 請求書管理：毎月一覧の保守（漏れ防止計画 P3・2026/09/13）— 受領チェックの提案と未着行の操作ボタン */
 .pay2-sugg{ margin:0 0 10px; padding:8px 10px; border:1px solid var(--panel-border); border-radius:3px; }
-.pay2-sugg-head{ padding-bottom:4px; font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint); }
+.pay2-sugg-head{ padding-bottom:4px; font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
 .pay2-sugg-row{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 0; font-size:11.5px; border-top:1px solid var(--hairline); }
 .pay2-sugg-head + .pay2-sugg-row{ border-top:0; }
 .pay2-sugg-name{ color: var(--text); }
 .pay2-mini-btn{
-  padding:2px 8px; font-size:10.5px; white-space:nowrap;
+  padding:2px 8px; font-size:11px; white-space:nowrap;
 }
 .pay2-mini-primary{ border-color: var(--accent-dim); color: var(--accent); }
 .pay2-check-act{ white-space:nowrap; }
@@ -3245,9 +3256,9 @@
 .pay2-mx th.pay2-mx-m, .pay2-mx td.pay2-mx-c{ text-align:center; min-width:48px; }
 .pay2-mx th.is-cur{ color: var(--accent); }
 .pay2-mx-ok{ color: var(--ok); font-family: var(--font-mono); }
-.pay2-mx-dim{ color: var(--text-faint); font-family: var(--font-mono); font-size:10.5px; }
+.pay2-mx-dim{ color: var(--text-faint); font-family: var(--font-mono); font-size:11px; }
 /* 請求の来ない月（スキップ・2026/09/15） */
-.pay2-mx-skip{ color: var(--text-dim); font-family: var(--font-mono); font-size:10.5px; cursor:pointer; border-bottom:1px dotted var(--text-faint); }
+.pay2-mx-skip{ color: var(--text-dim); font-family: var(--font-mono); font-size:11px; cursor:pointer; border-bottom:1px dotted var(--text-faint); }
 .pay2-mx-skip:hover{ color: var(--text); border-bottom-color: var(--accent); }
 .pay2-check-act .pay2-muted{ margin-right:4px; }
 .pay2-skip-edit{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
@@ -3262,10 +3273,10 @@
 .pay2-summary .ui-chip{ align-self:center; }
 /* 請求書管理：タブ（未着チェック｜台帳｜明細の突き合わせ｜ベンダー・2026/09/14） */
 #pay2-tabs{ flex-wrap:wrap; }
-.pay2-tab-n{ margin-left:5px; font-family: var(--font-mono); font-size:10px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.pay2-tab-n{ margin-left:5px; font-family: var(--font-mono); font-size:11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .pay2-tab-n:empty{ display:none; }
 .pay2-tab-n.is-alert{ color: var(--err); }
-.pay2-sec-title{ font-family: var(--font-mono); font-size:10px; letter-spacing:1.5px; color: var(--text-faint); }
+.pay2-sec-title{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
 
   /* ================= スモビジ（#view-smallbiz・app.smallbiz.js） =================
      KPI は既存の .kpi-band、カードは .panel＋.card-head を流用。色はアクセント1色＋意味色（ok/warn/err）だけ。
@@ -3285,51 +3296,51 @@
   .sb-faint{ color: var(--text-faint); font-size:12px; }
   .sb-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
   .sb-head h2{ font-family: var(--font-display); font-size:15px; letter-spacing:.2px; }
-  .sb-status{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); white-space:nowrap; }
+  .sb-status{ font-family: var(--font-body); font-size:11px; color: var(--text-dim); white-space:nowrap; }
   .sb-status.is-ok{ color: var(--ok); }
   .sb-status.is-warn{ color: var(--warn); }
   .sb-status.is-err{ color: var(--err); }
   .sb-phase{ font-size:12px; color: var(--text-dim); }
-  .sb-judge{ font-family: var(--font-mono); font-size:10.5px; color: var(--warn); border:1px solid var(--hairline); border-radius:2px; padding:0 6px; white-space:nowrap; }
+  .sb-judge{ font-family: var(--font-body); font-size:11px; color: var(--warn); border:1px solid var(--hairline); border-radius:2px; padding:0 6px; white-space:nowrap; }
   /* 事業名のジャンプ行。5枚に増えて縦に長くなったので、KPI の下から各カードへ飛べるようにする。 */
   .sb-jumps{ display:flex; flex-wrap:wrap; gap:6px; }
-  .sb-jump{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); background:none;
+  .sb-jump{ font-family: var(--font-body); font-size:11px; color: var(--text-dim); background:none;
     border:1px solid var(--panel-border); border-radius:2px; padding:4px 10px; cursor:pointer; }
   .sb-jump:hover{ color: var(--text); border-color: var(--accent); }
   .sb-jump.is-warn{ color: var(--warn); }
   .sb-jump.is-err{ color: var(--err); }
   /* 前回との差。増減の良し悪しは項目によるので色は付けない（却下が増えるのは悪い）。 */
   .sb-delta{ margin-left:6px; font-family: var(--font-mono); font-size:11px; font-weight:400; color: var(--text-faint); }
-  .sb-updated{ margin-left:auto; font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); white-space:nowrap; }
+  .sb-updated{ margin-left:auto; font-family: var(--font-mono); font-size:11px; color: var(--text-faint); white-space:nowrap; }
   .sb-body{ display:flex; flex-direction:column; gap:14px; }
   .sb-summary{ margin:0; font-size:13px; line-height:1.7; color: var(--text); }
   .sb-goal{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .sb-goal-label{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; color: var(--text-faint); }
+  .sb-goal-label{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
   .sb-goal-value{ font-family: var(--font-mono); font-size:16px; font-weight:600; color: var(--text); font-variant-numeric: tabular-nums; }
   .sb-segs{ display:inline-flex; gap:3px; }
   .sb-segs i{ display:block; width:14px; height:6px; border-radius:1px; background: rgba(235,170,120,.12); }
   .sb-segs i.on{ background: var(--accent); }
   .sb-metrics{ display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:1px; background: var(--hairline); border:1px solid var(--hairline); }
   .sb-metric{ background: var(--panel); padding:8px 10px; display:flex; flex-direction:column; gap:2px; min-width:0; }
-  .sb-metric-label{ font-family: var(--font-mono); font-size:9.5px; letter-spacing:1px; color: var(--text-faint); }
+  .sb-metric-label{ font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
   .sb-metric-value{ font-family: var(--font-mono); font-size:15px; font-weight:600; color: var(--text); font-variant-numeric: tabular-nums; }
-  .sb-metric-note{ font-size:10.5px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sb-metric-note{ font-size:11px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sb-metric.is-ok .sb-metric-value{ color: var(--ok); }
   .sb-metric.is-warn .sb-metric-value{ color: var(--warn); }
   .sb-metric.is-err .sb-metric-value{ color: var(--err); }
   .sb-cols{ display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
   .sb-col{ min-width:0; }
-  .sb-col h3{ margin:0 0 6px; font-family: var(--font-mono); font-size:9.5px; letter-spacing:1.5px; font-weight:500; color: var(--text-faint); }
+  .sb-col h3{ margin:0 0 6px; font-family: var(--font-body); font-size:11px; letter-spacing: 0; font-weight:500; color: var(--text-faint); }
   .sb-list{ list-style:none; margin:0; padding:0; }
   .sb-list li{ display:flex; gap:8px; align-items:baseline; padding:6px 0; border-top:1px solid var(--hairline); font-size:12.5px; line-height:1.6; }
   .sb-list li:first-child{ border-top:none; }
-  .sb-owner{ flex:0 0 auto; font-family: var(--font-mono); font-size:10px; padding:0 6px; border:1px solid var(--hairline); border-radius:2px; color: var(--text-faint); }
+  .sb-owner{ flex:0 0 auto; font-family: var(--font-body); font-size:11px; padding:0 6px; border:1px solid var(--hairline); border-radius:2px; color: var(--text-faint); }
   .sb-owner.is-owner{ color: var(--accent); border-color: var(--accent-dim); }
   .sb-li-text{ flex:1 1 auto; min-width:0; color: var(--text); }
-  .sb-due{ flex:0 0 auto; font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); }
+  .sb-due{ flex:0 0 auto; font-family: var(--font-mono); font-size:11px; color: var(--text-faint); }
   .sb-decisions li{ flex-direction:column; gap:2px; }
   .sb-rec{ font-size:11.5px; color: var(--text-dim); }
-  .sb-exits summary{ cursor:pointer; font-family: var(--font-mono); font-size:10.5px; letter-spacing:1px; color: var(--text-faint); }
+  .sb-exits summary{ cursor:pointer; font-family: var(--font-body); font-size:11px; letter-spacing: 0; color: var(--text-faint); }
   .sb-exits summary:hover{ color: var(--text); }
   .sb-table{ width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
   .sb-table td{ padding:5px 8px; border-top:1px solid var(--hairline); vertical-align:top; color: var(--text-dim); }
@@ -3338,7 +3349,7 @@
   .sb-foot{ display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; border-top:1px solid var(--hairline); padding-top:10px; }
   .sb-link{ font-size:12px; color: var(--text-dim); text-decoration:none; border:1px solid var(--panel-border); border-radius:2px; padding:3px 9px; }
   .sb-link:hover{ color: var(--text); border-color: var(--accent); }
-  .sb-source{ margin-left:auto; font-size:10.5px; color: var(--text-faint); }
+  .sb-source{ margin-left:auto; font-size:11px; color: var(--text-faint); }
   .sb-footnote{ margin:0; font-size:11px; color: var(--text-faint); text-align:center; }
   @media (max-width: 860px){
     .sb-cols{ grid-template-columns: 1fr; }
