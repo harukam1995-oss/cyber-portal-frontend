@@ -27,7 +27,7 @@
   // 意味のある状態(要対応=warn / 締結済み=ok)だけ色を持たせ、途中経過はニュートラルに(虹色をやめる)
   var CONTRACT_STATUS_COLOR = { "依頼受領": "var(--warn)", "送付済み": "var(--text-faint)", "締結済み": "var(--ok)", "報告済み": "var(--text-faint)" };
   var CONTRACT_REQUESTERS = ["河野", "藤井", "船木", "竹内"]; // 依頼者の quick-pick / 絞り込み候補
-  var contractsState = [];      // [{id,title,client,requestedBy,status,requestedDate,sentDate,signedDate,dueDate,confidential,source,order}]
+  var contractsState = [];      // [{id,title,client,requestedBy,status,requestedDate,sentDate,signedDate,hubspotDate,dueDate,confidential,source,order}]
   var contractsTab = "";        // "" = すべて / "alert" / "依頼受領" / "送付済み" / "締結済み"
   var contractsQuery = "";      // 検索窓の文字列
   var contractsRequester = "";  // 依頼者の絞り込み("" = すべて、"__other" = 既知4名以外)
@@ -61,6 +61,11 @@
     "送付済み": { status: "締結済み", dateKey: "signedDate", label: "締結済みにする" },
     "締結済み": { status: "報告済み", dateKey: "", label: "報告済みにする" }
   };
+  // 締結後の「HubSpot へ契約書を添付」。status は進めず、添付日（hubspotDate）に今日を入れるだけ。
+  var CONTRACT_HUBSPOT = { dateKey: "hubspotDate", label: "HubSpotに添付した" };
+  function contractNeedsHubspot(c){
+    return contractStatusIdx(c) >= 2 && !c.hubspotDate;
+  }
   // 並べ替えの優先度(小さいほど上)。アラート → 未締結 → 締結済み(報告待ち) → 報告済み。
   function contractUrgency(c){
     if (contractAlertLabels(c).length) return 0;
@@ -100,7 +105,7 @@
       id: c.id, title: c.title || "", client: c.client || "",
       requestedBy: c.requestedBy || "", status: c.status,
       requestedDate: c.requestedDate || "", sentDate: c.sentDate || "",
-      signedDate: c.signedDate || "", dueDate: c.dueDate || "",
+      signedDate: c.signedDate || "", hubspotDate: c.hubspotDate || "", dueDate: c.dueDate || "",
       confidential: c.confidential === true, slackUrl: c.slackUrl || "",
       notes: c.notes || "",
       autoAdvancedAt: Number(c.autoAdvancedAt) || 0, autoAdvancedTo: c.autoAdvancedTo || "",
@@ -113,19 +118,21 @@
   // 行の「◯◯にする」ボタン。行タップ → モーダル → select → 保存 の4手を1手にする。
   // バックは全置換の PUT /bulk しか無いので、contractsState から全行を組み直して
   // 対象の1行だけ差し替えて送る(管理モーダルの保存と同じ経路・同じガード)。
-  async function advanceContract(id, btn){
+  // hubspot=true のときは status を進めず、HubSpot 添付日に今日を入れる。
+  async function advanceContract(id, btn, hubspot){
     if (!contractsLoadOk){
       contractsPageSetStatus("読み込みに失敗しています。再読み込みしてから操作してください。", true);
       return;
     }
     var cur = null;
     for (var i = 0; i < contractsState.length; i++){ if (contractsState[i].id === id) cur = contractsState[i]; }
-    var next = cur && CONTRACT_NEXT[cur.status];
-    if (!next) return;
+    var next = hubspot ? CONTRACT_HUBSPOT : (cur && CONTRACT_NEXT[cur.status]);
+    if (!cur || !next) return;
 
     var today = jstDateKey(new Date());
     var payload = contractsState.map(function(c){
       if (c.id !== id) return contractBulkRow(c);
+      if (hubspot) return contractBulkRow(c, { hubspotDate: today, source: "manual" });
       var over = {
         status: next.status,
         source: "manual", // 手で進めた＝ユーザーが所有する行になる(Slack検知バッジは外れる)
@@ -205,7 +212,7 @@
 
   function contractMatchesQuery(c, q){
     var hay = [c.client, c.title, c.requestedBy, c.status].join(" ");
-    ["requestedDate", "sentDate", "signedDate", "dueDate"].forEach(function(k){
+    ["requestedDate", "sentDate", "signedDate", "hubspotDate", "dueDate"].forEach(function(k){
       if (c[k]) hay += " " + c[k] + " " + contractMD(c[k]);
     });
     return hay.toLowerCase().indexOf(q) !== -1;
@@ -366,6 +373,17 @@
       adv.addEventListener("keydown", function(e){ e.stopPropagation(); });
       head.appendChild(adv);
     }
+    // 締結後の HubSpot 添付。済ませたら添付日が入ってボタンは消える。
+    if (contractNeedsHubspot(c)){
+      var hs = document.createElement("button");
+      hs.type = "button";
+      hs.className = "pv-contract-advance";
+      hs.textContent = CONTRACT_HUBSPOT.label;
+      hs.title = "HubSpot の添付日に今日を入れます";
+      hs.addEventListener("click", function(e){ e.stopPropagation(); advanceContract(c.id, hs, true); });
+      hs.addEventListener("keydown", function(e){ e.stopPropagation(); });
+      head.appendChild(hs);
+    }
     row.appendChild(head);
 
     // 契約書名が会社名と別なら、小さくサブ行に出す。
@@ -382,6 +400,7 @@
     var metaLine = [];
     if (c.requestedBy) metaLine.push(c.requestedBy + " 依頼");
     if (c.dueDate) metaLine.push("期限 " + contractMD(c.dueDate) + " まで");
+    if (contractStatusIdx(c) >= 2) metaLine.push("HubSpot " + (c.hubspotDate ? contractMD(c.hubspotDate) + " 添付" : "未添付"));
     if (metaLine.length){
       var meta = document.createElement("div");
       meta.className = "pv-contract-meta";
@@ -713,6 +732,7 @@
         id: c.id, title: c.title, client: c.client || "", requestedBy: c.requestedBy || "",
         status: CONTRACT_STATUSES.indexOf(c.status) !== -1 ? c.status : "依頼受領",
         requestedDate: c.requestedDate || "", sentDate: c.sentDate || "", signedDate: c.signedDate || "",
+        hubspotDate: c.hubspotDate || "",
         dueDate: c.dueDate || "", confidential: c.confidential === true,
         slackUrl: c.slackUrl || "", notes: c.notes || "",
         autoAdvancedAt: Number(c.autoAdvancedAt) || 0, autoAdvancedTo: c.autoAdvancedTo || "",
@@ -733,6 +753,7 @@
         requestedBy: (r.requestedBy || "").trim().slice(0, 40),
         status: CONTRACT_STATUSES.indexOf(r.status) !== -1 ? r.status : "依頼受領",
         requestedDate: r.requestedDate || "", sentDate: r.sentDate || "", signedDate: r.signedDate || "",
+        hubspotDate: r.hubspotDate || "",
         dueDate: r.dueDate || "", confidential: r.confidential === true,
         slackUrl: (r.slackUrl || "").trim().slice(0, 500),
         notes: (r.notes || "").trim().slice(0, 500),
@@ -756,7 +777,7 @@
     contractMaster.open(contractsState, targetId);
   }
   function contractNewRow(){
-    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", autoAdvancedAt: 0, autoAdvancedTo: "", source: "manual" };
+    return { id: uid(), title: "", client: "", requestedBy: "", status: "依頼受領", requestedDate: "", sentDate: "", signedDate: "", hubspotDate: "", dueDate: "", confidential: false, slackUrl: "", notes: "", autoAdvancedAt: 0, autoAdvancedTo: "", source: "manual" };
   }
   function contractHint(r){
     var pending = r.status !== "締結済み" && r.status !== "報告済み";
@@ -829,7 +850,8 @@
     [
       { key: "requestedDate", label: "依頼日" },
       { key: "sentDate", label: "送付日" },
-      { key: "signedDate", label: "締結日" }
+      { key: "signedDate", label: "締結日" },
+      { key: "hubspotDate", label: "HubSpot添付日" }
     ].forEach(function(f){
       var line = document.createElement("div");
       line.className = "habit-block-line";

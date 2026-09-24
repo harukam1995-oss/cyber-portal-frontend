@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 182;
+  var BUILD_V = 183;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3228,13 +3228,15 @@
     var i = CONTRACT_STATUSES.indexOf(c && c.status);
     return i === -1 ? 0 : i;
   }
-  // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過、のいずれかをアラートとする。
+  // 依頼日があるのに未送付 / 送付から1週間で未締結 / 期限超過 / 締結済みなのに HubSpot 未添付、のいずれかをアラートとする。
+  // HubSpot は「締結済み」の行だけ見る（報告済み＝完了した過去分まで一斉に鳴らさない）。
   function contractAlertLabels(c){
     var today = jstDateKey(new Date());
     var out = [];
     if (c.requestedDate && !c.sentDate) out.push("⚠ 送付待ち");
     if (c.sentDate && !c.signedDate && addDaysKey(c.sentDate, 7) < today) out.push("⚠ 締結遅延");
     if (c.dueDate && c.dueDate < today && contractStatusIdx(c) < 2) out.push("⚠ 期限超過");
+    if (c.status === "締結済み" && !c.hubspotDate) out.push("⚠ HubSpot未添付");
     return out;
   }
 
