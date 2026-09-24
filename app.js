@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 181;
+  var BUILD_V = 182;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -4464,18 +4464,20 @@
   var confirmModalOk = document.getElementById("confirm-modal-ok");
   var confirmModalCancel = document.getElementById("confirm-modal-cancel");
   var confirmResolve = null;
+  var confirmPrevOverflow = ""; // 開く前のスクロール止め。下のモーダル（タスクなど）が開いたままなら閉じても止めたままにする
   function askConfirm(message, okLabel){
     return new Promise(function(resolve){
       confirmResolve = resolve;
       confirmModalBody.textContent = message;
       confirmModalOk.textContent = okLabel || "削除する";
+      if (confirmModal.hidden) confirmPrevOverflow = document.body.style.overflow;
       confirmModal.hidden = false;
       document.body.style.overflow = "hidden";
     });
   }
   function closeConfirmModal(result){
     confirmModal.hidden = true;
-    document.body.style.overflow = "";
+    document.body.style.overflow = confirmPrevOverflow;
     var resolve = confirmResolve;
     confirmResolve = null;
     if (resolve) resolve(result);
@@ -6322,14 +6324,16 @@
   document.addEventListener("keydown", function(e){
     if (e.key !== "Escape") return;
     var byId = function(id){ return document.getElementById(id); };
+    // 上から順に「開いている最初の1つ」を閉じる。確認ダイアログは他のモーダルの上に開くので必ず先頭
+    // （以前はタスク等より後ろにあり、削除の確認中に Esc で下のモーダルが閉じ、確認だけ残っていた・2026/09/24）。
     var stack = [
+      { el: confirmModal,  close: function(){ closeConfirmModal(false); } },
       { el: eventModal,    close: closeEventModal },
       { el: mailComposeModal, close: closeMailCompose },  // メール詳細より手前に開く
       { el: mailModal,     close: closeMailModal },
       { el: noteModal,     close: closeNoteModal },
       { el: taskModal,     close: closeTaskModal },
       { el: ideaModal,     close: closeIdeaModal },
-      { el: confirmModal,  close: function(){ closeConfirmModal(false); } },
       { el: settingsModal, close: closeSettings },
       { el: byId("plan-apply-modal"), close: function(){ closePlanApply("cancel"); } },
       { el: byId("habit-modal"),      close: habitMD.back },

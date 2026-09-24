@@ -33,6 +33,7 @@
   var contractsRequester = "";  // 依頼者の絞り込み("" = すべて、"__other" = 既知4名以外)
   var contractsWired = false;
   var contractsLoadOk = false;  // 一度でも取得に成功したか(空配列での全消し保存を防ぐガード)
+  var contractsBase = {};       // 読み込んだ時点の中身 { id: updatedAt }（PUT /bulk の base）
   var contractsShowDone = false; // 一覧ページで「報告済み」(完了)を展開しているか
 
   var contractAlertLabels = CP.contractAlertLabels;
@@ -137,11 +138,7 @@
 
     if (btn){ btn.disabled = true; btn.textContent = "保存中…"; }
     try {
-      await apiFetch("/api/contracts/bulk", {
-        method: "PUT",
-        headers: payload.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ contracts: payload })
-      });
+      await putContracts(payload);
       await loadContracts(); // 成功時は再描画で行ごと作り直されるのでボタンの後始末は不要
     } catch (err){
       contractsPageSetStatus(apiErrorMessage(err, "契約書トラッカー"), true);
@@ -151,8 +148,32 @@
 
   var contractSetStatus = makeStatusSetter("pv-contracts-status");
 
+  // 一覧の「読んだ時点の中身」{ id: updatedAt }。全置換の PUT /bulk に base として添える。
+  function listBase(list){
+    var b = {};
+    (list || []).forEach(function(r){ if (r && r.id) b[r.id] = Number(r.updatedAt) || 0; });
+    return b;
+  }
+  // 契約書の全置換（1タップ進行・確認済みにする・管理モーダルの3経路で共用）。画面を開いた後に Slack の
+  // 自動取り込みが行を足していると、古い一覧の全置換でその行を消していた（2026/09/24）。
+  // base を添え、サーバーが 409 stale_list で断ったら最新を読み直す（エラーは呼び出し側で表示）。
+  async function putContracts(rows){
+    try {
+      return await apiFetch("/api/contracts/bulk", {
+        method: "PUT",
+        // 空での全置換は「全部消した」ときだけ許可(読み込み失敗中の全消し防止ガードを殺さない)
+        headers: rows.length ? {} : { "X-Allow-Empty": "1" },
+        body: JSON.stringify({ contracts: rows, base: contractsBase })
+      });
+    } catch (err){
+      if (err && err.code === "stale_list") loadContracts();
+      throw err;
+    }
+  }
+
   function applyContracts(list){
     contractsState = list || [];
+    contractsBase = listBase(contractsState);
     contractsLoadOk = true;
     renderContractsAll();
     contractSetStatus("");
@@ -594,16 +615,12 @@
     });
     if (btn){ btn.disabled = true; btn.textContent = "保存中…"; }
     try {
-      await apiFetch("/api/contracts/bulk", {
-        method: "PUT",
-        headers: payload.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ contracts: payload })
-      });
+      await putContracts(payload);
       await loadContracts();
       // INBOX の件数も即座に消す（HOME を開き直すまで残らないように）。
       if (CP.refreshHomeContractCounts) CP.refreshHomeContractCounts(contractsState);
     } catch (e){
-      contractsPageSetStatus("確認済みにできませんでした: " + (e && e.message ? e.message : e), true);
+      contractsPageSetStatus("確認済みにできませんでした: " + apiErrorMessage(e, "契約書トラッカー"), true);
       if (btn){ btn.disabled = false; btn.textContent = "確認済みにする"; }
     }
   }
@@ -723,14 +740,7 @@
         source: r.source === "slack" ? "slack" : "manual"
       } };
     },
-    save: function(rows){
-      return apiFetch("/api/contracts/bulk", {
-        method: "PUT",
-        // 空での全置換は「全部消した」ときだけ許可(読み込み失敗中の全消し防止ガードを殺さない)
-        headers: rows.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ contracts: rows })
-      });
-    },
+    save: putContracts,
     afterSave: function(){ loadContracts(); }
   }) : null;
   function openContractModal(targetId){
@@ -914,6 +924,7 @@
   var pbView = "list";            // 管理モーダルのタブ: "list" = プロジェクト / "templates" = テンプレ
   var eventTrackersWired = false;
   var eventTrackersLoadOk = false;
+  var eventTrackersBase = {};     // 読み込んだ時点の中身 { id: updatedAt }（PUT /bulk の base）
 
   var eventSetStatus = makeStatusSetter("pv-events-status");
 
@@ -984,6 +995,7 @@
 
   function applyEventTrackers(list, templates){
     eventTrackersState = list || [];
+    eventTrackersBase = listBase(eventTrackersState);
     if (templates !== undefined) eventTemplatesState = templates || [];
     eventTrackersLoadOk = true;
     renderEventTrackersAll();
@@ -1290,11 +1302,15 @@
         digest: (r.digest || []).slice(0, 3)
       } };
     },
+    // 契約書と同じく base を添える（定期タスク event-digest の自動反映を古い一覧で上書きしない・2026/09/24）。
     save: function(rows){
       return apiFetch("/api/event-trackers/bulk", {
         method: "PUT",
         headers: rows.length ? {} : { "X-Allow-Empty": "1" },
-        body: JSON.stringify({ eventTrackers: rows })
+        body: JSON.stringify({ eventTrackers: rows, base: eventTrackersBase })
+      }).catch(function(err){
+        if (err && err.code === "stale_list") loadEventTrackers();
+        throw err;
       });
     },
     afterSave: function(){ loadEventTrackers(); }

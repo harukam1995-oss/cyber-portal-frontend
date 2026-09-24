@@ -1382,9 +1382,13 @@
   function p2StmtRowById(id){
     return ((p2s.data && p2s.data.rows) || []).filter(function(r){ return r.id === id; })[0] || null;
   }
+  // 明細の行 id → 台帳に追加済みの payable id。追加は済んで紐付けだけ失敗したとき、押し直しで台帳に二重に入れず
+  // 紐付けだけやり直す（以前はボタンが戻り、押し直すと同じ行がもう1件追加されていた・2026/09/24）。
+  var p2StmtAddedPayable = {};
   function p2StmtAdd(id, btn){
     var r = p2StmtRowById(id);
     if (!r) return;
+    if (p2StmtAddedPayable[id]){ p2StmtMatch(id, p2StmtAddedPayable[id], btn); return; }
     var gmo = p2s.source === "gmo";
     var vendorName = r.guess ? r.guess.vendorName : "";
     if (!vendorName){
@@ -1402,13 +1406,18 @@
     };
     apiFetch("/api/payables/payables", { method: "POST", body: JSON.stringify(doc) }).then(function(res){
       var saved = res && res.payable;
-      if (saved) p2.payables.unshift(saved);
+      if (saved){ p2.payables.unshift(saved); p2StmtAddedPayable[id] = saved.id; }
       return saved ? apiFetch("/api/payables/statements/" + encodeURIComponent(id) + "/match", { method: "POST", body: JSON.stringify({ payableId: saved.id }) }) : null;
     }).then(function(){
       p2Status("「" + vendorName + "」の" + (gmo ? "出金" : "決済") + "を台帳に追加しました（" + doc.method + "・支払済）");
       p2RenderAll();
       p2StmtLoad();
-    }).catch(function(err){ btn.disabled = false; p2Status(apiErrorMessage(err, "明細"), "err"); });
+    }).catch(function(err){
+      btn.disabled = false;
+      var added = !!p2StmtAddedPayable[id];
+      if (added){ btn.textContent = "紐付けをやり直す"; p2RenderAll(); }
+      p2Status((added ? "台帳への追加はできましたが、明細との紐付けに失敗しました。ボタンで紐付けだけやり直せます。" : "") + apiErrorMessage(err, "明細"), "err");
+    });
   }
   function p2StmtMatch(id, payableId, btn){
     if (btn) btn.disabled = true;
