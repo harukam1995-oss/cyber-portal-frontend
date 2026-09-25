@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 183;
+  var BUILD_V = 184;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -3283,7 +3283,8 @@
   var homePayQueueNum = document.getElementById("home-pay-queue-num");
   function applyHomePayQueue(pq){
     if (!homePayQueueBtn) return;
-    var n = pq && typeof pq.parent === "number" ? pq.parent : 0;
+    // 親 01.payment のメール数＋方式ラベルだけ付いて台帳に無いメール数（2026/09/25〜）
+    var n = pq && typeof pq.parent === "number" ? pq.parent + (typeof pq.labeled === "number" ? pq.labeled : 0) : 0;
     homePayQueueBtn.hidden = n <= 0;
     if (homePayQueueNum) homePayQueueNum.textContent = String(n);
     glancePayQueue = n;

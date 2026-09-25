@@ -304,8 +304,11 @@
         '<span class="kpi-sub">' + sub + "</span></button>";
     };
     var qs = p2.qsum || {};
-    var qN = typeof qs.parent === "number" ? qs.parent : null;
+    // 親 01.payment のメール数＋方式ラベルだけ付いて台帳に無いメール数（2026/09/25〜。以前は親だけで、後者が 0件 に見えていた）
+    var qLab = typeof qs.labeled === "number" ? qs.labeled : 0;
+    var qN = typeof qs.parent === "number" ? qs.parent + qLab : null;
     var qSub = qs.connected === false ? "SYSLEA の Google 連携が必要"
+      : qLab ? "うち台帳に無いラベル付き " + qLab + "件"
       : qs.last ? "前回の突き合わせ " + qs.last.total + "件・" + p2TimeLabel(qs.last.at)
       : "押して突き合わせ";
     band.innerHTML =
@@ -445,7 +448,7 @@
       p2Status(apiErrorMessage(err, "請求書管理"), "err");
     });
   }
-  // 「未処理メール」の件数（親 01.payment のメール数＋前回の突き合わせ）。重い突き合わせはしない。
+  // 「未処理メール」の件数（親 01.payment のメール数＋方式ラベルだけで台帳に無いメール数＋前回の突き合わせ）。重い突き合わせはしない。
   function p2QueueSummaryLoad(){
     return apiFetch("/api/payables/queue/summary").then(function(res){
       p2.qsum = res || {};
