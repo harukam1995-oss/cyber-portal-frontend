@@ -7,7 +7,7 @@
   // デプロイ直後 最大10分 古い版のまま実行される事故があった(2026/09/09 判明)。
   // bump.mjs が sw.js の CACHE 番号と同時にこの値も上げるので、番号が変われば
   // URL が変わり毎回キャッシュミス=強制的に新しい版を取りに行く。
-  var BUILD_V = 184;
+  var BUILD_V = 185;
   var JP_TZ = "Asia/Tokyo";
   var DOW_JA = ["日","月","火","水","木","金","土"];
   var ACCOUNTS = {
@@ -701,6 +701,7 @@
   var viewSubs = document.getElementById("view-subs");
   var viewJimuhack = document.getElementById("view-jimuhack");
   var viewSmallbiz = document.getElementById("view-smallbiz");
+  var viewOffice = document.getElementById("view-office");
   var appTopbar = document.getElementById("app-topbar");
 
   /* サブ画面(カレンダー/メール/請求書管理/収支/サブスク/契約書/タスク/メモ/アイデア帳)の
@@ -748,6 +749,7 @@
   var payablesInitialized = false;
   var jimuhackInitialized = false;
   var smallbizInitialized = false;
+  var officeInitialized = false;
   var contractsPageInitialized = false;
   // showView("contracts") のときに開きたいタブ。モジュールのロードを待ってから
   // __CP.setContractsTab() に渡す(HOME の契約書アラート行 →「アラート」タブ 用)。
@@ -778,6 +780,7 @@
   function loadBusinessModule(){ return loadModuleOnce("app.business.js", "initBusinessCards"); }
   function loadJimuhackModule(){ return loadModuleOnce("app.jimuhack.js", "initJimuhack"); }
   function loadSmallbizModule(){ return loadModuleOnce("app.smallbiz.js", "initSmallbiz"); }
+  function loadOfficeModule(){ return loadModuleOnce("app.office.js", "initOffice"); }
   function loadMoneyModule(){ return loadModuleOnce("app.money.js", "showFinancePage"); }
   function moneyModuleFail(statusId){
     return function(err){
@@ -843,6 +846,7 @@
     if (viewSubs) viewSubs.hidden = name !== "subs";
     if (viewJimuhack) viewJimuhack.hidden = name !== "jimuhack";
     if (viewSmallbiz) viewSmallbiz.hidden = name !== "smallbiz";
+    if (viewOffice) viewOffice.hidden = name !== "office";
 
     if (isDash){
       currentDashboard = name;
@@ -961,6 +965,17 @@
         console.error("[smallbiz]", err);
       });
     }
+    // AIオフィスは app.office.js に分離。Claude Code のフックが別の場所から書くので開くたびに取り直す。
+    if (name === "office"){
+      loadOfficeModule().then(function(){
+        if (!officeInitialized){ officeInitialized = true; window.__CP.initOffice(); }
+        else window.__CP.renderOffice();
+      }).catch(function(err){
+        var el = document.getElementById("of-status");
+        if (el) el.textContent = "AIオフィスのモジュールの読み込みに失敗しました。開き直してください。";
+        console.error("[office]", err);
+      });
+    }
     if (!opts.fromHistory) syncHash(name, opts.replace);
     window.scrollTo(0, 0);
   }
@@ -978,7 +993,7 @@
   var VIEW_ROUTES = [
     "home", "private", "business",
     "calendar", "mail", "tasks", "notes", "ideas",
-    "payables", "contracts", "projects", "slack", "finance", "subs", "jimuhack", "smallbiz"
+    "payables", "contracts", "projects", "slack", "finance", "subs", "jimuhack", "smallbiz", "office"
   ];
   function routeFromHash(){
     var h = String(location.hash || "").slice(1);
@@ -1023,14 +1038,14 @@
   if (navPrivate) navPrivate.addEventListener("click", function(e){ e.preventDefault(); showView("private"); });
   if (navBusiness) navBusiness.addEventListener("click", function(e){ e.preventDefault(); showView("business"); });
   // サブ画面の「← 戻る」は、来たダッシュボード(HOME/プライベート/ビジネス)へ戻す
-  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back", "jimuhack-back", "smallbiz-back"].forEach(function(id){
+  ["cal-back", "mail-back", "tasks-back", "notes-back", "ideas-back", "payables-back", "contracts-back", "projects-back", "slack-back", "finance-back", "subs-back", "jimuhack-back", "smallbiz-back", "office-back"].forEach(function(id){
     var b = document.getElementById(id);
     if (b) b.addEventListener("click", function(){ showView(currentDashboard); });
   });
   // プライベートのクイックアクセス: はるかを選択済みにしてサブ画面を開く
   [["pv-quick-tasks", "tasks"], ["pv-quick-calendar", "calendar"], ["pv-quick-notes", "notes"],
    ["pv-quick-mail", "mail"], ["pv-quick-ideas", "ideas"],
-   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"], ["pv-quick-jimuhack", "jimuhack"], ["pv-quick-smallbiz", "smallbiz"]].forEach(function(pair){
+   ["pv-quick-finance", "finance"], ["pv-quick-subs", "subs"], ["pv-quick-jimuhack", "jimuhack"], ["pv-quick-smallbiz", "smallbiz"], ["pv-quick-office", "office"]].forEach(function(pair){
     var b = document.getElementById(pair[0]);
     if (b) b.addEventListener("click", function(){
       if (typeof setDefaultAccount === "function") setDefaultAccount("haruka");
@@ -3305,6 +3320,20 @@
     if (label) label.textContent = days < 0 ? "Drive バックアップがまだありません" : "日 Drive バックアップがありません";
   }
   if (homeBackupBtn) homeBackupBtn.addEventListener("click", function(){ openSettings(); });
+
+  /* ---- HOME の INBOX に出す「オーナーの出番」行（AIオフィスの確認待ち・2026/09/27）----
+     Claude が「決めていただくこと」を出して止まっている会話の数。bootstrap/home の office（バックのプロセス内の写し）と、
+     AIオフィスを開いて読み直したとき（app.office.js）の両方から呼ぶ。48時間より古い確認待ちは数えない（app.office.js と同じ）。 */
+  var homeOfficeBtn = document.getElementById("home-office-btn");
+  function applyHomeOffice(of){
+    if (!homeOfficeBtn || !of || !Array.isArray(of.sessions)) return;
+    var now = Date.now();
+    var n = of.sessions.filter(function(s){ return s && s.state === "review" && now - (s.at || 0) < 48 * 3600 * 1000; }).length;
+    homeOfficeBtn.hidden = n <= 0;
+    var num = document.getElementById("home-office-num");
+    if (num) num.textContent = String(n);
+  }
+  if (homeOfficeBtn) homeOfficeBtn.addEventListener("click", function(){ showView("office"); });
 
   /* ---- ひと目で分かる情報（2026/09/22 デザイン点検①）----
      3タブのヒーロー画像に「次の予定」と未処理の件数を重ね、「よく使う」のタイルに件数を添える。
@@ -7678,6 +7707,7 @@
     applyHomeContractAlerts(b.contracts);
     applyHomePayQueue(b.paymentQueue);
     applyHomeBackup(b.backup);
+    applyHomeOffice(b.office);
   }
 
   // 同じログインで authready が二度飛んでも /api/bootstrap/home を二度取らない。
@@ -7763,6 +7793,8 @@
     contractAutoAdvanced: contractAutoAdvanced,
     // 「確認済みにする」で INBOX の件数もその場で消すため（再取得を待たない）。
     refreshHomeContractCounts: applyHomeContractAlerts,
+    // AIオフィス(app.office.js)が読み直したとき、HOME の「オーナーの出番」も同じ数に揃える。
+    applyHomeOffice: applyHomeOffice,
     // 事務ハック(app.jimuhack.js)の計画リスト＝ポータルのタスク(自由タグ「事務ハック」)を使う。
     ensureTasksLoaded: ensureTasksLoaded,
     getTasks: function(){ return tasksState; },

@@ -15,7 +15,7 @@ const dir = fileURLToPath(new URL("..", import.meta.url));
 const read = (f) => readFileSync(dir + f, "utf8");
 
 const html = read("index.html");
-const JS_FILES = ["app.js", "app.business.js", "app.payables.js", "app.money.js", "app.jimuhack.js", "app.smallbiz.js", "auth.js"];
+const JS_FILES = ["app.js", "app.business.js", "app.payables.js", "app.money.js", "app.jimuhack.js", "app.smallbiz.js", "app.office.js", "auth.js"];
 const jsSrc = JS_FILES.filter((f) => existsSync(dir + f)).map(read).join("\n");
 const sw = read("sw.js");
 const app = read("app.js");
@@ -98,6 +98,21 @@ test("no retired neon palette hex in markup or JS-built markup", () => {
     for (const re of RETIRED_HEX) for (const m of src.matchAll(re)) hits.push(name + ": " + m[0]);
   }
   assert.deepEqual(hits, [], "旧パレットの生 hex が残っています（--accent / currentColor を使う）: " + hits.join(", "));
+});
+
+/* AIオフィス（#view-office）だけはデザイン方針の例外（2026-09-27 オーナー判断）。
+   例外は office.css に閉じ込める：office.css は .of-* と #view-office 以外を触らない／style.css に .of-* を書かない。 */
+test("design-policy exception stays inside office.css", () => {
+  const noComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "");
+  const oc = noComments(read("office.css"))
+    .replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, "")
+    .replace(/@media[^{]*\{/g, "");
+  const selectors = [...oc.matchAll(/([^{}]+)\{[^{}]*\}/g)]
+    .flatMap((m) => m[1].split(",")).map((s) => s.trim()).filter(Boolean);
+  assert.ok(selectors.length > 50, `office.css のセレクタが少なすぎます（${selectors.length}）`);
+  const outside = selectors.filter((s) => !/^(#view-office\b|\.of-)/.test(s));
+  assert.deepEqual(outside, [], "office.css が AIオフィスの外を触っています: " + outside.join(" | "));
+  assert.ok(!/\.of-[\w-]+/.test(noComments(read("style.css"))), "style.css に .of-* が書かれています（office.css に置く）");
 });
 
 test("design-policy CSS counts do not grow (ratchet)", () => {
