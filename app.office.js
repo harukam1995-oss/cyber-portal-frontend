@@ -209,9 +209,10 @@
         '<div class="of-grid">' + d.members.map(function(m){ return card(m, views[m.id]); }).join("") + '</div></section>';
     }).join("");
 
+    // 見出しは上のヘッダー（AIオフィス）と重なるので部屋の中には置かない（v187）。1行目はタブと凡例。
     var empty = S.sessions.length ? "" : '<p class="of-note">まだ知らせがありません。Claude の会話が動くと、ここに状態が出ます。</p>';
-    host.innerHTML = '<div class="of-room">' + '<div class="of-head"><h2 class="of-title"><small>Claude の5人チーム</small>ちいさなAIオフィス</h2>' + legend + '</div>' +
-      turn + empty + tabHtml + depts + '</div>' + modalShell();
+    host.innerHTML = '<div class="of-room">' + turn + '<div class="of-head">' + tabHtml + legend + '</div>' +
+      empty + depts + '</div>' + modalShell();
   }
 
   function modalShell(){
