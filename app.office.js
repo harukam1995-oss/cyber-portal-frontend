@@ -151,7 +151,7 @@
     var doing = "";
     if (v.top){
       doing = '<div class="of-doing">' + (v.top.job ? jobTag(v.top.job, "いま：") : "") +
-        escapeHtml(v.top.text || "") + '<span class="of-time">' + escapeHtml(fmtTime(v.top.at)) + '</span>' +
+        escapeHtml(v.top.text === "作業中" ? "" : (v.top.text || "")) + '<span class="of-time">' + escapeHtml(fmtTime(v.top.at)) + '</span>' +
         (v.working > 1 ? '<span class="of-more">ほかに作業中 ' + (v.working - 1) + '件</span>' : "") + '</div>';
     }
     return '<button type="button" class="of-card of-s-' + v.st + '" data-id="' + m.id + '">' +
@@ -243,7 +243,8 @@
       '<button type="button" class="of-close" id="of-modal-close">閉じる</button>';
     wrap.hidden = false;
     var c = $("of-modal-close");
-    if (c) c.focus();
+    if (c) c.focus({ preventScroll: true });
+    box.scrollTop = 0;
   }
   function closeMember(){ var w = $("of-modal"); if (w) w.hidden = true; }
 
